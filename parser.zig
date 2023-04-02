@@ -56,7 +56,7 @@ pub const ParseTree = struct {
 
 // Tokenize a string containing a WFF. Returns an ArrayList of Tokens if a valid
 // string is passed, else a ParseError. Caller must free the returned ArrayList.
-fn tokenize(allocator: std.mem.Allocator, wff_string: []const u8) !std.TailQueue(Token) {
+fn tokenize(allocator: std.mem.Allocator, wff_string: []const u8) !std.ArrayList(Token) {
     const State = enum {
         None,
         Cond,
@@ -64,16 +64,13 @@ fn tokenize(allocator: std.mem.Allocator, wff_string: []const u8) !std.TailQueue
         BicondEnd,
     };
     
-    const List = std.TailQueue(Token);
-    var tokens = List{};
+    var tokens = std.ArrayList(Token).init(allocator);
     
     var state: State = State.None;
     for (wff_string) |c| {
         errdefer {
-            debug.print("Invalid token: {c}\nString: {s}\n", .{c, wff_string});
-            while (tokens.pop()) |node| {
-                allocator.destroy(node);    
-            }
+            debug.print("Invalid token: {c}\nProcessed tokens: {any}\n", .{c, tokens.items});
+            tokens.deinit();
         }
 
         if (std.ascii.isWhitespace(c)) {
@@ -135,21 +132,17 @@ fn tokenize(allocator: std.mem.Allocator, wff_string: []const u8) !std.TailQueue
             },
         };
 
-        var list_node = try allocator.create(List.Node);
-        list_node.data = tok;
-        tokens.append(list_node);
+        try tokens.append(tok);
     }
-    if (tokens.len == 0) {
+    if (tokens.items.len == 0) {
         return ParseError.NoTokensFound;
     }
     return tokens;
 }
 
 test "tokenize: '(p v q)'" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    
-    var result = try tokenize(arena.allocator(), "(p v q)");
+    var result = try tokenize(std.testing.allocator, "(p v q)");
+    defer result.deinit();
     const expected = [_]Token {
         Token.LParen, 
         Token{.Proposition = PropositionVar{.string = 'p'}},
@@ -158,13 +151,7 @@ test "tokenize: '(p v q)'" {
         Token.RParen,
     };
 
-    try std.testing.expectEqual(expected.len, result.len);
-
-    var iter = result.first;
-    var i: usize = 0;
-    while (iter) |node|: ({iter = node.next; i += 1;}) {
-        try std.testing.expectEqual(expected[i], node.data);
-    }
+    try std.testing.expectEqualSlices(Token, &expected, result.items);
 }
 
 test "tokenize: ''" {
@@ -172,21 +159,13 @@ test "tokenize: ''" {
 }
 
 test "tokenize: 'p'" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-
-    var result = try tokenize(arena.allocator(), "p");
+    var result = try tokenize(std.testing.allocator, "p");
+    defer result.deinit();
     const expected = [_]Token {
         Token{.Proposition = PropositionVar{.string = 'p'}}, 
     };
 
-    try std.testing.expectEqual(expected.len, result.len);
-
-    var iter = result.first;
-    var i: usize = 0;
-    while (iter) |node|: ({iter = node.next; i += 1;}) {
-        try std.testing.expectEqual(expected[i], node.data);
-    }
+    try std.testing.expectEqualSlices(Token, &expected, result.items);
 }
 
 test "tokenize: p & q" {
@@ -194,7 +173,7 @@ test "tokenize: p & q" {
 }
 
 
-fn parse(allocator: std.mem.Allocator, tokens: std.TailQueue(Token)) !ParseTree.Node {
+fn parse(allocator: std.mem.Allocator, tokens: std.ArrayList(Token)) !ParseTree.Node {
     const StackSymbol = enum {
         Wff,
         Proposition,
