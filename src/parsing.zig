@@ -39,8 +39,12 @@ pub const Token = union(enum) {
     /// values are equivalent.
     pub fn equals(self: Self, other: Self) bool {
         return switch(self) {
-            .LParen, .RParen => |paren| switch(other) {
-                .LParen, .RParen => |other_paren| paren == other_paren,
+            .LParen => switch(other) {
+                .LParen => true,
+                else => false,
+            },
+            .RParen => switch(other) {
+                .RParen => true,
                 else => false,
             },
             .Proposition => |prop| switch(other) {
@@ -55,6 +59,24 @@ pub const Token = union(enum) {
     }
 };
 
+test "Token.equals" {
+    var t1: Token = Token.LParen;
+    var t2: Token = Token.LParen;
+    var t3: Token = Token.RParen;
+    
+    var t4: Token = Token{.Operator = WffOperator.And};
+    var t5: Token = Token{.Operator = WffOperator.And};
+    var t6: Token = Token{.Operator = WffOperator.Or}; 
+
+    try std.testing.expect(t1.equals(t2));
+    try std.testing.expect(!t1.equals(t3));
+
+    try std.testing.expect(t4.equals(t5));
+    try std.testing.expect(!t4.equals(t6));
+
+    try std.testing.expect(!t1.equals(t5));
+}
+
 pub const Match = struct {
     wff_node: *ParseTree.Node,
     pattern_node: *ParseTree.Node,
@@ -66,6 +88,7 @@ pub const ParseTreeBreadthFirstIterator = struct {
     const Stack = std.SinglyLinkedList(*ParseTree.Node);
 
     stack: Stack,
+    previousChildren: usize = 0,
     allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator, tree_node: *ParseTree.Node) !Self {
@@ -75,6 +98,10 @@ pub const ParseTreeBreadthFirstIterator = struct {
         stack.prepend(stack_node);
 
         return Self{.stack = stack, .allocator = allocator};
+    }
+
+    pub fn deinit(self: *Self) void {
+        while(self.stack.popFirst()) |new_top| self.allocator.destroy(new_top);
     }
 
     pub fn next(self: *Self) !?*ParseTree.Node {
@@ -94,10 +121,32 @@ pub const ParseTreeBreadthFirstIterator = struct {
                     stack_node.data = children.items[last - i];
                     self.stack.prepend(stack_node);
                 }
+                self.previousChildren = children.items.len;
             },
-            else => {},
+            else => {
+                self.previousChildren = 0;
+            },
         }
         return next_node;
+    }
+
+    pub fn peek(self: *Self) ?*ParseTree.Node {
+        if (self.stack.first) |top| {
+            return top.data;
+        } else {
+            return null;
+        }
+    }
+
+    pub fn hasNext(self: *Self) bool {
+        return self.peek() != null;
+    }
+
+    pub fn skipChildren(self: *Self) void {
+        var i: usize = 0;
+        while (i < self.previousChildren): (i += 1) {
+            self.allocator.destroy(self.stack.popFirst().?);
+        }
     }
 };
 
@@ -108,7 +157,7 @@ test "ParseTreeDepthFirstIterator" {
     var tree = try ParseTree.init(std.testing.allocator, "(p v q)");
     defer tree.deinit();
 
-    var it = try tree.root.?.iter_breadth_first(std.testing.allocator);
+    var it = try tree.root.iter_breadth_first(std.testing.allocator);
 
     var t1 = ParseTree.Node{.Terminal = Token.LParen};
     var t2 = ParseTree.Node{.Terminal = Token{.Proposition = PropositionVar{.string = 'p'}}};
@@ -140,98 +189,88 @@ pub const ParseTree = struct {
             return try ParseTreeBreadthFirstIterator.init(allocator, self);
         }
 
+        pub fn equals(self: *Node, allocator: std.mem.Allocator, other: *Node) !bool {
+            var it = try self.iter_breadth_first(allocator);
+            defer it.deinit();
+            var other_it = try other.iter_breadth_first(allocator);
+            defer other_it.deinit();
 
-        // Similar to ParseTree.equals, but in addition to checking the 
-        // equality of the trees, we also record...TODO
-        // TODO: Provide BFS iterator and be able to simply apply this function
-        // fn match(self: *Node, allocator: std.mem.Allocator, pattern: *Node) !?std.ArrayList(Match) {
-        //     var matches = std.ArrayList(Match).init(allocator);
-        //     errdefer matches.deinit();
+            while (it.hasNext() and other_it.hasNext()) {
+                const node = (try it.next()).?.*;
+                const other_node = (try other_it.next()).?.*;
 
-        //     var it = self.iter_depth_first();
-        //     _=
-        // }
+                switch(node) {
+                    .Terminal => |tok| switch(other_node) {
+                        .Terminal => |other_tok| if (!tok.equals(other_tok)) return false,
+                        .Nonterminal => return false,
+                    },
+                    .Nonterminal => switch(other_node) {
+                        .Terminal => return false,
+                        .Nonterminal => continue,
+                    }
+                }
+            }
+            return it.peek() == other_it.peek();
+        }
 
 
-    //     fn match(self: *Node, allocator: std.mem.Allocator, pattern: *Node) !?std.ArrayList(Match) {
-    //         // TODO: FIx this, since iterator becomes invalid on resize
-    //         var matches = std.ArrayList(Match).init(allocator);
-    //         errdefer matches.deinit();
+        /// Similar to ParseTree.equals, but in addition to checking the 
+        /// equality of the trees, we also record...TODO
+        fn match(self: *Node, allocator: std.mem.Allocator, pattern: *Node) !?std.ArrayList(Match) {
+            var matches = std.ArrayList(Match).init(allocator);
+            errdefer matches.deinit();
 
-    //         // We use a breadth first traversal of the tree to visit each node, 
-    //         // so we'll use this stack to store unvisited nodes as we come 
-    //         // across them.
-    //         // const L = std.SinglyLinkedList([2]*Node);
-    //         // var stack = L{};
-    //         var stack = try std.ArrayList([2]*Node).initCapacity(allocator, 50);
+            var it = try self.iter_breadth_first(allocator);
+            defer it.deinit();
+            var pattern_it = try pattern.iter_breadth_first(allocator);
+            defer pattern_it.deinit();
 
-    //         // Start with the root node from each tree.
-    //         // stack.prepend(&L.Node{.data = .{self, pattern}});
-    //         try stack.append(.{self, pattern});
+            while (it.hasNext() and pattern_it.hasNext()) {
+                const node = (try it.next()).?;
+                const pattern_node = (try pattern_it.next()).?;
 
-    //         // var iter = stack.first;
-    //         // while (iter) |stack_node|: (iter = stack_node.next) {
-    //         while (stack.popOrNull()) |pair| {
-    //             //_ = stack.popFirst(); // Discard previously visited node
-    //              // Unpack the current node pair so it's easier to work with.
-    //             // const pair = stack_node.data;
-    //             const node = pair[0];
-    //             const pattern_node = pair[1];
+                const is_match = switch(node.*) {
+                    .Terminal => |tok| switch(pattern_node.*) {
+                        .Terminal => |pattern_tok| tok.equals(pattern_tok),
+                        .Nonterminal => false,
+                    },
+                    .Nonterminal => |children| switch(pattern_node.*) {
+                        .Terminal => false,
+                        .Nonterminal => |pattern_children| ret: {
+                            if (pattern_children.items.len == 1) {
+                                try matches.append(Match{.wff_node = node, .pattern_node = pattern_node});
+                                it.skipChildren();
+                                pattern_it.skipChildren();
+                                break :ret true;
+                            } else if (children.items.len == pattern_children.items.len) {
+                                continue;
+                            } else {
+                                break :ret false;
+                            }
+                        },
 
-    //             // This is kinda gross ngl, but it does the job I think
-    //             const is_match = switch(node.*) {
-    //                 .Terminal => |tok| switch(pattern_node.*) {
-    //                     // Should we check to make sure tok and pattern_tok are
-    //                     // not Propositions? It should never happen, but...
-    //                     .Terminal => |pattern_tok| tok.equals(pattern_tok),
-    //                     else => false,
-    //                 },
-    //                 .Nonterminal => |children| switch(pattern_node.*) {
-    //                     .Nonterminal => |pattern_children| ret: {
-    //                         if (pattern_children.items.len == 1) {
-    //                             switch(pattern_children.items[0].*) {
-    //                                 .Terminal => {
-    //                                     try matches.append(Match{.wff_node = node, .pattern_node = pattern_node});
-    //                                     break :ret true;
-    //                                 },
-    //                                 else => break :ret false,
-    //                             }
-    //                         } else if (children.items.len == pattern_children.items.len) {
-    //                             // Push unvisited nodes onto stack
-    //                             for (children.items) |_, i| {
-    //                                 const last = children.items.len - 1;
-    //                                 // stack.prepend(&L.Node{.data = .{c, pattern_children.items[i]}});
-    //                                 try stack.append(.{children.items[last - i], pattern_children.items[last - i]});
-    //                             }
-    //                             continue;
-    //                         } else {
-    //                             break :ret false;
-    //                         }
-    //                     },
-    //                     else => false,
-    //                 },
-    //             };
-    //             if (!is_match) {
-    //                 matches.deinit();
-    //                 return null;
-    //             }
-    //         }
-    //         return matches;
-    //     }
+                    }
+                }; // outer switch
+
+                if (!is_match) {
+                    matches.deinit();
+                    return null;
+                }
+            } // while
+            return matches;
+        }
     };
 
-    root: ?*Node = null,
+    root: *Node,
     allocator: std.mem.Allocator,
     node_arena: std.heap.ArenaAllocator,
 
     pub fn init(allocator: std.mem.Allocator, wff_string: []const u8) !ParseTree {
-        var tree = ParseTree{.allocator = allocator, .node_arena = std.heap.ArenaAllocator.init(allocator)};
-
-        var parser = Parser.init(allocator, tree.node_arena.allocator());
+        var arena = std.heap.ArenaAllocator.init(allocator);
+        var parser = Parser.init(allocator, arena.allocator());
         defer parser.deinit();
-        tree.root = try parser.parse(wff_string);
 
-        return tree;
+        return ParseTree{.root = (try parser.parse(wff_string)).?, .allocator = allocator, .node_arena = arena};
     }
 
     pub fn deinit(self: *Self) void {
@@ -242,48 +281,8 @@ pub const ParseTree = struct {
     /// tree structure (determined by non-terminal nodes, which are the only 
     /// nodes with children) and if each pair of corresponding terminal nodes
     /// have equivalent tokens (see Token.equals).
-    pub fn equals(self: *Self, other: *Self) bool {
-        // We use a breadth first traversal of the tree to visit each node, so 
-        // we'll use this stack to store unvisited nodes as we come across them.
-        const L = std.SinglyLinkedList([2]?*Node);
-        var stack = L{};
-
-        // Start with the root node from each tree.
-        stack.prepend(&L.Node{.data = .{self.root, other.root}});
-
-        var iter = stack.first;
-        while (iter) |stack_node|: (iter = stack_node.next) {
-            _ = stack.popFirst(); // Discard previously visited node
-
-            // Unpack the current node pair so it's easier to work with.
-            const pair = stack_node.data;
-            const node = (pair[0] orelse return false).*;
-            const other_node = (pair[1] orelse return false).*;
-
-            // Compare this pair of nodes.
-            const eq = switch(node) {
-                .Terminal => |tok| switch(other_node) {
-                    .Terminal => |other_tok| tok.equals(other_tok),
-                    else => false,
-                },
-                .Nonterminal => |children| switch(other_node) {
-                    .Nonterminal => |other_children| ret: {
-                        if (children.items.len != other_children.items.len) {
-                            break :ret false;
-                        }
-                        // Push unvisited nodes onto stack
-                        for (children.items) |c, i| {
-                            stack.prepend(&L.Node{.data = .{c, other_children.items[i]}});
-                        }
-                        continue;
-                    },
-                    else => false,
-                }
-            };
-
-            if (!eq) return false;
-        }
-        return true;
+    pub fn equals(self: *Self, other: *Self) !bool {
+        return try self.root.equals(other);
     }
 
     pub fn matchAll(self: *Self, pattern: *Self) !?std.ArrayList(std.ArrayList(Match)) {
@@ -329,9 +328,7 @@ test "ParseTree: ')q p v('" {
 }
 
 test "ParseTree: '(p v q)'" {
-    //var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    //defer arena.deinit();
-    var allocator = std.testing.allocator; //arena.allocator();
+    var allocator = std.testing.allocator;
     var tree = try ParseTree.init(allocator, "(p v q)");
     defer tree.deinit();
 
@@ -354,70 +351,65 @@ test "ParseTree: '(p v q)'" {
     defer children3.deinit();
     try children3.appendSlice(&([_]*ParseTree.Node {&t1, &wff1, &t3, &wff2, &t5}));
     var wff3 = ParseTree.Node{.Nonterminal = children3};
-    _ = wff3;
-
-    //var expected = ParseTree{.allocator = std.testing.allocator, .root = &wff3};
-
+   
     // Hardcoded equality test of tree
-    try std.testing.expectEqual(t1, tree.root.?.Nonterminal.items[0].*);
-    try std.testing.expectEqual(t2, tree.root.?.Nonterminal.items[1].Nonterminal.items[0].*);
-    try std.testing.expectEqual(t3, tree.root.?.Nonterminal.items[2].*);
-    try std.testing.expectEqual(t4, tree.root.?.Nonterminal.items[3].Nonterminal.items[0].*);
-    try std.testing.expectEqual(t5, tree.root.?.Nonterminal.items[4].*);
+    try std.testing.expectEqual(t1, tree.root.Nonterminal.items[0].*);
+    try std.testing.expectEqual(t2, tree.root.Nonterminal.items[1].Nonterminal.items[0].*);
+    try std.testing.expectEqual(t3, tree.root.Nonterminal.items[2].*);
+    try std.testing.expectEqual(t4, tree.root.Nonterminal.items[3].Nonterminal.items[0].*);
+    try std.testing.expectEqual(t5, tree.root.Nonterminal.items[4].*);
 
     // Function equality test of tree
-    //try std.testing.expect(tree.equals(&expected));
+    try std.testing.expect(try tree.root.equals(allocator, &wff3));
 }
 
-// test "ParseTree.Node.match: (p v q)" {
-//     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-//     defer arena.deinit();
-//     var allocator = arena.allocator();
-//     var tree = try ParseTree.init(allocator, "(p v q)");
-//     var pattern = try ParseTree.init(allocator, "(p v q)");
+test "ParseTree.Node.match: (p v q)" {
+    var allocator = std.testing.allocator;
+    var tree = try ParseTree.init(allocator, "(p v q)");
+    defer tree.deinit();
+    var pattern = try ParseTree.init(allocator, "(p v q)");
+    defer pattern.deinit();
 
-//     const matches = try tree.root.?.match(allocator, pattern.root.?) orelse return ParseError.MatchError;
+    const matches = try tree.root.match(allocator, pattern.root) orelse return ParseError.MatchError;
+    defer matches.deinit();
 
-//     debug.print("\n\nmatches = [{any}]\n\n", .{matches.items});
+    const expected = [_]Match {
+        Match{
+            .wff_node = tree.root.Nonterminal.items[1],
+            .pattern_node = pattern.root.Nonterminal.items[1],
+        },
+        Match{
+            .wff_node = tree.root.Nonterminal.items[3],
+            .pattern_node = pattern.root.Nonterminal.items[3],
+        },
+    };
 
-//     const expected = [_]Match {
-//         Match{
-//             .wff_node = tree.root.?.Nonterminal.items[1],
-//             .pattern_node = pattern.root.?.Nonterminal.items[1],
-//         },
-//         Match{
-//             .wff_node = tree.root.?.Nonterminal.items[3],
-//             .pattern_node = pattern.root.?.Nonterminal.items[3],
-//         },
-//     };
+    try std.testing.expectEqualSlices(Match, &expected, matches.items);
+}
 
-//     try std.testing.expectEqualSlices(Match, &expected, matches.items);
-// }
+test "ParseTree.Node.match: ((a ^ b) v (c ^ d))" {
+    var allocator = std.testing.allocator;
+    var tree = try ParseTree.init(allocator, "((a ^ b) v (c ^ d))");
+    defer tree.deinit();
+    var pattern = try ParseTree.init(allocator, "(p v q)");
+    defer pattern.deinit();
 
-// test "ParseTree.Node.match: ((a ^ b) v (c ^ d))" {
-//     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-//     defer arena.deinit();
-//     var allocator = arena.allocator();
-//     var tree = try ParseTree.init(allocator, "((a ^ b) v (c ^ d))");
-//     var pattern = try ParseTree.init(allocator, "(p v q)");
+    const matches = try tree.root.match(allocator, pattern.root) orelse return ParseError.MatchError;
+    defer matches.deinit();
 
-//     const matches = try tree.root.?.match(allocator, pattern.root.?) orelse return ParseError.MatchError;
+    const expected = [_]Match {
+        Match{
+            .wff_node = tree.root.Nonterminal.items[1],
+            .pattern_node = pattern.root.Nonterminal.items[1],
+        },
+        Match{
+            .wff_node = tree.root.Nonterminal.items[3],
+            .pattern_node = pattern.root.Nonterminal.items[3],
+        },
+    };
 
-//     debug.print("\n\nmatches = [{any}]\n\n", .{matches.items});
-
-//     const expected = [_]Match {
-//         Match{
-//             .wff_node = tree.root.?.Nonterminal.items[1],
-//             .pattern_node = pattern.root.?.Nonterminal.items[1],
-//         },
-//         Match{
-//             .wff_node = tree.root.?.Nonterminal.items[3],
-//             .pattern_node = pattern.root.?.Nonterminal.items[3],
-//         },
-//     };
-
-//     try std.testing.expectEqualSlices(Match, &expected, matches.items);
-// }
+    try std.testing.expectEqualSlices(Match, &expected, matches.items);
+}
 
 // Tokenize a string containing a WFF. Returns an ArrayList of Tokens if a valid
 // string is passed, else a ParseError. Caller must free the returned ArrayList.
