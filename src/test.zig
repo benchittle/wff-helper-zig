@@ -1,0 +1,21 @@
+const std = @import("std");
+
+const MyUnion = union(enum) {
+    choiceA: u32,
+    choiceB: u64,
+};
+
+test "choiceA" {
+    var allocator = std.testing.allocator;
+
+    // Okay
+    var u = MyUnion{.choiceA = 69};
+    try std.testing.expectEqual(MyUnion{.choiceA = 69}, u);
+    
+    // Okay now
+    var dynamic_u = try allocator.create(MyUnion);
+    defer allocator.destroy(dynamic_u);
+
+    dynamic_u.* = MyUnion{.choiceA = 69};
+    try std.testing.expectEqual(MyUnion{.choiceA = 69}, dynamic_u.*);
+}
