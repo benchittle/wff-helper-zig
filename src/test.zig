@@ -19,3 +19,11 @@ test "choiceA" {
     dynamic_u.* = MyUnion{.choiceA = 69};
     try std.testing.expectEqual(MyUnion{.choiceA = 69}, dynamic_u.*);
 }
+
+test "defer" {
+    var i: usize = 0;
+    while (i < 5): (i += 1) {
+        defer std.debug.print("DEFER: i={d}\n", .{i});
+        std.debug.print("REG: i={d}\n", .{i});
+    }
+}

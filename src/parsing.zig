@@ -115,7 +115,9 @@ pub const ParseTreeBreadthFirstIterator = struct {
                 const last = children.items.len - 1;
                 var i: usize = 0;
                 while (i < children.items.len): (i += 1) {
-                    errdefer while(self.stack.popFirst()) |new_top| self.allocator.destroy(new_top);
+                    errdefer while(self.stack.popFirst()) |new_top| {
+                        self.allocator.destroy(new_top);
+                    };
 
                     var stack_node = try self.allocator.create(Stack.Node);
                     stack_node.data = children.items[last - i];
@@ -151,13 +153,10 @@ pub const ParseTreeBreadthFirstIterator = struct {
 };
 
 test "ParseTreeDepthFirstIterator" {
-    //var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    //defer arena.deinit();
-    //var allocator = arena.allocator();
     var tree = try ParseTree.init(std.testing.allocator, "(p v q)");
     defer tree.deinit();
 
-    var it = try tree.root.iter_breadth_first(std.testing.allocator);
+    var it = try tree.root.iterBreadthFirst(std.testing.allocator);
 
     var t1 = ParseTree.Node{.Terminal = Token.LParen};
     var t2 = ParseTree.Node{.Terminal = Token{.Proposition = PropositionVar{.string = 'p'}}};
@@ -185,14 +184,14 @@ pub const ParseTree = struct {
         Terminal: Token,
         Nonterminal: std.ArrayList(*Node),
 
-        pub fn iter_breadth_first(self: *Node, allocator: std.mem.Allocator) !ParseTreeBreadthFirstIterator {
+        pub fn iterBreadthFirst(self: *Node, allocator: std.mem.Allocator) !ParseTreeBreadthFirstIterator {
             return try ParseTreeBreadthFirstIterator.init(allocator, self);
         }
 
         pub fn equals(self: *Node, allocator: std.mem.Allocator, other: *Node) !bool {
-            var it = try self.iter_breadth_first(allocator);
+            var it = try self.iterBreadthFirst(allocator);
             defer it.deinit();
-            var other_it = try other.iter_breadth_first(allocator);
+            var other_it = try other.iterBreadthFirst(allocator);
             defer other_it.deinit();
 
             while (it.hasNext() and other_it.hasNext()) {
@@ -213,16 +212,13 @@ pub const ParseTree = struct {
             return it.peek() == other_it.peek();
         }
 
-
-        /// Similar to ParseTree.equals, but in addition to checking the 
-        /// equality of the trees, we also record...TODO
         fn match(self: *Node, allocator: std.mem.Allocator, pattern: *Node) !?std.ArrayList(Match) {
             var matches = std.ArrayList(Match).init(allocator);
             errdefer matches.deinit();
 
-            var it = try self.iter_breadth_first(allocator);
+            var it = try self.iterBreadthFirst(allocator);
             defer it.deinit();
-            var pattern_it = try pattern.iter_breadth_first(allocator);
+            var pattern_it = try pattern.iterBreadthFirst(allocator);
             defer pattern_it.deinit();
 
             while (it.hasNext() and pattern_it.hasNext()) {
@@ -282,38 +278,67 @@ pub const ParseTree = struct {
     /// nodes with children) and if each pair of corresponding terminal nodes
     /// have equivalent tokens (see Token.equals).
     pub fn equals(self: *Self, other: *Self) !bool {
-        return try self.root.equals(other);
+        return self.root.equals(other);
     }
 
+    pub fn iterBreadthFirst(self: *Self) !ParseTreeBreadthFirstIterator {
+        return self.root.iterBreadthFirst(self.allocator);
+    }
+
+    /// Similar to ParseTree.equals, but in addition to checking the equality
+    /// of the trees, we also record "matches". A match consists of a pointer
+    /// to a proposition node in a pattern/template tree, and a pointer to a
+    /// corresponding proposition or non-terminal (wff) in self.
+    /// Assumes both parse trees are valid.
+    /// Returns a list of match lists (ArrayList(ArrayList(Match))) if the trees
+    /// are equal, else null.
     pub fn matchAll(self: *Self, pattern: *Self) !?std.ArrayList(std.ArrayList(Match)) {
         var all_matches = std.ArrayList(std.ArrayList(Match)).init(self.allocator);
-            errdefer {
+        errdefer {
+            for (all_matches.items) |matches| {
+                matches.deinit();
+            }
+            all_matches.deinit();
+        }
+    
+        var it = try self.iterBreadthFirst();
+        defer it.deinit();
+        var pattern_it = try pattern.iterBreadthFirst();
+        defer pattern_it.deinit();
+
+        while (it.hasNext() and pattern_it.hasNext()) {
+            const node = (try it.next()).?;
+            const pattern_node = (try pattern_it.next()).?;
+
+            const is_match = switch(node.*) {
+                .Terminal => switch(pattern_node.*) {
+                    .Terminal => continue,
+                    .Nonterminal => false,
+                },
+                .Nonterminal => switch(pattern_node.*) {
+                    .Terminal => return null,
+                    .Nonterminal => ret: {
+                        if (try node.match(self.allocator, pattern_node)) |matches| {
+                            try all_matches.append(matches);
+                            it.skipChildren();
+                            pattern_it.skipChildren();
+                            break :ret true;
+                        } else {
+                            continue;
+                        }
+                    }
+                },
+            };
+            
+            if (!is_match) {
                 for (all_matches.items) |matches| {
                     matches.deinit();
                 }
                 all_matches.deinit();
+                return null;
             }
-
-        // We use a breadth first traversal of the tree to visit each node, so 
-        // we'll use this stack to store unvisited nodes as we come across them.
-        const L = std.SinglyLinkedList([2]?*Node);
-        var stack = L{};
-
-        // Start with the root node from each tree.
-        stack.prepend(&L.Node{.data = .{self.root, pattern.root}});
-
-        var iter = stack.first;
-        while (iter) |stack_node|: (iter = stack_node.next) {
-            _ = stack.popFirst(); // Discard previously visited node
-
-            // Unpack the current node pair so it's easier to work with.
-            const pair = stack_node.data;
-            const node = (pair[0] orelse return false).*;
-            const pattern_node = (pair[1] orelse return false).*;
-
-            all_matches.append(try node.match(pattern_node) orelse continue);
         }
-        return if (all_matches.items.len > 0) all_matches else null;
+        return all_matches;
     }
 };
 
@@ -411,6 +436,41 @@ test "ParseTree.Node.match: ((a ^ b) v (c ^ d))" {
     try std.testing.expectEqualSlices(Match, &expected, matches.items);
 }
 
+test "ParseTree.matchAll: (p v q)" {
+    var allocator = std.testing.allocator;
+    var tree = try ParseTree.init(allocator, "(p v q)");
+    defer tree.deinit();
+    var pattern = try ParseTree.init(allocator, "(p v q)");
+    defer pattern.deinit();
+
+    var all_matches = try tree.matchAll(&pattern);
+    defer {
+        if (all_matches) |all| {
+            for (all.items) |matches| {
+                    matches.deinit();
+            }
+            all.deinit();
+        }
+    }
+
+    try std.testing.expect(all_matches.?.items.len == 1);
+
+    var match1 = all_matches.?.items[0];
+
+    const expected = [_]Match {
+        Match{
+            .wff_node = tree.root.Nonterminal.items[1],
+            .pattern_node = pattern.root.Nonterminal.items[1],
+        },
+        Match{
+            .wff_node = tree.root.Nonterminal.items[3],
+            .pattern_node = pattern.root.Nonterminal.items[3],
+        },
+    };
+
+    try std.testing.expectEqualSlices(Match, &expected, match1.items);
+}
+
 // Tokenize a string containing a WFF. Returns an ArrayList of Tokens if a valid
 // string is passed, else a ParseError. Caller must free the returned ArrayList.
 fn tokenize(allocator: std.mem.Allocator, wff_string: []const u8) !std.ArrayList(Token) {
@@ -426,7 +486,7 @@ fn tokenize(allocator: std.mem.Allocator, wff_string: []const u8) !std.ArrayList
     var state: State = State.None;
     for (wff_string) |c| {
         errdefer {
-            debug.print("Invalid token: {c}\nProcessed tokens: {any}\n", .{c, tokens.items});
+            debug.print("\n\tInvalid token: {c}\n\tProcessed tokens: {any}\n", .{c, tokens.items});
             tokens.deinit();
         }
 
