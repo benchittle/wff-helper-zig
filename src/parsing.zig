@@ -83,52 +83,104 @@ pub const Match = struct {
 };
 
 
+// pub const ParseTreeBreadthFirstIterator = struct {
+//     const Self = @This();
+//     const Stack = std.SinglyLinkedList(*ParseTree.Node);
+
+//     stack: Stack,
+//     prev_child_count: usize = 0,
+//     allocator: std.mem.Allocator,
+
+//     pub fn init(allocator: std.mem.Allocator, tree_node: *ParseTree.Node) !Self {
+//         var stack = Stack{};
+//         var stack_node = try allocator.create(Stack.Node);
+//         stack_node.data = tree_node;
+//         stack.prepend(stack_node);
+
+//         return Self{.stack = stack, .allocator = allocator};
+//     }
+
+//     pub fn deinit(self: *Self) void {
+//         while(self.stack.popFirst()) |new_top| self.allocator.destroy(new_top);
+//     }
+
+//     pub fn next(self: *Self) !?*ParseTree.Node {
+//         const top = self.stack.popFirst() orelse return null;
+//         defer self.allocator.destroy(top);
+
+//         const next_node = top.data;
+//         switch(next_node.data) {
+//             .Nonterminal => |children| {
+//                 const last = children.items.len - 1;
+//                 var i: usize = 0;
+//                 while (i < children.items.len): (i += 1) {
+//                     errdefer while(self.stack.popFirst()) |new_top| {
+//                         self.allocator.destroy(new_top);
+//                     };
+
+//                     var stack_node = try self.allocator.create(Stack.Node);
+//                     stack_node.data = children.items[last - i];
+//                     self.stack.prepend(stack_node);
+//                 }
+//                 self.prev_child_count = children.items.len;
+//             },
+//             else => {
+//                 self.prev_child_count = 0;
+//             },
+//         }
+//         return next_node;
+//     }
+
+//     pub fn nextUnchecked(self: *Self) !*ParseTree.Node {
+//         std.debug.assert(self.hasNext());
+//         return (try self.next()).?;
+//     }
+
+//     pub fn peek(self: *Self) ?*ParseTree.Node {
+//         if (self.stack.first) |top| {
+//             return top.data;
+//         } else {
+//             return null;
+//         }
+//     }
+
+//     pub fn hasNext(self: *Self) bool {
+//         return self.peek() != null;
+//     }
+
+//     // Skip child nodes of the most recent nodes by popping them from the stack.
+//     // This means we won't visit the child nodes, nor their grandchildren etc.
+//     pub fn skipChildren(self: *Self) void {
+//         var i: usize = 0;
+//         while (i < self.prev_child_count): (i += 1) {
+//             self.allocator.destroy(self.stack.popFirst().?);
+//         }
+//     }
+// };
+
 pub const ParseTreeBreadthFirstIterator = struct {
     const Self = @This();
-    const Stack = std.SinglyLinkedList(*ParseTree.Node);
 
-    stack: Stack,
-    prev_child_count: usize = 0,
-    allocator: std.mem.Allocator,
+    current: ?*ParseTree.Node,
+    is_backtracking: false,
 
-    pub fn init(allocator: std.mem.Allocator, tree_node: *ParseTree.Node) !Self {
-        var stack = Stack{};
-        var stack_node = try allocator.create(Stack.Node);
-        stack_node.data = tree_node;
-        stack.prepend(stack_node);
-
-        return Self{.stack = stack, .allocator = allocator};
-    }
-
-    pub fn deinit(self: *Self) void {
-        while(self.stack.popFirst()) |new_top| self.allocator.destroy(new_top);
-    }
-
-    pub fn next(self: *Self) !?*ParseTree.Node {
-        const top = self.stack.popFirst() orelse return null;
-        defer self.allocator.destroy(top);
-
-        const next_node = top.data;
-        switch(next_node.*) {
-            .Nonterminal => |children| {
-                const last = children.items.len - 1;
-                var i: usize = 0;
-                while (i < children.items.len): (i += 1) {
-                    errdefer while(self.stack.popFirst()) |new_top| {
-                        self.allocator.destroy(new_top);
-                    };
-
-                    var stack_node = try self.allocator.create(Stack.Node);
-                    stack_node.data = children.items[last - i];
-                    self.stack.prepend(stack_node);
+    pub fn next(self: *Self) ?*ParseTree.Node {
+        switch(self.current.data) {
+            .Nonterminal => |children| 
+            while (self.is_backtracking) {
+                if (self.current == children.items[children.items.len - 1]) {
+                    self.current = self.current.parent orelse return null;
+                } else {
+                    self.current = self.current + 1; // advance pointer
+                    self.is_backtracking = false;
+                    return self.current;
                 }
-                self.prev_child_count = children.items.len;
             },
-            else => {
-                self.prev_child_count = 0;
+            .Terminal => {
+                self.is_backtracking = true;
+                
             },
         }
-        return next_node;
     }
 
     pub fn nextUnchecked(self: *Self) !*ParseTree.Node {
@@ -164,21 +216,21 @@ test "ParseTreeDepthFirstIterator" {
 
     var it = try tree.root.iterBreadthFirst(std.testing.allocator);
 
-    var t1 = ParseTree.Node{.Terminal = Token.LParen};
-    var t2 = ParseTree.Node{.Terminal = Token{.Proposition = PropositionVar{.string = 'p'}}};
-    var t3 = ParseTree.Node{.Terminal = Token{.Operator = WffOperator.Or}};
-    var t4 = ParseTree.Node{.Terminal = Token{.Proposition = PropositionVar{.string = 'q'}}};
-    var t5 = ParseTree.Node{.Terminal = Token.RParen};
+    var t1 = ParseTree.Data{.Terminal = Token.LParen};
+    var t2 = ParseTree.Data{.Terminal = Token{.Proposition = PropositionVar{.string = 'p'}}};
+    var t3 = ParseTree.Data{.Terminal = Token{.Operator = WffOperator.Or}};
+    var t4 = ParseTree.Data{.Terminal = Token{.Proposition = PropositionVar{.string = 'q'}}};
+    var t5 = ParseTree.Data{.Terminal = Token.RParen};
 
     _ = try it.next();
 
-    try std.testing.expectEqual(t1, (try it.next()).?.*);
+    try std.testing.expectEqual(t1, (try it.next()).?.data);
     _ = try it.next();
-    try std.testing.expectEqual(t2, (try it.next()).?.*);
-    try std.testing.expectEqual(t3, (try it.next()).?.*);
+    try std.testing.expectEqual(t2, (try it.next()).?.data);
+    try std.testing.expectEqual(t3, (try it.next()).?.data);
     _ = try it.next();
-    try std.testing.expectEqual(t4, (try it.next()).?.*);
-    try std.testing.expectEqual(t5, (try it.next()).?.*);
+    try std.testing.expectEqual(t4, (try it.next()).?.data);
+    try std.testing.expectEqual(t5, (try it.next()).?.data);
     try std.testing.expect((try it.next()) == null);
 }
 
@@ -186,9 +238,14 @@ test "ParseTreeDepthFirstIterator" {
 pub const ParseTree = struct {
     const Self = @This();
 
-    pub const Node = union(enum) {
+    pub const Data = union(enum) {
         Terminal: Token,
         Nonterminal: std.ArrayList(*Node),
+    };
+
+    pub const Node = struct {
+        parent: ?*Node = null,
+        data: Data,
 
         pub fn copy(self: *Self, allocator: std.mem.Allocator) ParseTree {
             var arena = std.heap.ArenaAllocator.init(allocator);
@@ -223,7 +280,7 @@ pub const ParseTree = struct {
                 const node = try it.nextUnchecked();
                 var copy_node = try copy_it.nextUnchecked();
 
-                switch(node.*) {
+                switch(node.data) {
                     .Terminal => |tok| copy_node.* = Node{.Terminal = tok},
                     .Nonterminal => |children| {
                         copy_node.* = Node{.Nonterminal = try std.ArrayList(*Node).initCapacity(node_allocator, children.len)};
@@ -281,12 +338,12 @@ pub const ParseTree = struct {
                 const node = try it.nextUnchecked();
                 const other_node = try other_it.nextUnchecked();
 
-                switch(node.*) {
-                    .Terminal => |tok| switch(other_node.*) {
+                switch(node.data) {
+                    .Terminal => |tok| switch(other_node.data) {
                         .Terminal => |other_tok| if (!tok.equals(other_tok)) return false,
                         .Nonterminal => return false,
                     },
-                    .Nonterminal => switch(other_node.*) {
+                    .Nonterminal => switch(other_node.data) {
                         .Terminal => return false,
                         .Nonterminal => continue,
                     }
@@ -308,12 +365,12 @@ pub const ParseTree = struct {
                 const node = try it.nextUnchecked();
                 const pattern_node = try pattern_it.nextUnchecked();
 
-                const is_match = switch(node.*) {
-                    .Terminal => |tok| switch(pattern_node.*) {
+                const is_match = switch(node.data) {
+                    .Terminal => |tok| switch(pattern_node.data) {
                         .Terminal => |pattern_tok| tok.equals(pattern_tok),
                         .Nonterminal => false,
                     },
-                    .Nonterminal => |children| switch(pattern_node.*) {
+                    .Nonterminal => |children| switch(pattern_node.data) {
                         .Terminal => false,
                         .Nonterminal => |pattern_children| ret: {
                             if (pattern_children.items.len == 1) {
@@ -396,12 +453,12 @@ pub const ParseTree = struct {
             const node = try it.nextUnchecked();
             const pattern_node = try pattern_it.nextUnchecked();
 
-            const is_match = switch(node.*) {
-                .Terminal => |tok| switch(pattern_node.*) {
+            const is_match = switch(node.data) {
+                .Terminal => |tok| switch(pattern_node.data) {
                     .Terminal => |pattern_tok| tok.equals(pattern_tok),
                     .Nonterminal => false,
                 },
-                .Nonterminal => switch(pattern_node.*) {
+                .Nonterminal => switch(pattern_node.data) {
                     .Terminal => false,
                     .Nonterminal => ret: {
                         if (try node.match(self.allocator, pattern_node)) |matches| {
@@ -449,31 +506,36 @@ test "ParseTree: '(p v q)'" {
     defer tree.deinit();
 
     // Build the expected tree manually
-    var t1 = ParseTree.Node{.Terminal = Token.LParen};
-    var t2 = ParseTree.Node{.Terminal = Token{.Proposition = PropositionVar{.string = 'p'}}};
-    var t3 = ParseTree.Node{.Terminal = Token{.Operator = WffOperator.Or}};
-    var t4 = ParseTree.Node{.Terminal = Token{.Proposition = PropositionVar{.string = 'q'}}};
-    var t5 = ParseTree.Node{.Terminal = Token.RParen};
+    var wff1: ParseTree.Node = undefined;
+    var wff2: ParseTree.Node = undefined;
+    var wff3: ParseTree.Node = undefined;
+    var t1 = ParseTree.Node{.parent = &wff3, .data = ParseTree.Data{.Terminal = Token.LParen}};
+    var t2 = ParseTree.Node{.parent = &wff1, .data = ParseTree.Data{.Terminal = Token{.Proposition = PropositionVar{.string = 'p'}}}};
+    var t3 = ParseTree.Node{.parent = &wff3, .data = ParseTree.Data{.Terminal = Token{.Operator = WffOperator.Or}}};
+    var t4 = ParseTree.Node{.parent = &wff2, .data = ParseTree.Data{.Terminal = Token{.Proposition = PropositionVar{.string = 'q'}}}};
+    var t5 = ParseTree.Node{.parent = &wff1, .data = ParseTree.Data{.Terminal = Token.RParen}};
 
     var children1 = std.ArrayList(*ParseTree.Node).init(allocator);
     defer children1.deinit();
     try children1.append(&t2);
+    wff1 = ParseTree.Node{.parent = &wff3, .data = ParseTree.Data{.Nonterminal = children1}};
+
     var children2 = std.ArrayList(*ParseTree.Node).init(allocator);
     defer children2.deinit();
     try children2.append(&t4);
-    var wff1 = ParseTree.Node{.Nonterminal = children1};
-    var wff2 = ParseTree.Node{.Nonterminal = children2};
+    wff2 = ParseTree.Node{.parent = &wff3, .data = ParseTree.Data{.Nonterminal = children2}};
+
     var children3 = std.ArrayList(*ParseTree.Node).init(allocator);
     defer children3.deinit();
     try children3.appendSlice(&([_]*ParseTree.Node {&t1, &wff1, &t3, &wff2, &t5}));
-    var wff3 = ParseTree.Node{.Nonterminal = children3};
+    wff3 = ParseTree.Node{.data = ParseTree.Data{.Nonterminal = children3}};
    
     // Hardcoded equality test of tree
-    try std.testing.expectEqual(t1, tree.root.Nonterminal.items[0].*);
-    try std.testing.expectEqual(t2, tree.root.Nonterminal.items[1].Nonterminal.items[0].*);
-    try std.testing.expectEqual(t3, tree.root.Nonterminal.items[2].*);
-    try std.testing.expectEqual(t4, tree.root.Nonterminal.items[3].Nonterminal.items[0].*);
-    try std.testing.expectEqual(t5, tree.root.Nonterminal.items[4].*);
+    try std.testing.expectEqual(t1.data, tree.root.data.Nonterminal.items[0].data);
+    try std.testing.expectEqual(t2.data, tree.root.data.Nonterminal.items[1].data.Nonterminal.items[0].data);
+    try std.testing.expectEqual(t3.data, tree.root.data.Nonterminal.items[2].data);
+    try std.testing.expectEqual(t4.data, tree.root.data.Nonterminal.items[3].data.Nonterminal.items[0].data);
+    try std.testing.expectEqual(t5.data, tree.root.data.Nonterminal.items[4].data);
 
     // Function equality test of tree
     try std.testing.expect(try tree.root.equals(allocator, &wff3));
@@ -491,12 +553,12 @@ test "ParseTree.Node.match: (p v q)" {
 
     const expected = [_]Match {
         Match{
-            .wff_node = tree.root.Nonterminal.items[1],
-            .pattern_node = pattern.root.Nonterminal.items[1],
+            .wff_node = tree.root.data.Nonterminal.items[1],
+            .pattern_node = pattern.root.data.Nonterminal.items[1],
         },
         Match{
-            .wff_node = tree.root.Nonterminal.items[3],
-            .pattern_node = pattern.root.Nonterminal.items[3],
+            .wff_node = tree.root.data.Nonterminal.items[3],
+            .pattern_node = pattern.root.data.Nonterminal.items[3],
         },
     };
 
@@ -515,12 +577,12 @@ test "ParseTree.Node.match: ((a ^ b) v (c ^ d))" {
 
     const expected = [_]Match {
         Match{
-            .wff_node = tree.root.Nonterminal.items[1],
-            .pattern_node = pattern.root.Nonterminal.items[1],
+            .wff_node = tree.root.data.Nonterminal.items[1],
+            .pattern_node = pattern.root.data.Nonterminal.items[1],
         },
         Match{
-            .wff_node = tree.root.Nonterminal.items[3],
-            .pattern_node = pattern.root.Nonterminal.items[3],
+            .wff_node = tree.root.data.Nonterminal.items[3],
+            .pattern_node = pattern.root.data.Nonterminal.items[3],
         },
     };
 
@@ -550,12 +612,12 @@ test "ParseTree.matchAll: (p v q)" {
 
     const expected = [_]Match {
         Match{
-            .wff_node = tree.root.Nonterminal.items[1],
-            .pattern_node = pattern.root.Nonterminal.items[1],
+            .wff_node = tree.root.data.Nonterminal.items[1],
+            .pattern_node = pattern.root.data.Nonterminal.items[1],
         },
         Match{
-            .wff_node = tree.root.Nonterminal.items[3],
-            .pattern_node = pattern.root.Nonterminal.items[3],
+            .wff_node = tree.root.data.Nonterminal.items[3],
+            .pattern_node = pattern.root.data.Nonterminal.items[3],
         },
     };
 
@@ -809,19 +871,22 @@ const Parser = struct {
             .R4, .R5, .R6, .R7 => 5,
         };
 
+        var new_parent = try self.tree_allocator.create(ParseTree.Node);
+
         var children = std.ArrayList(*ParseTree.Node).init(self.tree_allocator);
         var i: usize = 0;
         while (i < child_count): (i += 1) {
-            try children.append(self.stack.pop().node.?);
+            var child = self.stack.pop().node.?;
+            child.parent = new_parent;
+            try children.append(child);
         }
         std.mem.reverse(*ParseTree.Node, children.items[0..child_count]);
 
         const new_top_state = self.stack.items[self.stack.items.len - 1].state;
         const reduced_state = try shift_nonterminal(new_top_state, StackSymbol.Wff);
 
-        var new_node = try self.tree_allocator.create(ParseTree.Node);
-        new_node.* = ParseTree.Node{.Nonterminal = children};
-        try self.stack.append(StackItem{.state = reduced_state, .node = new_node});
+        new_parent.* = ParseTree.Node{.data = ParseTree.Data{.Nonterminal = children}};
+        try self.stack.append(StackItem{.state = reduced_state, .node = new_parent});
 
         return reduced_state;
     }
@@ -853,7 +918,7 @@ const Parser = struct {
             
             var new_state = try shift_terminal(top_state, stack_symbol);
             var new_node = try self.tree_allocator.create(ParseTree.Node);
-            new_node.* = ParseTree.Node{.Terminal = token};
+            new_node.* = ParseTree.Node{.data = ParseTree.Data{.Terminal = token}};
             try self.stack.append(StackItem{.state = new_state, .node = new_node});
 
             while (try self.reduce(new_state)) |result_state| {
