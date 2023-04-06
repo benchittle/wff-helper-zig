@@ -42,7 +42,7 @@ const Wff = struct {
         return self.parse_tree.equals(&other.parse_tree);
     }
 
-    pub fn matchAll(self: *Self, pattern: *Self) !?std.ArrayList(std.ArrayList(parsing.Match)) {
+    pub fn matchAll(self: *Self, pattern: *Self) !?std.ArrayList(parsing.MatchHashMap) {
         return self.parse_tree.matchAll(&pattern.parse_tree);
     }
 
@@ -52,7 +52,7 @@ const Wff = struct {
 
         var candidates = try self.matchAll(pattern) orelse return result;
         defer {
-            for (candidates.items) |matches| {
+            for (candidates.items) |*matches| {
                 matches.deinit();
             }
             candidates.deinit();
@@ -63,25 +63,18 @@ const Wff = struct {
 
         var it = result.parse_tree.iterDepthFirst();
         while (it.next()) |node| switch(node.data) {
-            .Terminal => |tok| switch(tok) {
-                .Proposition => {
-                    // TODO: Use hashmap for matches
-                    for (chosen_matches.items) |match| {
-                        if (tok.equals(match.pattern_node.data.Terminal)) {
-                            var match_copy = try match.wff_node.copy(result.allocator); 
-                            defer result.allocator.destroy(match_copy);
-                            var old_data = node.parent.?.data.Nonterminal;
-                            defer old_data.deinit();
+            .Terminal => |tok| {
+                if (chosen_matches.get(tok)) |wff_node| {
+                    var match_copy = try wff_node.copy(result.allocator); 
+                    defer result.allocator.destroy(match_copy);
+                    var old_data = node.parent.?.data.Nonterminal;
+                    defer old_data.deinit();
 
-                            node.parent.?.data = match_copy.data;
-                            for (match_copy.data.Nonterminal.items) |*child| {
-                                child.parent = node.parent.?;
-                            }
-                            break;
-                        }
+                    node.parent.?.data = match_copy.data;
+                    for (match_copy.data.Nonterminal.items) |*child| {
+                        child.parent = node.parent.?;
                     }
-                },
-                else => {},
+                }
             },
             .Nonterminal => {},
         };
