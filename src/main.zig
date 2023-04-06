@@ -84,7 +84,7 @@ const Wff = struct {
     }
 };
 
-test "Wff.substiture" {
+test "Wff.substitute" {
     var wff = try Wff.init(std.testing.allocator, "((a ^ b) v (c ^ d))");
     var pattern = try Wff.init(std.testing.allocator, "(p v q)");
     var replace = try Wff.init(std.testing.allocator, "(p => q)");
