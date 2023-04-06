@@ -15,15 +15,33 @@ pub const ParseError = error{
 };
 
 pub const PropositionVar = struct {
-    string: u8,
+    const Self = @This();
+
+    string: [1]u8,
+
+    pub fn equals(self: Self, other: Self) bool {
+        return self.string[0] == other.string[0];
+    }
 };
 
 pub const WffOperator = enum {
+    const Self = @This();
+
     Not, // '~'
     And, // '^'
     Or, // 'v'
     Cond, // Conditional: "=>"
     Bicond, // Biconditional: "<=>"
+
+    pub fn getString(self: Self) []const u8 {
+        return switch(self) {
+            .Not => "~",
+            .And => "^",
+            .Or => "v",
+            .Cond => "=>",
+            .Bicond => "<=>",
+        };
+    }
 };
 
 pub const Token = union(enum) {
@@ -48,13 +66,22 @@ pub const Token = union(enum) {
                 else => false,
             },
             .Proposition => |prop| switch (other) {
-                .Proposition => |other_prop| prop.string == other_prop.string,
+                .Proposition => |other_prop| prop.equals(other_prop),
                 else => false,
             },
             .Operator => |op| switch (other) {
                 .Operator => |other_op| op == other_op,
                 else => false,
             },
+        };
+    }
+
+    pub fn getString(self: *Self) []const u8 {
+        return switch(self.*) {
+            .LParen => "(",
+            .RParen => ")",
+            .Proposition => |*prop| &prop.string,
+            .Operator => |op| op.getString(),
         };
     }
 };
@@ -158,9 +185,9 @@ test "ParseTreeDepthFirstIterator" {
     var it = tree.root.iterDepthFirst();
 
     var t1 = ParseTree.Data{ .Terminal = Token.LParen };
-    var t2 = ParseTree.Data{ .Terminal = Token{ .Proposition = PropositionVar{ .string = 'p' } } };
+    var t2 = ParseTree.Data{ .Terminal = Token{ .Proposition = PropositionVar{ .string = .{'p'} } } };
     var t3 = ParseTree.Data{ .Terminal = Token{ .Operator = WffOperator.Or } };
-    var t4 = ParseTree.Data{ .Terminal = Token{ .Proposition = PropositionVar{ .string = 'q' } } };
+    var t4 = ParseTree.Data{ .Terminal = Token{ .Proposition = PropositionVar{ .string = .{'q'} } } };
     var t5 = ParseTree.Data{ .Terminal = Token.RParen };
 
     _ = it.next();
@@ -237,9 +264,9 @@ test "ParseTreePostOrderIterator" {
     var it = tree.root.iterPostOrder();
 
     var t1 = ParseTree.Data{ .Terminal = Token.LParen };
-    var t2 = ParseTree.Data{ .Terminal = Token{ .Proposition = PropositionVar{ .string = 'p' } } };
+    var t2 = ParseTree.Data{ .Terminal = Token{ .Proposition = PropositionVar{ .string = .{'p'} } } };
     var t3 = ParseTree.Data{ .Terminal = Token{ .Operator = WffOperator.Or } };
-    var t4 = ParseTree.Data{ .Terminal = Token{ .Proposition = PropositionVar{ .string = 'q' } } };
+    var t4 = ParseTree.Data{ .Terminal = Token{ .Proposition = PropositionVar{ .string = .{'q'} } } };
     var t5 = ParseTree.Data{ .Terminal = Token.RParen };
 
     try std.testing.expectEqual(t1, it.nextUnchecked().data);
@@ -274,7 +301,9 @@ pub const ParseTree = struct {
 
             while (it.hasNext()) {
                 const node = it.nextUnchecked();
-                var copy_node = copy_it.peek().?;
+                // break if we've returned to / above the start node (we don't
+                // want to copy nodes above ourselves).
+                var copy_node = copy_it.peek() orelse break;
 
                 switch (node.data) {
                     .Terminal => |tok| copy_node.data = Data{.Terminal = tok },
@@ -349,7 +378,7 @@ pub const ParseTree = struct {
                         .Terminal => false,
                         .Nonterminal => |pattern_children| ret: {
                             if (pattern_children.items.len == 1) {
-                                try matches.append(Match{ .wff_node = node, .pattern_node = pattern_node });
+                                try matches.append(Match{ .wff_node = node, .pattern_node = &pattern_children.items[0] });
                                 it.skipChildren();
                                 pattern_it.skipChildren();
                                 break :ret true;
@@ -411,6 +440,20 @@ pub const ParseTree = struct {
 
     pub fn iterPostOrder(self: *Self) ParseTreePostOrderIterator {
         return self.root.iterPostOrder();
+    }
+
+    pub fn toString(self: *Self, allocator: std.mem.Allocator) ![]u8 {
+        var string_buf = std.ArrayList(u8).init(allocator);
+        errdefer string_buf.deinit();
+
+        var it = self.iterDepthFirst();
+        while (it.next()) |node| {
+            switch(node.data) {
+                .Terminal => |*tok| try string_buf.appendSlice(tok.getString()),
+                .Nonterminal => {},
+            }
+        }
+        return string_buf.toOwnedSlice();
     }
 
     // !!!!!!!!!!!
@@ -479,16 +522,6 @@ pub const ParseTree = struct {
 
 // TODO: fn to build trees more easily for testing larger expressions
 
-test "ParseTree.copy" {
-    var allocator = std.testing.allocator;
-    var tree = try ParseTree.init(allocator, "(p v q)");
-    defer tree.deinit();
-    var copy = try tree.copy();
-    defer copy.deinit();
-
-    try std.testing.expect(tree.equals(&copy));
-}
-
 test "ParseTree: ''" {
     try std.testing.expectError(ParseError.NoTokensFound, ParseTree.init(std.testing.allocator, ""));
 }
@@ -516,9 +549,9 @@ test "ParseTree: '(p v q)'" {
     defer root_children.deinit();
     
     var t1 = ParseTree.Node{ .parent = &root, .data = ParseTree.Data{ .Terminal = Token.LParen } };
-    var t2 = ParseTree.Node{ .parent = &(root_children.items[1]), .data = ParseTree.Data{ .Terminal = Token{ .Proposition = PropositionVar{ .string = 'p' } } } };
+    var t2 = ParseTree.Node{ .parent = &(root_children.items[1]), .data = ParseTree.Data{ .Terminal = Token{ .Proposition = PropositionVar{ .string = .{'p'} } } } };
     var t3 = ParseTree.Node{ .parent = &root, .data = ParseTree.Data{ .Terminal = Token{ .Operator = WffOperator.Or } } };
-    var t4 = ParseTree.Node{ .parent = &(root_children.items[3]), .data = ParseTree.Data{ .Terminal = Token{ .Proposition = PropositionVar{ .string = 'q' } } } };
+    var t4 = ParseTree.Node{ .parent = &(root_children.items[3]), .data = ParseTree.Data{ .Terminal = Token{ .Proposition = PropositionVar{ .string = .{'q'} } } } };
     var t5 = ParseTree.Node{ .parent = &root, .data = ParseTree.Data{ .Terminal = Token.RParen } };
 
     try children1.append(t2);
@@ -545,6 +578,46 @@ test "ParseTree: '(p v q)'" {
     try std.testing.expect(tree.root.equals(&root));
 }
 
+test "ParseTree.toString: (p v q)" {
+    var tree = try ParseTree.init(std.testing.allocator, "(p v q)");
+    defer tree.deinit();
+
+    var string = try tree.toString(std.testing.allocator);
+    defer std.testing.allocator.free(string);
+
+    try std.testing.expectEqualStrings("(pvq)", string);
+}
+
+test "ParseTree.toString: ~((a ^ b) => (c ^ ~d))" {
+    var tree = try ParseTree.init(std.testing.allocator, "~((a ^ b) => (c ^ ~d))");
+    defer tree.deinit();
+
+    var string = try tree.toString(std.testing.allocator);
+    defer std.testing.allocator.free(string);
+
+    try std.testing.expectEqualStrings("~((a^b)=>(c^~d))", string);
+}
+
+test "ParseTree.copy: (p v q)" {
+    var allocator = std.testing.allocator;
+    var tree = try ParseTree.init(allocator, "(p v q)");
+    defer tree.deinit();
+    var copy = try tree.copy();
+    defer copy.deinit();
+
+    try std.testing.expect(tree.equals(&copy));
+}
+
+test "ParseTree.copy: ((a ^ b) v (c ^ d))" {
+    var allocator = std.testing.allocator;
+    var tree = try ParseTree.init(allocator, "((a ^ b) v (c ^ d))");
+    defer tree.deinit();
+    var copy = try tree.copy();
+    defer copy.deinit();
+
+    try std.testing.expect(tree.equals(&copy));
+}
+
 test "ParseTree.Node.match: (p v q)" {
     var allocator = std.testing.allocator;
     var tree = try ParseTree.init(allocator, "(p v q)");
@@ -558,11 +631,11 @@ test "ParseTree.Node.match: (p v q)" {
     const expected = [_]Match{
         Match{
             .wff_node = &tree.root.data.Nonterminal.items[1],
-            .pattern_node = &pattern.root.data.Nonterminal.items[1],
+            .pattern_node = &pattern.root.data.Nonterminal.items[1].data.Nonterminal.items[0],
         },
         Match{
             .wff_node = &tree.root.data.Nonterminal.items[3],
-            .pattern_node = &pattern.root.data.Nonterminal.items[3],
+            .pattern_node = &pattern.root.data.Nonterminal.items[3].data.Nonterminal.items[0],
         },
     };
 
@@ -582,11 +655,11 @@ test "ParseTree.Node.match: ((a ^ b) v (c ^ d))" {
     const expected = [_]Match{
         Match{
             .wff_node = &tree.root.data.Nonterminal.items[1],
-            .pattern_node = &pattern.root.data.Nonterminal.items[1],
+            .pattern_node = &pattern.root.data.Nonterminal.items[1].data.Nonterminal.items[0],
         },
         Match{
             .wff_node = &tree.root.data.Nonterminal.items[3],
-            .pattern_node = &pattern.root.data.Nonterminal.items[3],
+            .pattern_node = &pattern.root.data.Nonterminal.items[3].data.Nonterminal.items[0],
         },
     };
 
@@ -617,11 +690,11 @@ test "ParseTree.matchAll: (p v q)" {
     const expected = [_]Match{
         Match{
             .wff_node = &tree.root.data.Nonterminal.items[1],
-            .pattern_node = &pattern.root.data.Nonterminal.items[1],
+            .pattern_node = &pattern.root.data.Nonterminal.items[1].data.Nonterminal.items[0],
         },
         Match{
             .wff_node = &tree.root.data.Nonterminal.items[3],
-            .pattern_node = &pattern.root.data.Nonterminal.items[3],
+            .pattern_node = &pattern.root.data.Nonterminal.items[3].data.Nonterminal.items[0],
         },
     };
 
@@ -679,7 +752,8 @@ fn tokenize(allocator: std.mem.Allocator, wff_string: []const u8) !std.ArrayList
 
                 // TODO: Include v as an allowable variable name (currently it
                 // conflicts with OR operator).
-                'a'...'u', 'w'...'z', 'A'...'Z' => |val| Token{ .Proposition = PropositionVar{ .string = val } },
+                'a'...'u', 'w'...'z', 'A'...'Z' => |val| Token{ .Proposition = PropositionVar{ .string = .{val} } },
+    
 
                 else => ParseError.UnexpectedToken,
             },
@@ -719,9 +793,9 @@ test "tokenize: '(p v q)'" {
     defer result.deinit();
     const expected = [_]Token{
         Token.LParen,
-        Token{ .Proposition = PropositionVar{ .string = 'p' } },
+        Token{ .Proposition = PropositionVar{ .string = .{'p'} } },
         Token{ .Operator = WffOperator.Or },
-        Token{ .Proposition = PropositionVar{ .string = 'q' } },
+        Token{ .Proposition = PropositionVar{ .string = .{'q'} } },
         Token.RParen,
     };
 
@@ -736,7 +810,7 @@ test "tokenize: 'p'" {
     var result = try tokenize(std.testing.allocator, "p");
     defer result.deinit();
     const expected = [_]Token{
-        Token{ .Proposition = PropositionVar{ .string = 'p' } },
+        Token{ .Proposition = PropositionVar{ .string = .{'p'} } },
     };
 
     try std.testing.expectEqualSlices(Token, &expected, result.items);
