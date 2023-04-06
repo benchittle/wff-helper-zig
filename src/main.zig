@@ -46,6 +46,7 @@ const Wff = struct {
         return self.parse_tree.matchAll(&pattern.parse_tree);
     }
 
+    // TODO: Generate new string after substitution
     pub fn substitute(self: *Self, pattern: *Self, replace: *Self, index: usize) !Self {
         var result = try replace.copy();
         errdefer result.deinit();
@@ -99,7 +100,7 @@ test "Wff.equals" {
 }
 
 
-test "Wff.substitute" {
+test "Wff.substitute: ((a ^ b) v (c ^ d)) using (p v q) to (p => q)" {
     var wff = try Wff.init(std.testing.allocator, "((a ^ b) v (c ^ d))");
     defer wff.deinit();
     var pattern = try Wff.init(std.testing.allocator, "(p v q)");
@@ -119,11 +120,25 @@ test "Wff.substitute" {
     var expected_str = try expected.parse_tree.toString(std.testing.allocator);
     defer std.testing.allocator.free(expected_str);
 
-    //std.debug.print("\n\nexpected_given: '{s}'\nexpected: '{s}'\nactual: '{s}'\n\n", .{expected.string, expected_str, new_str});
-
     try std.testing.expect(expected.equals(&new));
 }
 
+test "Wff.substitute: ((a ^ b) v (c ^ d)) using (p v p) to (p => q)" {
+    var wff = try Wff.init(std.testing.allocator, "((a ^ b) v (c ^ d))");
+    defer wff.deinit();
+    var pattern = try Wff.init(std.testing.allocator, "(p v p)");
+    defer pattern.deinit();
+    var replace = try Wff.init(std.testing.allocator, "(p => q)");
+    defer replace.deinit();
+
+    var new = try wff.substitute(&pattern, &replace, 0);
+    defer new.deinit();
+
+    var expected = try Wff.init(std.testing.allocator, "(p => q)");
+    defer expected.deinit();
+
+    try std.testing.expect(expected.equals(&new));
+}
 
 pub fn main() !void {
     std.debug.print("Hello\n", .{});

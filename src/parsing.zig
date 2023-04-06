@@ -123,28 +123,25 @@ const MatchHashContext = struct {
 
 pub const MatchHashMap = std.HashMap(Token, *ParseTree.Node, MatchHashContext, std.hash_map.default_max_load_percentage);
 
-
+// TODO: Prevent visiting parent of start node
 pub const ParseTreeDepthFirstIterator = struct {
     const Self = @This();
 
+    start: *ParseTree.Node,
     current: ?[*]ParseTree.Node,
 
     fn backtrack(self: *Self) ?[*]ParseTree.Node {
         var next_node = self.current.?;
         while (next_node[0].parent) |parent| {
             const siblings = parent.data.Nonterminal.items;
-            // std.debug.print("\nnext_node: {*}\nparent_node: {*}\nsiblen-1: {*}\n", .{next_node, parent, &siblings[siblings.len - 1]});
-            // for (siblings) |_, i| {
-            //     std.debug.print("sibling {d}: {*}\n", .{ i, &siblings[i] });
-            // }
             if (&(next_node[0]) == &(siblings[siblings.len - 1])) {
+                if (parent == self.start) return null;
                 next_node = @ptrCast(@TypeOf(next_node), parent);
             } else {
                 return next_node + 1;
             }
-        } else { // if we don't break above
-            return null;
-        }
+        } 
+        return null;
     }
 
     pub fn next(self: *Self) ?*ParseTree.Node {
@@ -219,6 +216,7 @@ test "ParseTreeDepthFirstIterator" {
 pub const ParseTreePostOrderIterator = struct {
     const Self = @This();
 
+    root: *ParseTree.Node,
     current: ?[*]ParseTree.Node,
 
     // if terminal, go to parent 
@@ -236,7 +234,10 @@ pub const ParseTreePostOrderIterator = struct {
         };
         const siblings = parent.data.Nonterminal.items;
 
-        if (current_node == &siblings[siblings.len - 1]) {
+        if (current_node == self.root) {
+            self.current = null;
+            return current_node;
+        } else if (current_node == &siblings[siblings.len - 1]) {
             self.current = @ptrCast(@TypeOf(self.current), parent);
             return current_node;
         }
@@ -318,9 +319,7 @@ pub const ParseTree = struct {
 
             while (it.hasNext()) {
                 const node = it.nextUnchecked();
-                // break if we've returned to / above the start node (we don't
-                // want to copy nodes above ourselves).
-                var copy_node = copy_it.peek() orelse break;
+                var copy_node = copy_it.peek().?;
 
                 switch (node.data) {
                     .Terminal => |tok| copy_node.data = Data{.Terminal = tok },
@@ -339,7 +338,7 @@ pub const ParseTree = struct {
         }
 
         pub fn iterDepthFirst(self: *Node) ParseTreeDepthFirstIterator {
-            return ParseTreeDepthFirstIterator{ .current = @ptrCast(?[*]ParseTree.Node, self) };
+            return ParseTreeDepthFirstIterator{ .start = self, .current = @ptrCast(?[*]ParseTree.Node, self) };
         }
 
         pub fn iterPostOrder(self: *Node) ParseTreePostOrderIterator {
@@ -350,7 +349,7 @@ pub const ParseTree = struct {
                     .Nonterminal => |children| start_node = &children.items[0],
                 }
             }
-            return ParseTreePostOrderIterator{ .current = @ptrCast(?[*]ParseTree.Node, start_node) };
+            return ParseTreePostOrderIterator{ .root = self, .current = @ptrCast(?[*]ParseTree.Node, start_node) };
         }
 
         pub fn eql(self: *Node, other: *Node) bool {
@@ -359,9 +358,6 @@ pub const ParseTree = struct {
 
             while (it.hasNext() and other_it.hasNext()) {
                 const node = it.nextUnchecked();
-                if (node == self) {
-                    break;
-                }
                 const other_node = other_it.nextUnchecked();
 
                 switch (node.data) {
@@ -404,8 +400,6 @@ pub const ParseTree = struct {
 
                                 const proposition = pattern_children.items[0].data.Terminal;
                                 if (matches.get(proposition)) |existing_match| {
-                                    var m = existing_match;
-                                    _ = m;
                                     if (!existing_match.eql(node)) {
                                         _ = matches.remove(proposition);
                                     }
