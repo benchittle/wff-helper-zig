@@ -28,7 +28,9 @@ test "defer1" {
     }
 }
 
-test "defer2" {
-    return 0;
-    defer std.debug.print("still here :)\n");
+test "access" {
+    var a = MyUnion{.choiceA = 56};
+    if (a.choiceB) |c| {
+        std.debug.print("{d}\n", c);
+    }
 }

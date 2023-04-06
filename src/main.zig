@@ -32,8 +32,7 @@ const Wff = struct {
     pub fn copy(self: *Self) !Self {
         return Wff{
             .string = self.string,
-            // TODO: try self.parse_tree.copy(),
-            .parse_tree = try parsing.ParseTree.init(self.allocator, self.string), 
+            .parse_tree = parsing.ParseTree{.allocator = self.allocator, .root = try self.parse_tree.root.copy(self.allocator)}, 
             .allocator = self.allocator,
         };
     }
@@ -59,13 +58,29 @@ const Wff = struct {
         var result = try replace.copy();
         errdefer result.deinit();
 
-        for (chosen_matches.items) |*match| {
-            // TODO HERE BEN
-            match.wff_node = match.wff_node.copy(result.parse_tree.allocator);
+        var it = result.parse_tree.iterBreadthFirst();
+        while (it.peek()) |node|: (_ = it.next()) {
+            switch(node.data) {
+                .Terminal => |tok| {
+                    switch(tok) {
+                        .Proposition => {
+                            // TODO: Use hashmap for matches
+                            for (chosen_matches.items) |match| {
+                                if (tok.equals(match.pattern_node.data.Terminal)) {
+                                    var match_copy = try match.wff_node.copy(result.allocator); 
+                                    defer result.allocator.destroy(match_copy);
+                                    node.data = match_copy.data;
+                                    break;
+                                }
+                            }
+                        },
+                        else => {},
+                    }
+                },
+                .Nonterminal => {},
+            }
         }
-
-
-
+        return result;
     }
 };
 
