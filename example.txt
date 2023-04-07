@@ -1,0 +1,38 @@
+Prove (a => (b => a))
+
+Proof methods:
+1. None
+2. Direct
+3. Indirect
+4. Contradiction
+
+Enter a proof method: 2
+
+Assumptions (Gamma):    (a)
+Goal:                   (b => a)
+1. (a)          (by Gamma)  #1
+2. (a v ~b)     1, I1       #2
+3. (~b v a)     2, E10
+4. (b => a)     3, E18      #3
+QED
+
+#1: At the start of the proof, the user should be prompted with a message in the input / message area to "Start by entering a true wff. This can be any given wff (from gamma), or any wff that matches the form of an equivalence rule, or the value true".
+- If they enter a valid wff, it is inserted into the proof area, and they are prompted for the next line. If they enter an invalid or untrue wff, we notify them and ask again
+
+#2: We prompt them for further input slightly differently: now they can apply inference rules.
+"Enter a true wff, or apply an equivalence or inference rule to a previous wff".
+- Expected input: "1, I1" or "2 E10", ...
+- If they enter invalid input or an equivalence rule which can't apply, notify them and prompt again.
+
+#3: At each step, we check the current line against the desired goal: if they match, the proof is done.
+
+
+
+===
+
+Definition of a proof: 
+- A proof method
+- Gamma: a list of wffs which are assumed to be true
+- Goal: The final line of the proof
+- A sequence of steps
+    - Each step is a wff and justification for the truth of that wff based on previous steps or theorems

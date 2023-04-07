@@ -338,7 +338,7 @@ pub const ParseTree = struct {
         }
 
         pub fn iterDepthFirst(self: *Node) ParseTreeDepthFirstIterator {
-            return ParseTreeDepthFirstIterator{ .start = self, .current = @ptrCast(?[*]ParseTree.Node, self) };
+            return ParseTreeDepthFirstIterator{ .start = self, .current = @ptrCast([*]ParseTree.Node, self) };
         }
 
         pub fn iterPostOrder(self: *Node) ParseTreePostOrderIterator {
@@ -349,7 +349,7 @@ pub const ParseTree = struct {
                     .Nonterminal => |children| start_node = &children.items[0],
                 }
             }
-            return ParseTreePostOrderIterator{ .root = self, .current = @ptrCast(?[*]ParseTree.Node, start_node) };
+            return ParseTreePostOrderIterator{ .root = self, .current = @ptrCast([*]ParseTree.Node, start_node) };
         }
 
         pub fn eql(self: *Node, other: *Node) bool {
@@ -375,7 +375,7 @@ pub const ParseTree = struct {
         }
 
         /// Allocator will be used to create the hashmap for storing matches
-        fn match(self: *Node, allocator: std.mem.Allocator, pattern: *Node) !?MatchHashMap {
+        pub fn match(self: *Node, allocator: std.mem.Allocator, pattern: *Node) !?MatchHashMap {
             var matches = MatchHashMap.init(allocator); 
             errdefer matches.deinit();
 
@@ -476,10 +476,32 @@ pub const ParseTree = struct {
         var it = self.iterDepthFirst();
         while (it.next()) |node| {
             switch(node.data) {
-                .Terminal => |*tok| try string_buf.appendSlice(tok.getString()),
+                .Terminal => |*tok| {
+                    switch(tok.*) {
+                        .LParen => try string_buf.appendSlice(tok.getString()),
+                        .RParen => {
+                            _ = string_buf.pop();
+                            try string_buf.appendSlice(tok.getString());
+                            try string_buf.append(' ');
+                        },
+                        .Operator => |op| {
+                            try string_buf.appendSlice(tok.getString());
+                            switch(op) {
+                                .And, .Or, .Cond, .Bicond => try string_buf.append(' '),
+                                .Not => {},
+                            }
+                        },
+                        .Proposition => {
+                            try string_buf.appendSlice(tok.getString());
+                            try string_buf.append(' ');
+                        },
+
+                    }
+                },
                 .Nonterminal => {},
             }
         }
+        _ = string_buf.pop(); // remove trailing space
         return string_buf.toOwnedSlice();
     }
 
@@ -612,7 +634,7 @@ test "ParseTree.toString: (p v q)" {
     var string = try tree.toString(std.testing.allocator);
     defer std.testing.allocator.free(string);
 
-    try std.testing.expectEqualStrings("(pvq)", string);
+    try std.testing.expectEqualStrings("(p v q)", string);
 }
 
 test "ParseTree.toString: ~((a ^ b) => (c ^ ~d))" {
@@ -622,7 +644,7 @@ test "ParseTree.toString: ~((a ^ b) => (c ^ ~d))" {
     var string = try tree.toString(std.testing.allocator);
     defer std.testing.allocator.free(string);
 
-    try std.testing.expectEqualStrings("~((a^b)=>(c^~d))", string);
+    try std.testing.expectEqualStrings("~((a ^ b) => (c ^ ~d))", string);
 }
 
 test "ParseTree.copy: (p v q)" {

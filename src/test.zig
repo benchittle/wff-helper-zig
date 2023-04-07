@@ -5,6 +5,10 @@ const MyUnion = union(enum) {
     choiceB: u64,
 };
 
+const AnonStructTest = struct {
+    x: struct {a: u32, b: u64},
+};
+
 test "choiceA" {
     var allocator = std.testing.allocator;
 
@@ -28,9 +32,15 @@ test "defer1" {
     }
 }
 
-test "access" {
-    var a = MyUnion{.choiceA = 56};
-    if (a.choiceB) |c| {
-        std.debug.print("{d}\n", c);
-    }
+
+//test "access" {
+//    var a = MyUnion{.choiceA = 56};
+//    if (a.choiceB) |c| {
+//        std.debug.print("{d}\n", c);
+//    }
+//}
+
+test "anon struct" {
+    var a = AnonStructTest{.x = .{.a = 32, .b = 69}};
+    std.debug.print("{any}\n", .{a});
 }
