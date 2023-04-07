@@ -91,18 +91,21 @@ pub const Wff = struct {
 
         var it = result.parse_tree.iterDepthFirst();
         while (it.next()) |node| switch (node.data) {
-            .Terminal => |tok| {
-                if (chosen_matches.get(tok)) |wff_node| {
-                    var match_copy = try wff_node.copy(result.allocator);
-                    defer result.allocator.destroy(match_copy);
-                    var old_data = node.parent.?.data.Nonterminal;
-                    defer old_data.deinit();
+            .Terminal => |tok| switch(tok) {
+                .Proposition => |prop| {
+                    if (chosen_matches.get(&prop.string)) |wff_node| {
+                        var match_copy = try wff_node.copy(result.allocator);
+                        defer result.allocator.destroy(match_copy);
+                        var old_data = node.parent.?.data.Nonterminal;
+                        defer old_data.deinit();
 
-                    node.parent.?.data = match_copy.data;
-                    for (match_copy.data.Nonterminal.items) |*child| {
-                        child.parent = node.parent.?;
+                        node.parent.?.data = match_copy.data;
+                        for (match_copy.data.Nonterminal.items) |*child| {
+                            child.parent = node.parent.?;
+                        }
                     }
-                }
+                },
+                else => {},
             },
             .Nonterminal => {},
         };

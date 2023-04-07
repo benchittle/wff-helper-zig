@@ -82,10 +82,8 @@ const Proof = struct {
                 var match = try wff.match(&direct) orelse return ProofError.ProofMethodError;
                 defer match.deinit();
 
-                const p = parsing.Token{.Proposition = parsing.PropositionVar{.string = .{'p'}}};
-                const q = parsing.Token{.Proposition = parsing.PropositionVar{.string = .{'q'}}};
-                try assumptions.append(try w.Wff.initFromNode(allocator, match.get(p).?));
-                break :ret try w.Wff.initFromNode(allocator, match.get(q).?);
+                try assumptions.append(try w.Wff.initFromNode(allocator, match.get("p").?));
+                break :ret try w.Wff.initFromNode(allocator, match.get("q").?);
             }
         };
         errdefer goal.deinit();

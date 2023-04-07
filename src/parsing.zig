@@ -76,11 +76,6 @@ pub const Token = union(enum) {
         };
     }
 
-    pub fn hash(self: Self) u64 {
-        var tmp = self;
-        return std.hash_map.hashString(Token.getString(&tmp));
-    }
-
     pub fn getString(self: *Self) []const u8 {
         return switch(self.*) {
             .LParen => "(",
@@ -109,19 +104,7 @@ test "Token.equals" {
     try std.testing.expect(!t1.eql(t5));
 }
 
-const MatchHashContext = struct {
-    const Self = @This();
-
-    pub fn hash(_: Self, token: Token) u64 {
-        return token.hash();
-    }
-
-    pub fn eql(_: Self, token1: Token, token2: Token) bool {
-        return token1.eql(token2);
-    }
-};
-
-pub const MatchHashMap = std.HashMap(Token, *ParseTree.Node, MatchHashContext, std.hash_map.default_max_load_percentage);
+pub const MatchHashMap = std.StringHashMap(*ParseTree.Node);
 
 // TODO: Prevent visiting parent of start node
 pub const ParseTreeDepthFirstIterator = struct {
@@ -398,13 +381,13 @@ pub const ParseTree = struct {
                                 it.skipChildren();
                                 pattern_it.skipChildren();
 
-                                const proposition = pattern_children.items[0].data.Terminal;
-                                if (matches.get(proposition)) |existing_match| {
+                                const proposition_str = &pattern_children.items[0].data.Terminal.Proposition.string;
+                                if (matches.get(proposition_str)) |existing_match| {
                                     if (!existing_match.eql(node)) {
-                                        _ = matches.remove(proposition);
+                                        _ = matches.remove(proposition_str);
                                     }
                                 } else {
-                                    try matches.put(proposition, node);
+                                    try matches.put(proposition_str, node);
                                 }
                                 continue;
                             } else if (children.items.len == pattern_children.items.len) {
@@ -680,11 +663,11 @@ test "ParseTree.Node.match: (p v q) with pattern (p v q)" {
     try std.testing.expect(matches.count() == 2);
     try std.testing.expectEqual(
         &tree.root.data.Nonterminal.items[1],
-        matches.get(Token{.Proposition = PropositionVar{.string = .{'p'}}}).?
+        matches.get("p").?
     );
     try std.testing.expectEqual(
         &tree.root.data.Nonterminal.items[3],
-        matches.get(Token{.Proposition = PropositionVar{.string = .{'q'}}}).?
+        matches.get("q").?
     );
 
     //try std.testing.expectEqualSlices(Match, &expected, matches.items);
@@ -703,11 +686,11 @@ test "ParseTree.Node.match: ((a ^ b) v (c ^ d)) with pattern (p v q)" {
     try std.testing.expect(matches.count() == 2);
     try std.testing.expectEqual(
         &tree.root.data.Nonterminal.items[1],
-        matches.get(Token{.Proposition = PropositionVar{.string = .{'p'}}}).?
+        matches.get("p").?
     );
     try std.testing.expectEqual(
         &tree.root.data.Nonterminal.items[3],
-        matches.get(Token{.Proposition = PropositionVar{.string = .{'q'}}}).?
+        matches.get("q").?
     );
 }
 
@@ -724,7 +707,7 @@ test "ParseTree.Node.match: (p v p) with pattern (p v p)" {
     try std.testing.expect(matches.count() == 1);
     try std.testing.expectEqual(
         &tree.root.data.Nonterminal.items[1],
-        matches.get(Token{.Proposition = PropositionVar{.string = .{'p'}}}).?
+        matches.get("p").?
     );
 }
 
@@ -751,7 +734,7 @@ test "ParseTree.Node.match: ((a ^ b) => (a ^ b)) with pattern (p => p)" {
     try std.testing.expect(matches.count() == 1);
     try std.testing.expectEqual(
         &tree.root.data.Nonterminal.items[1],
-        matches.get(Token{.Proposition = PropositionVar{.string = .{'p'}}}).?
+        matches.get("p").?
     );
 }
 
@@ -778,11 +761,11 @@ test "ParseTree.Node.match: (x <=> x) with pattern (p <=> q)" {
     try std.testing.expect(matches.count() == 2);
     try std.testing.expectEqual(
         &tree.root.data.Nonterminal.items[1],
-        matches.get(Token{.Proposition = PropositionVar{.string = .{'p'}}}).?
+        matches.get("p").?
     );
     try std.testing.expectEqual(
         &tree.root.data.Nonterminal.items[3],
-        matches.get(Token{.Proposition = PropositionVar{.string = .{'q'}}}).?
+        matches.get("q").?
     );
 }
 
@@ -810,11 +793,11 @@ test "ParseTree.matchAll: (p v q)" {
     try std.testing.expect(match1.count() == 2);
     try std.testing.expectEqual(
         &tree.root.data.Nonterminal.items[1],
-        match1.get(Token{.Proposition = PropositionVar{.string = .{'p'}}}).?
+        match1.get("p").?
     );
     try std.testing.expectEqual(
         &tree.root.data.Nonterminal.items[3],
-        match1.get(Token{.Proposition = PropositionVar{.string = .{'q'}}}).?
+        match1.get("q").?
     );
 
 }
