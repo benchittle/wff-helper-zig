@@ -79,7 +79,7 @@ const Proof = struct {
             .Direct => ret: {
                 var direct = try w.Wff.init(allocator, "(p => q)");
                 defer direct.deinit();
-                var match = try wff.match(&direct) orelse return ProofError.ProofMethodError;
+                var match = try wff.match(direct) orelse return ProofError.ProofMethodError;
                 defer match.deinit();
 
                 try assumptions.append(try w.Wff.initFromNode(allocator, match.get("p").?));
@@ -98,7 +98,7 @@ const Proof = struct {
         };
     }
 
-    pub fn deinit(self: *Self) void {
+    pub fn deinit(self: Self) void {
         self.wff.deinit();
         for (self.assumptions.items) |*wff| {
             wff.deinit();
@@ -110,6 +110,10 @@ const Proof = struct {
         }
         self.steps.deinit();
     }
+
+    // pub fn tryNext(self: *Self, step: Step) !bool {
+
+    // }
 };
 
 test "proof: init" {

@@ -24,32 +24,30 @@ pub const Wff = struct {
     }
 
     pub fn initFromNode(allocator: std.mem.Allocator, node: *parsing.ParseTree.Node) !Self {
-        std.debug.assert(
-            switch(node.data) {
-                .Terminal => false,
-                .Nonterminal => true,
-            }
-        );
+        std.debug.assert(switch (node.data) {
+            .Terminal => false,
+            .Nonterminal => true,
+        });
 
-        var tree = parsing.ParseTree {
+        var tree = parsing.ParseTree{
             .allocator = allocator,
             .root = try node.copy(allocator),
         };
         errdefer tree.deinit();
 
-        return Wff {
+        return Wff{
             .allocator = allocator,
             .string = try tree.toString(allocator),
             .parse_tree = tree,
         };
     }
 
-    pub fn deinit(self: *Self) void {
+    pub fn deinit(self: Self) void {
         self.parse_tree.deinit();
         self.allocator.free(self.string);
     }
 
-    pub fn copy(self: *Self) !Self {
+    pub fn copy(self: Self) !Self {
         return Wff{
             .string = try self.allocator.dupe(u8, self.string),
             .parse_tree = try self.parse_tree.copy(),
@@ -57,24 +55,22 @@ pub const Wff = struct {
         };
     }
 
-    pub fn equals(self: *Self, other: *Self) bool {
-        return self.parse_tree.equals(&other.parse_tree);
+    pub fn equals(self: Self, other: Self) bool {
+        return self.parse_tree.eql(other.parse_tree);
     }
 
-
-    pub fn match(self: *Self, pattern: *Self) !?parsing.MatchHashMap {
+    pub fn match(self: Self, pattern: Self) !?parsing.MatchHashMap {
         return self.parse_tree.root.match(self.allocator, pattern.parse_tree.root);
     }
 
     // TODO: Match should return a pre built tree? Or wff?
-    // TODO: a match should be a hashmap with the token string as the key, not 
+    // TODO: a match should be a hashmap with the token string as the key, not
     //       the token
-    pub fn matchAll(self: *Self, pattern: *Self) !?std.ArrayList(parsing.MatchHashMap) {
-        return self.parse_tree.matchAll(&pattern.parse_tree);
+    pub fn matchAll(self: Self, pattern: Self) !?std.ArrayList(parsing.MatchHashMap) {
+        return self.parse_tree.matchAll(pattern.parse_tree);
     }
 
-    
-    pub fn substitute(self: *Self, pattern: *Self, replace: *Self, index: usize) !Self {
+    pub fn substitute(self: Self, pattern: Self, replace: Self, index: usize) !Self {
         var result = try replace.copy();
         errdefer result.deinit();
 
@@ -91,9 +87,10 @@ pub const Wff = struct {
 
         var it = result.parse_tree.iterDepthFirst();
         while (it.next()) |node| switch (node.data) {
-            .Terminal => |tok| switch(tok) {
+            .Terminal => |tok| switch (tok) {
                 .Proposition => |prop| {
-                    if (chosen_matches.get(&prop.string)) |wff_node| {
+                    if (chosen_matches.get(prop.string)) |wff_node| {
+                        defer result.allocator.free(prop.string);
                         var match_copy = try wff_node.copy(result.allocator);
                         defer result.allocator.destroy(match_copy);
                         var old_data = node.parent.?.data.Nonterminal;
@@ -127,9 +124,9 @@ test "Wff.equals" {
     var wff4 = try Wff.init(std.testing.allocator, "(p => q)");
     defer wff4.deinit();
 
-    try std.testing.expect(wff3.equals(&wff1));
-    try std.testing.expect(wff3.equals(&wff2));
-    try std.testing.expect(!wff3.equals(&wff4));
+    try std.testing.expect(wff3.equals(wff1));
+    try std.testing.expect(wff3.equals(wff2));
+    try std.testing.expect(!wff3.equals(wff4));
 }
 
 test "Wff.substitute: ((a ^ b) v (c ^ d)) using (p v q) to (p => q)" {
@@ -140,13 +137,13 @@ test "Wff.substitute: ((a ^ b) v (c ^ d)) using (p v q) to (p => q)" {
     var replace = try Wff.init(std.testing.allocator, "(p => q)");
     defer replace.deinit();
 
-    var new = try wff.substitute(&pattern, &replace, 0);
+    var new = try wff.substitute(pattern, replace, 0);
     defer new.deinit();
 
     var expected = try Wff.init(std.testing.allocator, "((a ^ b) => (c ^ d))");
     defer expected.deinit();
 
-    try std.testing.expect(expected.equals(&new));
+    try std.testing.expect(expected.equals(new));
     try std.testing.expectEqualStrings(expected.string, new.string);
 }
 
@@ -158,11 +155,11 @@ test "Wff.substitute: ((a ^ b) v (c ^ d)) using (p v p) to (p => q)" {
     var replace = try Wff.init(std.testing.allocator, "(p => q)");
     defer replace.deinit();
 
-    var new = try wff.substitute(&pattern, &replace, 0);
+    var new = try wff.substitute(pattern, replace, 0);
     defer new.deinit();
 
     var expected = try Wff.init(std.testing.allocator, "(p => q)");
     defer expected.deinit();
 
-    try std.testing.expect(expected.equals(&new));
+    try std.testing.expect(expected.equals(new));
 }

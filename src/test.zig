@@ -55,3 +55,12 @@ test "copy string literal" {
 
     std.debug.print("{s} {s}\n", .{a, b});
 }
+
+test "const" {
+    var a = [_]u32 {1, 2, 3, 4};
+    var ptr: *const u32 = &a[0];
+
+    ptr = &a[1];
+    //ptr.* = 69;
+
+}
