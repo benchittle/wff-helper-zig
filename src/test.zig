@@ -44,3 +44,14 @@ test "anon struct" {
     var a = AnonStructTest{.x = .{.a = 32, .b = 69}};
     std.debug.print("{any}\n", .{a});
 }
+
+test "copy string literal" {
+    var a = try std.testing.allocator.dupe(u8, "hi");
+    defer std.testing.allocator.free(a);
+    var b = try std.testing.allocator.alloc(u8, 1);
+    defer std.testing.allocator.free(b);
+    b[0] = a[0];
+
+
+    std.debug.print("{s} {s}\n", .{a, b});
+}
