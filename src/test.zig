@@ -9,6 +9,13 @@ const AnonStructTest = struct {
     x: struct {a: u32, b: u64},
 };
 
+
+fn makeStruct(comptime allocator: std.mem.Allocator) type {
+    return struct {
+        const R1 = std.ArrayList(u32).init(allocator);
+    };
+}
+
 test "choiceA" {
     var allocator = std.testing.allocator;
 
@@ -64,3 +71,15 @@ test "const" {
     //ptr.* = 69;
 
 }
+
+test "struct init" {
+    const mystruct = makeStruct(std.testing.allocator);
+    var t = mystruct.R1;
+    std.debug.print("\n\nt: {any}\n", .{t});
+}
+
+// test "array syntax" {
+//     const arr = [_]u32 {
+        
+//     }
+// }

@@ -7,13 +7,61 @@ pub const WffError = error{
     BadSubstitution,
 };
 
+pub const Match = struct {
+    const Self = @This();
+
+    matches: parsing.MatchHashMap,
+
+    pub fn deinit(self: *Self) void {
+        self.matches.deinit();
+    }
+
+    /// Lookup a match in the hashmap and build a new Wff for it if it exists
+    pub fn getBuildWff(self: Self, allocator: std.mem.Allocator, key: []const u8) !?Wff {
+        var node = self.matches.get(key) orelse return null;
+        return try Wff.initFromNode(allocator, node);
+    }
+
+    pub fn substitute(self: Self, replace: Wff) !?Wff {
+        var result = try replace.copy();
+        errdefer result.deinit();
+
+        var it = result.parse_tree.iterDepthFirst();
+        while (it.next()) |node| switch (node.data) {
+            .Terminal => |tok| switch (tok) {
+                .Proposition => |prop| {
+                    if (self.matches.get(prop.string)) |wff_node| {
+                        defer result.allocator.free(prop.string);
+                        var match_copy = try wff_node.copy(result.allocator);
+                        defer result.allocator.destroy(match_copy);
+                        var old_data = node.parent.?.data.Nonterminal;
+                        defer old_data.deinit();
+
+                        node.parent.?.data = match_copy.data;
+                        for (match_copy.data.Nonterminal.items) |*child| {
+                            child.parent = node.parent.?;
+                        }
+                    }
+                },
+                else => {},
+            },
+            .Nonterminal => {},
+        };
+
+        result.allocator.free(result.string);
+        result.string = try result.parse_tree.toString(result.allocator);
+
+        return result;
+    }
+};
+
 pub const Wff = struct {
     const Self = @This();
 
+    allocator: std.mem.Allocator,
     string: []u8,
     parse_tree: parsing.ParseTree,
 
-    allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator, wff_string: []const u8) !Self {
         return Wff{
@@ -23,7 +71,11 @@ pub const Wff = struct {
         };
     }
 
+    /// Create a new Wff instance from a nonterminal node. The node is used as 
+    /// the root of the new parse tree, and all nodes are copied, so this Wff
+    /// shares no memory with the parse tree nodes it was created from.
     pub fn initFromNode(allocator: std.mem.Allocator, node: *parsing.ParseTree.Node) !Self {
+        // The root node is always nonterminal.
         std.debug.assert(switch (node.data) {
             .Terminal => false,
             .Nonterminal => true,
@@ -55,62 +107,28 @@ pub const Wff = struct {
         };
     }
 
-    pub fn equals(self: Self, other: Self) bool {
+    pub fn eql(self: Self, other: Self) bool {
         return self.parse_tree.eql(other.parse_tree);
     }
 
-    pub fn match(self: Self, pattern: Self) !?parsing.MatchHashMap {
-        return self.parse_tree.root.match(self.allocator, pattern.parse_tree.root);
-    }
-
-    // TODO: Match should return a pre built tree? Or wff?
-    // TODO: a match should be a hashmap with the token string as the key, not
-    //       the token
-    pub fn matchAll(self: Self, pattern: Self) !?std.ArrayList(parsing.MatchHashMap) {
-        return self.parse_tree.matchAll(pattern.parse_tree);
-    }
-
-    pub fn substitute(self: Self, pattern: Self, replace: Self, index: usize) !Self {
-        var result = try replace.copy();
-        errdefer result.deinit();
-
-        var candidates = try self.matchAll(pattern) orelse return result;
-        defer {
-            for (candidates.items) |*matches| {
-                matches.deinit();
-            }
-            candidates.deinit();
-        }
-        if (index >= candidates.items.len) return WffError.SubOutOfBounds;
-
-        var chosen_matches = candidates.items[index];
-
-        var it = result.parse_tree.iterDepthFirst();
-        while (it.next()) |node| switch (node.data) {
-            .Terminal => |tok| switch (tok) {
-                .Proposition => |prop| {
-                    if (chosen_matches.get(prop.string)) |wff_node| {
-                        defer result.allocator.free(prop.string);
-                        var match_copy = try wff_node.copy(result.allocator);
-                        defer result.allocator.destroy(match_copy);
-                        var old_data = node.parent.?.data.Nonterminal;
-                        defer old_data.deinit();
-
-                        node.parent.?.data = match_copy.data;
-                        for (match_copy.data.Nonterminal.items) |*child| {
-                            child.parent = node.parent.?;
-                        }
-                    }
-                },
-                else => {},
-            },
-            .Nonterminal => {},
+    pub fn match(self: Self, pattern: Self) !?Match {
+        return Match {
+            .matches = try self.parse_tree.root.match(self.allocator, pattern.parse_tree.root) orelse return null
         };
+    }
 
-        result.allocator.free(result.string);
-        result.string = try result.parse_tree.toString(result.allocator);
-
-        return result;
+    // TODO: Maybe ParseTree.matchall should return Match objects instead of HashMaps?
+    pub fn matchAll(self: Self, pattern: Self) !?std.ArrayList(Match) {
+        var match_maps = try self.parse_tree.matchAll(pattern.parse_tree) orelse return null;
+        defer match_maps.deinit();
+        errdefer {
+            for (match_maps.items) |*m| m.deinit();
+        }
+        var matches = try std.ArrayList(Match).initCapacity(self.allocator, match_maps.items.len);
+        for (match_maps.items) |m| {
+            matches.appendAssumeCapacity(Match{.matches = m});
+        }
+        return matches;
     }
 };
 
@@ -124,9 +142,9 @@ test "Wff.equals" {
     var wff4 = try Wff.init(std.testing.allocator, "(p => q)");
     defer wff4.deinit();
 
-    try std.testing.expect(wff3.equals(wff1));
-    try std.testing.expect(wff3.equals(wff2));
-    try std.testing.expect(!wff3.equals(wff4));
+    try std.testing.expect(wff3.eql(wff1));
+    try std.testing.expect(wff3.eql(wff2));
+    try std.testing.expect(!wff3.eql(wff4));
 }
 
 test "Wff.substitute: ((a ^ b) v (c ^ d)) using (p v q) to (p => q)" {
@@ -137,13 +155,15 @@ test "Wff.substitute: ((a ^ b) v (c ^ d)) using (p v q) to (p => q)" {
     var replace = try Wff.init(std.testing.allocator, "(p => q)");
     defer replace.deinit();
 
-    var new = try wff.substitute(pattern, replace, 0);
+    var match = (try wff.match(pattern)).?;
+    defer match.deinit();
+    var new = (try match.substitute(replace)).?;
     defer new.deinit();
 
     var expected = try Wff.init(std.testing.allocator, "((a ^ b) => (c ^ d))");
     defer expected.deinit();
 
-    try std.testing.expect(expected.equals(new));
+    try std.testing.expect(expected.eql(new));
     try std.testing.expectEqualStrings(expected.string, new.string);
 }
 
@@ -155,11 +175,5 @@ test "Wff.substitute: ((a ^ b) v (c ^ d)) using (p v p) to (p => q)" {
     var replace = try Wff.init(std.testing.allocator, "(p => q)");
     defer replace.deinit();
 
-    var new = try wff.substitute(pattern, replace, 0);
-    defer new.deinit();
-
-    var expected = try Wff.init(std.testing.allocator, "(p => q)");
-    defer expected.deinit();
-
-    try std.testing.expect(expected.equals(new));
+    try std.testing.expect(try wff.match(pattern) == null);
 }

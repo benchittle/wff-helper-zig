@@ -107,6 +107,7 @@ test "Token.equals" {
 
 pub const MatchHashMap = std.StringHashMap(*ParseTree.Node);
 
+
 pub const ParseTreeDepthFirstIterator = struct {
     const Self = @This();
 
@@ -392,7 +393,8 @@ pub const ParseTree = struct {
                                 const proposition_str = pattern_children.items[0].data.Terminal.Proposition.string;
                                 if (matches.get(proposition_str)) |existing_match| {
                                     if (!existing_match.eql(node)) {
-                                        _ = matches.remove(proposition_str);
+                                         _ = matches.remove(proposition_str);
+                                         //allocator.free(pair.key);
                                     }
                                 } else {
                                     try matches.put(proposition_str, node);
