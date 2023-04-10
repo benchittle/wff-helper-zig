@@ -36,3 +36,8 @@ Definition of a proof:
 - Goal: The final line of the proof
 - A sequence of steps
     - Each step is a wff and justification for the truth of that wff based on previous steps or theorems
+
+
+
+a = y
+b = z

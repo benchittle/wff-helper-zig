@@ -22,27 +22,38 @@ const EquivalenceRule = struct {
     }
 
     pub fn canTransform(self: Self, from: w.Wff, to: w.Wff) !bool {
+        std.debug.print("\nConverting {s} to {s}\nUsing rule {s} = {s}...\n", .{from.string, to.string, self.lhs.string, self.rhs.string});
         if (try from.matchAll(self.lhs)) |left_to_right| {
+            std.debug.print("LHS matches...\n", .{});
             defer {
                 for (left_to_right.items) |*m| m.deinit();
                 left_to_right.deinit();
             }
             for (left_to_right.items) |matches| {
-                if (try matches.substitute(self.rhs)) |result| {
+                if (try matches.substitute(to)) |result| {
+                    std.debug.print("Trying: {s}\n", .{result.string});
                     defer result.deinit();
-                    if (result.eql(to)) return true;
+                    if (result.eql(to)) {
+                        std.debug.print("works\n", .{});
+                        return true;
+                    }
                 }
             }
         }
         if (try from.matchAll(self.rhs)) |right_to_left| {
+            std.debug.print("\nRHS matches...\n", .{});
             defer {
                 for (right_to_left.items) |*m| m.deinit();
                 right_to_left.deinit();
             }
             for (right_to_left.items) |matches| {
-                if (try matches.substitute(self.lhs)) |result| {
+                if (try matches.substitute(to)) |result| {
+                    std.debug.print("Trying: {s}\n", .{result.string});
                     defer result.deinit();
-                    if (result.eql(to)) return true;
+                    if (result.eql(to)) {
+                        std.debug.print("works\n", .{});
+                        return true;
+                    }
                 }
             }
         }
@@ -55,6 +66,10 @@ test "EquivalenceRule.canTransform: (~p v q) to (p => q) using (~a v b) = (a => 
     defer from.deinit();
     var to = try w.Wff.init(std.testing.allocator, "(p => q)");
     defer to.deinit();
+    var wrong = try w.Wff.init(
+        std.testing.allocator,
+        "(~q v p)");
+    defer wrong.deinit();
 
     var rule = EquivalenceRule {
         .lhs = try w.Wff.init(std.testing.allocator, "(~a v b)"),
@@ -62,9 +77,56 @@ test "EquivalenceRule.canTransform: (~p v q) to (p => q) using (~a v b) = (a => 
     };
     defer rule.deinit();
     try std.testing.expect(try rule.canTransform(from, to));
+    try std.testing.expect(try rule.canTransform(to, from));
+    try std.testing.expect(!(try rule.canTransform(from, wrong)));
+    try std.testing.expect(!(try rule.canTransform(wrong, to)));
+
 }
 
+test "EquivalenceRule.canTransform: ((w v x) ^ (y => z)) to ((w v x) ^ (~y v z)) using (~a v b) = (a => b)" {
+    var from = try w.Wff.init(std.testing.allocator, "((w v x) ^ (y => z))");
+    defer from.deinit();
+    var to = try w.Wff.init(std.testing.allocator, "((w v x) ^ (~y v z))");
+    defer to.deinit();
 
+    var rule = EquivalenceRule {
+        .lhs = try w.Wff.init(std.testing.allocator, "(~a v b)"),
+        .rhs = try w.Wff.init(std.testing.allocator, "(a => b)"),
+    };
+    defer rule.deinit();
+    try std.testing.expect(try rule.canTransform(from, to));
+    try std.testing.expect(try rule.canTransform(to, from));
+}
+
+test "EquivalenceRule.canTransform: ((w v x) ^ (y => z)) to ((y => z) ^ (w v x)) using (a ^ b) = (b ^ a)" {
+    var from = try w.Wff.init(std.testing.allocator, "((w v x) ^ (y => z))");
+    defer from.deinit();
+    var to = try w.Wff.init(std.testing.allocator, "((y => z) ^ (w v x))");
+    defer to.deinit();
+
+    var rule = EquivalenceRule {
+        .lhs = try w.Wff.init(std.testing.allocator, "(a ^ b)"),
+        .rhs = try w.Wff.init(std.testing.allocator, "(b ^ a)"),
+    };
+    defer rule.deinit();
+    try std.testing.expect(try rule.canTransform(from, to));
+    try std.testing.expect(try rule.canTransform(to, from));
+}
+
+test "EquivalenceRule.canTransform: ((y <=> z) ^ (w v x)) to (((y <=> z) ^ w) v ((y <=> z) ^ x)) using (a ^ (b v c)) = ((a ^ b) v (a ^ c))" {
+    var from = try w.Wff.init(std.testing.allocator, "((y <=> z) ^ (w v x))");
+    defer from.deinit();
+    var to = try w.Wff.init(std.testing.allocator, "(((y <=> z) ^ w) v ((y <=> z) ^ x))");
+    defer to.deinit();
+
+    var rule = EquivalenceRule {
+        .lhs = try w.Wff.init(std.testing.allocator, "(a ^ (b v c))"),
+        .rhs = try w.Wff.init(std.testing.allocator, "((a ^ b) v (a ^ c))"),
+    };
+    defer rule.deinit();
+    try std.testing.expect(try rule.canTransform(from, to));
+    try std.testing.expect(try rule.canTransform(to, from));
+}
 
 fn initEquivalenceRules(allocator: std.mem.Allocator) [20]EquivalenceRule {
     // Helper struct

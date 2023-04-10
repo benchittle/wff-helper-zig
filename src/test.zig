@@ -78,6 +78,13 @@ test "struct init" {
     std.debug.print("\n\nt: {any}\n", .{t});
 }
 
+test "arraylist" {
+    var list = try std.ArrayList(u32).initCapacity(std.testing.allocator, 2);
+    defer list.deinit();
+    list.appendAssumeCapacity(44);
+    try std.testing.expect(list.items.len == 1);
+}
+
 // test "array syntax" {
 //     const arr = [_]u32 {
         
