@@ -21,6 +21,8 @@ const EquivalenceRule = struct {
         self.rhs.deinit();
     }
 
+    /// Returns true if a single application of the equivalence rule can 
+    /// transform `from` to `to`.
     pub fn canTransform(self: Self, from: w.Wff, to: w.Wff) !bool {
         if (try from.matchAll(self.lhs)) |left_to_right| {
             defer {
@@ -33,7 +35,6 @@ const EquivalenceRule = struct {
                 if (result.eql(to)) {
                     return true;
                 }
-                
             }
         }
         if (try from.matchAll(self.rhs)) |right_to_left| {
@@ -111,13 +112,12 @@ test "EquivalenceRule.canTransform: ((y <=> z) ^ (w v x)) to (((y <=> z) ^ w) v 
     var to = try w.Wff.init(std.testing.allocator, "(((y <=> z) ^ w) v ((y <=> z) ^ x))");
     defer to.deinit();
 
-    var rule = EquivalenceRule {
-        .lhs = try w.Wff.init(std.testing.allocator, "(a ^ (b v c))"),
-        .rhs = try w.Wff.init(std.testing.allocator, "((a ^ b) v (a ^ c))"),
-    };
-    defer rule.deinit();
-    try std.testing.expect(try rule.canTransform(from, to));
-    try std.testing.expect(try rule.canTransform(to, from));
+    const rules = initEquivalenceRules(std.testing.allocator);
+    defer for (rules) |r| r.deinit();
+    const e13 = rules[12];
+
+    try std.testing.expect(try e13.canTransform(from, to));
+    try std.testing.expect(try e13.canTransform(to, from));
 }
 
 fn initEquivalenceRules(allocator: std.mem.Allocator) [20]EquivalenceRule {
@@ -163,13 +163,158 @@ fn initEquivalenceRules(allocator: std.mem.Allocator) [20]EquivalenceRule {
         maker.makeRule("(a => b)",      "(~b => ~a)"),
         maker.makeRule("((a => b) ^ (b => a))", "(a <=> b)"),
     };
-
 }
 
 
-const InferenceRule = enum {
-    I1, I2, I3, I4, I5, I6,
+const InferenceRule = struct {
+    const Self = @This();
+
+    allocator: std.mem.Allocator,
+    conditions: []w.Wff,
+    result: w.Wff,
+
+    pub fn deinit(self: Self) void {
+        for (self.conditions) |wff| wff.deinit();
+        self.allocator.free(self.conditions);
+        self.result.deinit();
+    }
+
+    pub fn canTransform(self: Self, from: []w.Wff, to: w.Wff) !bool {
+        if (from.len != self.conditions.len) return false;
+        var all_matches = parsing.MatchHashMap.init(self.allocator);
+        defer all_matches.deinit();
+
+        for (from) |wff, i| {
+            var match = try wff.match(self.conditions[i]) orelse return false;
+            defer match.deinit();
+
+            var it = match.matches.iterator();
+            while (it.next()) |entry| {
+                if (all_matches.get(entry.key_ptr.*)) |existing_wff_node| {
+                    if (!existing_wff_node.eql(entry.value_ptr.*)) return false;
+                } else {
+                    try all_matches.put(entry.key_ptr.*, entry.value_ptr.*);
+                }
+            }
+        }
+
+        var result_match = try to.match(self.result) orelse return false;
+        defer result_match.deinit();
+        var it = result_match.matches.iterator();
+        while (it.next()) |entry| {
+            if (all_matches.get(entry.key_ptr.*)) |existing_wff_node| {
+                if (!existing_wff_node.eql(entry.value_ptr.*)) return false;
+            } else {
+                try all_matches.put(entry.key_ptr.*, entry.value_ptr.*);
+            }
+        }
+
+        return true;
+    }    
 };
+
+test "InferenceRule.canTransform: p to (p v q) using I1" {
+    var allocator = std.testing.allocator;
+    var cond1 = try w.Wff.init(allocator, "p");
+    defer cond1.deinit();
+    var conds = [_]w.Wff {cond1};
+    var result = try w.Wff.init(allocator, "(p v q)");
+    defer result.deinit();
+    var wrong = try w.Wff.init(allocator, "(q v p)");
+    defer wrong.deinit();
+
+    const rules = initInferenceRules(allocator);
+    defer for (rules) |r| r.deinit();
+    const infer1 = rules[0];
+
+    try std.testing.expect(try infer1.canTransform(&conds, result));
+    try std.testing.expect(!(try infer1.canTransform(&conds, wrong)));
+}
+
+test "InferenceRule.canTransform: p to (p v (p => q)) using I1" {
+    var allocator = std.testing.allocator;
+    var cond1 = try w.Wff.init(allocator, "p");
+    defer cond1.deinit();
+    var conds = [_]w.Wff {cond1};
+    var result = try w.Wff.init(allocator, "(p v (p => q))");
+    defer result.deinit();
+
+    const rules = initInferenceRules(allocator);
+    defer for (rules) |r| r.deinit();
+    const infer1 = rules[0];
+
+    try std.testing.expect(try infer1.canTransform(&conds, result));
+}
+
+test "InferenceRule.canTransform: (a ^ b) to ((a ^ b) v ~(a ^ b)) using I1" {
+    var allocator = std.testing.allocator;
+    var cond1 = try w.Wff.init(allocator, "(a ^ b)");
+    defer cond1.deinit();
+    var conds = [_]w.Wff {cond1};
+    var result = try w.Wff.init(allocator, "((a ^ b) v ~(a ^ b))");
+    defer result.deinit();
+
+    const rules = initInferenceRules(allocator);
+    defer for (rules) |r| r.deinit();
+    const infer1 = rules[0];
+
+    try std.testing.expect(try infer1.canTransform(&conds, result));
+}
+
+test "InferenceRule.canTransform: (a ^ b), ((a ^ b) => ~x) to ~x using I3" {
+    var allocator = std.testing.allocator;
+    var cond1 = try w.Wff.init(allocator, "(a ^ b)");
+    defer cond1.deinit();
+    var cond2 = try w.Wff.init(allocator, "((a ^ b) => ~x)");
+    defer cond2.deinit();
+    var conds = [_]w.Wff {cond1, cond2};
+    var result = try w.Wff.init(allocator, "~x");
+    defer result.deinit();
+
+    const rules = initInferenceRules(allocator);
+    defer for (rules) |r| r.deinit();
+    const infer3 = rules[2];
+
+    try std.testing.expect(try infer3.canTransform(&conds, result));
+}
+
+fn initInferenceRules(allocator: std.mem.Allocator) [6]InferenceRule {
+    // Helper struct
+    const Maker = struct {
+        const Self = @This();
+
+        allocator: std.mem.Allocator,
+
+        fn makeRule(self: Self, comptime cond1: []const u8, comptime cond2: []const u8, comptime result: []const u8) InferenceRule {
+            const count = if (cond2.len == 0) 1 else 2;
+            var conditions = self.allocator.alloc(w.Wff, count)
+                catch std.debug.panic("Failed to initialize inference rules!\n", .{});
+
+            conditions[0] = w.Wff.init(self.allocator, cond1)
+                catch std.debug.panic("Failed to initialize inference rules!\n", .{});
+            if (count > 1) {
+                conditions[1] = w.Wff.init(self.allocator, cond2)
+                    catch std.debug.panic("Failed to initialize inference rules!\n", .{});
+            }
+            
+            return InferenceRule{
+                .allocator = self.allocator,
+                .conditions = conditions,
+                .result = w.Wff.init(self.allocator, result) 
+                    catch std.debug.panic("Failed to initialize inference rules!\n", .{}),
+            };
+        }
+    };
+    const maker = Maker{.allocator = allocator};
+    return [_]InferenceRule {
+        maker.makeRule("p",         "",         "(p v q)"),
+        maker.makeRule("(p ^ q)",   "",         "p"),
+        maker.makeRule("p",         "(p => q)", "q"),
+        maker.makeRule("~q",        "(p => q)", "~p"),
+        maker.makeRule("(p => q)",  "(q => r)", "(p => r)"),
+        maker.makeRule("p",         "q",        "(p ^ q)"),
+    };
+}
 
 const Proof = struct {
     const Self = @This();
@@ -184,10 +329,10 @@ const Proof = struct {
             rule: EquivalenceRule,
             from: *Step,
         },
-        // Inference: struct {
-        //     rule: InferenceRule,
-        //     from: [2]*Step,
-        // },
+        Inference: struct {
+            rule: InferenceRule,
+            from: [2]?*Step,
+        },
         // Theorem: struct {
         //     wff: *w.Wff,
         //     from: ?*Step,
@@ -204,6 +349,12 @@ const Proof = struct {
             switch(self.how) {
                 .Equivalence => |e| {
                     return e.rule.canTransform(e.from, self.wff);
+                },
+                .Inference => |i| {
+                    var conditions: [2]w.Wff = undefined;
+                    inline for (i.from) |wff, j| conditions[j] = wff;
+                    const count = if (i.from[1] == null) 1 else 2;
+                    return i.rule.canTransform(conditions[0..count], self.wff);
                 }
             }
         }

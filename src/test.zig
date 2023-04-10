@@ -90,3 +90,8 @@ test "arraylist" {
         
 //     }
 // }
+
+test "str size" {
+    var x = "";
+    try std.testing.expect(x.len == 0);
+}

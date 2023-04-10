@@ -61,6 +61,7 @@ pub const Match = struct {
         }
 
         result.root = new_root;
+    
 
         return Wff {
             .allocator = result.allocator,
@@ -126,7 +127,7 @@ pub const Wff = struct {
         return self.parse_tree.eql(other.parse_tree);
     }
 
-    pub fn match(self: *Self, pattern: Self) !?Match {
+    pub fn match(self: *const Self, pattern: Self) !?Match {
         return Match {
             .wff = self,
             .parent = self.parse_tree.root,
