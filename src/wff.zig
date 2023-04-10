@@ -12,7 +12,7 @@ pub const WffError = error{
 pub const Match = struct {
     const Self = @This();
 
-    wff: *Wff,
+    wff: *const Wff,
     parent: *parsing.ParseTree.Node,
     matches: parsing.MatchHashMap,
 
@@ -25,39 +25,6 @@ pub const Match = struct {
         var node = self.matches.get(key) orelse return null;
         return try Wff.initFromNode(allocator, node);
     }
-
-    // TODO: Rename to replace?
-    // pub fn substitute(self: Self, replace: Wff) !?Wff {
-    //     var result = try replace.copy();
-    //     errdefer result.deinit();
-
-    //     var it = result.parse_tree.iterDepthFirst();
-    //     while (it.next()) |node| switch (node.data) {
-    //         .Terminal => |tok| switch (tok) {
-    //             .Proposition => |prop| {
-    //                 if (self.matches.get(prop.string)) |wff_node| {
-    //                     defer result.allocator.free(prop.string);
-    //                     var match_copy = try wff_node.copy(result.allocator);
-    //                     defer result.allocator.destroy(match_copy);
-    //                     var old_data = node.parent.?.data.Nonterminal;
-    //                     defer old_data.deinit();
-
-    //                     node.parent.?.data = match_copy.data;
-    //                     for (match_copy.data.Nonterminal.items) |*child| {
-    //                         child.parent = node.parent.?;
-    //                     }
-    //                 }
-    //             },
-    //             else => {},
-    //         },
-    //         .Nonterminal => {},
-    //     };
-
-    //     result.allocator.free(result.string);
-    //     result.string = try result.parse_tree.toString(result.allocator);
-
-    //     return result;
-    // }
 
     pub fn replace(self: Self, pattern: Wff) !Wff {
         var result = try pattern.parse_tree.copy();
@@ -167,7 +134,7 @@ pub const Wff = struct {
         };
     }
 
-    pub fn matchAll(self: *Self, pattern: Self) !?std.ArrayList(Match) {
+    pub fn matchAll(self: *const Self, pattern: Self) !?std.ArrayList(Match) {
         var all_matches = std.ArrayList(Match).init(self.allocator);
         errdefer {
             for (all_matches.items) |*matches| {
@@ -195,20 +162,6 @@ pub const Wff = struct {
             return null;
         }
     }
-
-    // // TODO: Maybe ParseTree.matchall should return Match objects instead of HashMaps?
-    // pub fn matchAll(self: Self, pattern: Self) !?std.ArrayList(Match) {
-    //     var match_maps = try self.parse_tree.matchAll(pattern.parse_tree) orelse return null;
-    //     defer match_maps.deinit();
-    //     errdefer {
-    //         for (match_maps.items) |*m| m.deinit();
-    //     }
-    //     var matches = try std.ArrayList(Match).initCapacity(self.allocator, match_maps.items.len);
-    //     for (match_maps.items) |m| {
-    //         matches.appendAssumeCapacity(Match{.root = self.parse_tree.root, .matches = m});
-    //     }
-    //     return matches;
-    // }
 };
 
 test "Wff.equals" {
@@ -278,8 +231,6 @@ test "Wff.replace: ((a ^ b) v (c ^ d)) using (p ^ q) to (q ^ p)" {
     defer expected.deinit();
     var new = (try right.replace(replace));
     defer new.deinit();
-
-    std.debug.print("\nexpeccted: {s}\nactual: {s}\n", .{expected.string, new.string});
 
     try std.testing.expect(expected.eql(new));
 }

@@ -22,38 +22,30 @@ const EquivalenceRule = struct {
     }
 
     pub fn canTransform(self: Self, from: w.Wff, to: w.Wff) !bool {
-        std.debug.print("\nConverting {s} to {s}\nUsing rule {s} = {s}...\n", .{from.string, to.string, self.lhs.string, self.rhs.string});
         if (try from.matchAll(self.lhs)) |left_to_right| {
-            std.debug.print("LHS matches...\n", .{});
             defer {
                 for (left_to_right.items) |*m| m.deinit();
                 left_to_right.deinit();
             }
             for (left_to_right.items) |matches| {
-                if (try matches.substitute(to)) |result| {
-                    std.debug.print("Trying: {s}\n", .{result.string});
-                    defer result.deinit();
-                    if (result.eql(to)) {
-                        std.debug.print("works\n", .{});
-                        return true;
-                    }
+                var result = try matches.replace(self.rhs);
+                defer result.deinit();
+                if (result.eql(to)) {
+                    return true;
                 }
+                
             }
         }
         if (try from.matchAll(self.rhs)) |right_to_left| {
-            std.debug.print("\nRHS matches...\n", .{});
             defer {
                 for (right_to_left.items) |*m| m.deinit();
                 right_to_left.deinit();
             }
             for (right_to_left.items) |matches| {
-                if (try matches.substitute(to)) |result| {
-                    std.debug.print("Trying: {s}\n", .{result.string});
-                    defer result.deinit();
-                    if (result.eql(to)) {
-                        std.debug.print("works\n", .{});
-                        return true;
-                    }
+                var result = try matches.replace(self.lhs);
+                defer result.deinit();
+                if (result.eql(to)) {
+                    return true;
                 }
             }
         }
