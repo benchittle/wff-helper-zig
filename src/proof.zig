@@ -337,25 +337,27 @@ const Proof = struct {
         //     wff: *w.Wff,
         //     from: ?*Step,
         // },
-        // Assumption: *w.Wff,
-        // True, // is True needed?
+        Assumption: *w.Wff,
+        True, // is True needed?
     };
 
     const Step = struct {
         wff: w.Wff,
         how: Justification, 
 
-        pub fn isValid(self: Step) bool {
+        pub fn isValid(self: Step) !bool {
             switch(self.how) {
                 .Equivalence => |e| {
-                    return e.rule.canTransform(e.from, self.wff);
+                    return try e.rule.canTransform(e.from.wff, self.wff);
                 },
                 .Inference => |i| {
                     var conditions: [2]w.Wff = undefined;
-                    inline for (i.from) |wff, j| conditions[j] = wff;
-                    const count = if (i.from[1] == null) 1 else 2;
-                    return i.rule.canTransform(conditions[0..count], self.wff);
-                }
+                    inline for (i.from) |step, j| conditions[j] = (step orelse undefined).wff;
+                    const count: u32 = if (i.from[1] == null) 1 else 2;
+                    return try i.rule.canTransform(conditions[0..count], self.wff);
+                },
+                .Assumption => |a| return a.eql(self.wff),
+                .True => return true,
             }
         }
     };
@@ -425,6 +427,15 @@ const Proof = struct {
         self.steps.deinit();
     }
 
+    pub fn verify(self: Self) !bool {
+        for (self.steps.items) |step| {
+            if (!(try step.isValid())) {
+                return false;
+            }
+        }
+        return self.goal.eql(self.steps.items[self.steps.items.len - 1].wff);
+    }
+
 };
 
 test "proof: init" {
@@ -436,6 +447,85 @@ test "proof: init" {
     );
 
     proof.deinit();
+}
+
+test "proof: (a => (b => a))" {
+    var allocator = std.testing.allocator;
+    var proof = try Proof.init(
+        allocator,
+        "(a => (b => a))",
+        Proof.Method.Direct,
+        null,
+    );
+    defer proof.deinit();
+
+    var wff = try w.Wff.init(allocator, "(a => (b => a))");
+    defer wff.deinit();
+    try std.testing.expect(wff.eql(proof.wff));
+
+    try std.testing.expect(proof.assumptions.items.len == 1);
+    var a1 = try w.Wff.init(allocator, "a");
+    defer a1.deinit();
+    try std.testing.expect(a1.eql(proof.assumptions.items[0]));
+
+    var goal = try w.Wff.init(allocator, "(b => a)");
+    defer goal.deinit();
+    try std.testing.expect(goal.eql(proof.goal));
+
+    const equivalence_rules = initEquivalenceRules(allocator);
+    defer for (equivalence_rules) |e| e.deinit();
+    const inference_rules = initInferenceRules(allocator);
+    defer for (inference_rules) |i| i.deinit();
+
+    var step1 = Proof.Step{
+        .wff = try w.Wff.init(allocator, "a"),
+        .how = Proof.Justification{
+            .Assumption = &proof.assumptions.items[0],
+        }
+    };
+    try proof.steps.append(step1);
+    try std.testing.expect(try step1.isValid());
+    try std.testing.expect(!try proof.verify());
+
+    var step2 = Proof.Step{
+        .wff = try w.Wff.init(allocator, "(a v ~b)"),
+        .how = Proof.Justification{
+            .Inference = .{
+                .rule = inference_rules[0],
+                .from = .{&proof.steps.items[proof.steps.items.len - 1], null}
+            }
+        }
+    };
+    try proof.steps.append(step2);
+    try std.testing.expect(try step2.isValid());
+    try std.testing.expect(!try proof.verify());
+
+    var step3 = Proof.Step{
+        .wff = try w.Wff.init(allocator, "(~b v a)"),
+        .how = Proof.Justification{
+            .Equivalence = .{
+                .rule = equivalence_rules[9],
+                .from = &proof.steps.items[proof.steps.items.len - 1],
+            }
+        }
+    };
+    try proof.steps.append(step3);
+    try std.testing.expect(try step3.isValid());
+    try std.testing.expect(!try proof.verify());
+
+    var step4 = Proof.Step{
+        .wff = try w.Wff.init(allocator, "(b => a)"),
+        .how = Proof.Justification{
+            .Equivalence = .{
+                .rule = equivalence_rules[17],
+                .from = &proof.steps.items[proof.steps.items.len - 1],
+            }
+        }
+    };
+    try proof.steps.append(step4);
+    try std.testing.expect(try step4.isValid());
+
+    try std.testing.expect(try proof.verify());
 }
 
 
