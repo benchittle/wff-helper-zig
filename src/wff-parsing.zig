@@ -43,6 +43,8 @@ pub const Token = union(enum) {
 
     LParen,
     RParen,
+    True,
+    False,
     Proposition: PropositionVar,
     Operator: WffOperator,
 
@@ -66,6 +68,14 @@ pub const Token = union(enum) {
                 .RParen => true,
                 else => false,
             },
+            .True => switch(other) {
+                .True => true,
+                else => false,
+            },
+            .False => switch(other) {
+                .False => true,
+                else => false,
+            },
             .Proposition => |prop| switch (other) {
                 .Proposition => |other_prop| prop.equals(other_prop),
                 else => false,
@@ -83,6 +93,8 @@ pub const Token = union(enum) {
             .RParen => ")",
             .Proposition => |prop| prop.string,
             .Operator => |op| op.getString(),
+            .True => "T",
+            .False => "F",
         };
     }
 };
@@ -526,7 +538,7 @@ pub const ParseTree = struct {
                                 .Not => {},
                             }
                         },
-                        .Proposition => {
+                        .Proposition, .True, .False => {
                             try string_buf.appendSlice(tok.getString());
                             try string_buf.append(' ');
                         },
@@ -538,49 +550,11 @@ pub const ParseTree = struct {
         _ = string_buf.pop(); // remove trailing space
         return string_buf.toOwnedSlice();
     }
-
-    // !!!!!!!!!!!
-    // TODO: Idea: .equals returns an iterator of pairs if equal, then we just
+    
+    // TODO: Matchall Idea: .equals returns an iterator of pairs if equal, then we just
     // iterate over those pairs. We can then make assumptions that make this
     // matching simpler, since we know the trees are equal.
-    //// Similar to ParseTree.equals, but in addition to checking the equality
-    //// of the trees, we also record "matches". A match consists of a pointer
-    //// to a proposition node in a pattern/template tree, and a pointer to a
-    //// corresponding proposition or non-terminal (wff) in self.
-    //// Assumes both parse trees are valid.
-    //// Returns a list of match lists (ArrayList(ArrayList(Match))) if the trees
-    //// are equal, else null.
-    // pub fn matchAll(self: Self, pattern: Self) !?std.ArrayList(MatchHashMap) {
-    //     var all_matches = std.ArrayList(MatchHashMap).init(self.allocator);
-    //     errdefer {
-    //         for (all_matches.items) |*matches| {
-    //             matches.deinit();
-    //         }
-    //         all_matches.deinit();
-    //     }
-
-    //     var it = self.iterDepthFirst();
-    //     var pattern_it = pattern.iterDepthFirst();
-
-    //     while (it.hasNext() and pattern_it.hasNext()) {
-    //         const node = it.nextUnchecked();
-
-    //         switch(node.data) {
-    //             .Terminal => {},
-    //             .Nonterminal => {
-    //                 if (try node.match(self.allocator, pattern.root)) |m| {
-    //                     try all_matches.append(m);
-    //                 } 
-    //             }
-    //         }
-    //     }
-    //     if (all_matches.items.len > 0) {
-    //         return all_matches;
-    //     } else {
-    //         all_matches.deinit();
-    //         return null;
-    //     }
-    // }
+   
 };
 
 // TODO: fn to build trees more easily for testing larger expressions
@@ -905,9 +879,12 @@ fn tokenize(allocator: std.mem.Allocator, wff_string: []const u8) !std.ArrayList
                 '(' => Token.LParen,
                 ')' => Token.RParen,
 
-                // TODO: Include v as an allowable variable name (currently it
-                // conflicts with OR operator).
-                'a'...'u', 'w'...'z', 'A'...'Z' => |val| ret: {
+                'T' => Token.True,
+                'F' => Token.False,
+
+                // TODO: Include v, T, F as an allowable variable name (currently it
+                // conflicts with OR operator, True, False tokens).
+                'a'...'u', 'w'...'z', 'A'...'E', 'G'...'S', 'U'...'Z' => |val| ret: {
                     var str = try allocator.alloc(u8, 1);
                     str[0] = val;
                     break :ret Token{ .Proposition = PropositionVar{ .string = str } };
@@ -1031,6 +1008,8 @@ const Parser = struct {
         Or,
         Cond,
         Bicond,
+        True,
+        False,
     };
 
     const State = enum {
@@ -1077,7 +1056,7 @@ const Parser = struct {
     fn shift_terminal(state: State, symbol: StackSymbol) !State {
         return switch (state) {
             .S1, .S3, .S5, .S7, .S8, .S9, .S10 => switch (symbol) {
-                .Proposition => .S4,
+                .Proposition, .True, .False => .S4,
                 .Not => .S3,
                 .LParen => .S5,
                 else => ParseError.InvalidSyntax,
@@ -1199,6 +1178,8 @@ const Parser = struct {
                     .Bicond => StackSymbol.Bicond,
                 },
                 .Proposition => StackSymbol.Proposition,
+                .True => StackSymbol.True,
+                .False => StackSymbol.False,
             };
 
             var new_state = try shift_terminal(top_state, stack_symbol);

@@ -1,5 +1,5 @@
 const std = @import("std");
-const parsing = @import("parsing.zig");
+const parsing = @import("wff-parsing.zig");
 const debug = std.debug;
 
 pub const WffError = error{
@@ -80,9 +80,11 @@ pub const Wff = struct {
 
 
     pub fn init(allocator: std.mem.Allocator, wff_string: []const u8) !Self {
+        var tree = try parsing.ParseTree.init(allocator, wff_string);
+        errdefer tree.deinit();
         return Wff{
-            .string = try allocator.dupe(u8, wff_string),
-            .parse_tree = try parsing.ParseTree.init(allocator, wff_string),
+            .string = try tree.toString(allocator),
+            .parse_tree = tree,
             .allocator = allocator,
         };
     }

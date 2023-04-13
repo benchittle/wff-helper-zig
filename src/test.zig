@@ -95,3 +95,11 @@ test "str size" {
     var x = "";
     try std.testing.expect(x.len == 0);
 }
+
+test "mem split" {
+    var str = "(p v q), 1, E10";
+    var it = std.mem.split(u8, str, ",");
+    while (it.next()) |s| {
+        std.debug.print("{s}\n", .{s});
+    }
+}
