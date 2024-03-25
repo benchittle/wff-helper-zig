@@ -120,7 +120,7 @@ test "EquivalenceRule.canTransform: ((y <=> z) ^ (w v x)) to (((y <=> z) ^ w) v 
     try std.testing.expect(try e13.canTransform(to, from));
 }
 
-pub fn initEquivalenceRules(allocator: std.mem.Allocator) [20]EquivalenceRule {
+pub fn initEquivalenceRules(allocator: std.mem.Allocator) [22]EquivalenceRule {
     // Helper struct
     const Maker = struct {
         const Self = @This();
@@ -145,8 +145,8 @@ pub fn initEquivalenceRules(allocator: std.mem.Allocator) [20]EquivalenceRule {
     };
     var maker = Maker{.allocator = allocator};
     return [_]EquivalenceRule {
-        maker.makeRule("(a ^ ~a)",      "T"),
-        maker.makeRule("(a v ~a)",      "F"),
+        maker.makeRule("(a v ~a)",      "T"),
+        maker.makeRule("(a ^ ~a)",      "F"),
         maker.makeRule("(a ^ a)",       "a"),
         maker.makeRule("(a v a)",       "a"),
         maker.makeRule("(a ^ T)",       "a"),
@@ -154,7 +154,7 @@ pub fn initEquivalenceRules(allocator: std.mem.Allocator) [20]EquivalenceRule {
         maker.makeRule("(a ^ F)",       "F"),
         maker.makeRule("(a v T)",       "T"),
         maker.makeRule("(a ^ b)",       "(b ^ a)"),
-        maker.makeRule("(a v b)",       "(b v a)"),
+        maker.makeRule("(a v b)",       "(b v a)"), // E10
         maker.makeRule("((a ^ b) ^ c)", "(a ^ (b ^ c))"),
         maker.makeRule("((a v b) v c)", "(a v (b v c))"),
         maker.makeRule("(a ^ (b v c))", "((a ^ b) v (a ^ c))"),
@@ -165,6 +165,8 @@ pub fn initEquivalenceRules(allocator: std.mem.Allocator) [20]EquivalenceRule {
         maker.makeRule("(a => b)",      "(~a v b)"),
         maker.makeRule("(a => b)",      "(~b => ~a)"),
         maker.makeRule("((a => b) ^ (b => a))", "(a <=> b)"),
+        maker.makeRule("T",              "~F"),
+        maker.makeRule("~T",             "F")
     };
 }
 
@@ -188,7 +190,7 @@ const InferenceRule = struct {
         var all_matches = parsing.MatchHashMap.init(self.allocator);
         defer all_matches.deinit();
 
-        for (from) |wff, i| {
+        for (from, 0..) |wff, i| {
             var match = try wff.match(self.conditions[i]) orelse return false;
             defer match.deinit();
 
@@ -370,7 +372,7 @@ pub const Proof = struct {
                 },
                 .Inference => |i| {
                     var conditions: [2]w.Wff = undefined;
-                    inline for (i.from) |step, j| conditions[j] = if (step) |s| s.wff else undefined;
+                    inline for (i.from, 0..) |step, j| conditions[j] = if (step) |s| s.wff else undefined;
                     const count: u32 = if (i.from[1] == null) 1 else 2;
                     return try i.rule.canTransform(conditions[0..count], self.wff);
                 },
@@ -507,7 +509,7 @@ pub const Proof = struct {
         }
         try strings.append(try std.fmt.allocPrint(allocator, "Goal: {s}\n", .{self.goal.string}));
         try strings.append(try allocator.dupe(u8, "Proof:\n"));
-        for (self.steps.items) |step, i| {
+        for (self.steps.items, 0..) |step, i| {
             var justification_string: []u8 = undefined;
             switch(step.how) {
                 .Equivalence => |e| {

@@ -41,3 +41,14 @@ Definition of a proof:
 
 a = y
 b = z
+
+
+Adding precedence
+- need to differentiate parse trees from... logic tree? semantics trees?
+    - with precedence, different parse trees could be semantically the same e.g. "(a v b)" and "a v b"
+    - they should still parse differently, but all parse trees should be converted into another similar tree object based on the semantics
+    - parentheses not needed in this new object: structure of it will be enough
+
+
+Bugs:
+- ~F == T and ~T == F needs to be established

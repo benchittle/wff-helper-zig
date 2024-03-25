@@ -128,11 +128,10 @@ pub const ParseTreeDepthFirstIterator = struct {
     fn backtrack(self: Self) ?[*]ParseTree.Node {
         var next_node = self.current.?;
         while (next_node[0].parent) |parent| {
-            if (@ptrCast(@TypeOf(self.start), next_node) == self.start) return null;
+            if (@as(@TypeOf(self.start), @ptrCast(next_node)) == self.start) return null;
             const siblings = parent.data.Nonterminal.items;
             if (&(next_node[0]) == &(siblings[siblings.len - 1])) {
-                
-                next_node = @ptrCast(@TypeOf(next_node), parent);
+                next_node = @ptrCast(parent);
             } else {
                 return next_node + 1;
             }
@@ -145,7 +144,7 @@ pub const ParseTreeDepthFirstIterator = struct {
 
         self.current = switch (current_node.data) {
             .Terminal => self.backtrack(),
-            .Nonterminal => |children| @ptrCast(@TypeOf(self.current), &children.items[0]),
+            .Nonterminal => |children| @ptrCast(&children.items[0]),
         };
 
         return current_node;
@@ -172,7 +171,7 @@ pub const ParseTreeDepthFirstIterator = struct {
     pub fn skipChildren(self: *Self) void {
         const current = &(self.current orelse return)[0];
         if (current.parent) |parent| {
-            self.current = @ptrCast(@TypeOf(self.current), parent);
+            self.current = @ptrCast(parent);
             self.current = self.backtrack();
         } else {
             self.current = null;
@@ -234,7 +233,7 @@ pub const ParseTreePostOrderIterator = struct {
             self.current = null;
             return current_node;
         } else if (current_node == &siblings[siblings.len - 1]) {
-            self.current = @ptrCast(@TypeOf(self.current), parent);
+            self.current = @ptrCast(parent);
             return current_node;
         }
 
@@ -245,7 +244,7 @@ pub const ParseTreePostOrderIterator = struct {
                 .Nonterminal => |children| next_node = &children.items[0],
             }
         }
-        self.current = @ptrCast(@TypeOf(self.current), next_node);
+        self.current = @ptrCast(next_node);
 
         return current_node;
     }
@@ -378,7 +377,7 @@ pub const ParseTree = struct {
         }
 
         pub fn iterDepthFirst(self: *Node) ParseTreeDepthFirstIterator {
-            return ParseTreeDepthFirstIterator{ .start = self, .current = @ptrCast([*]ParseTree.Node, self) };
+            return ParseTreeDepthFirstIterator{ .start = self, .current = @ptrCast(self) };
         }
 
         pub fn iterPostOrder(self: *Node) ParseTreePostOrderIterator {
@@ -389,7 +388,7 @@ pub const ParseTree = struct {
                     .Nonterminal => |children| start_node = &children.items[0],
                 }
             }
-            return ParseTreePostOrderIterator{ .root = self, .current = @ptrCast([*]ParseTree.Node, start_node) };
+            return ParseTreePostOrderIterator{ .root = self, .current = @ptrCast(start_node) };
         }
 
         // TODO: Specify *const here and in other places
@@ -441,7 +440,8 @@ pub const ParseTree = struct {
                                 it.skipChildren();
                                 pattern_it.skipChildren();
 
-                                const proposition_str = pattern_children.items[0].data.Terminal.Proposition.string;
+                                const child_tok = pattern_children.items[0].data.Terminal;
+                                const proposition_str = child_tok.getString();
                                 if (matches.get(proposition_str)) |existing_match| {
                                     if (!existing_match.eql(node)) {
                                          _ = matches.remove(proposition_str);
@@ -944,7 +944,7 @@ test "tokenize: '(p v q)'" {
         std.testing.allocator.free(expected[3].Proposition.string);
     }
 
-    for (expected) |e, i| {
+    for (expected, 0..) |e, i| {
         try std.testing.expect(e.eql(result.items[i]));
     }
 }
@@ -967,7 +967,7 @@ test "tokenize: 'p'" {
     };
     defer std.testing.allocator.free(expected[0].Proposition.string);
 
-    for (expected) |e, i| {
+    for (expected, 0..) |e, i| {
         try std.testing.expect(e.eql(result.items[i]));
     }
 }

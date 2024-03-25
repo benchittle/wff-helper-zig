@@ -8,8 +8,6 @@ const stdin = std.io.getStdIn().reader();
 
 var gpa = std.heap.GeneralPurposeAllocator(.{}){};
 
-
-
 /// Prompt the user for a number. Invalid input will be ignored and the user will
 /// be prompted again.
 /// Returns: A valid u32 entered by the user, or null if EOF is entered.
@@ -19,17 +17,17 @@ fn getNumber(comptime T: type) !?T {
     while (true) {
         var buf: [32]u8 = undefined;
 
-        const buf_read = stdin.readUntilDelimiterOrEof(&buf, '\n') catch |err| switch(err) {
+        const buf_read = stdin.readUntilDelimiterOrEof(&buf, '\n') catch |err| switch (err) {
             error.StreamTooLong => {
                 try printErrResetPrompt("Error: Input too long", .{});
                 try stdin.skipUntilDelimiterOrEof('\n');
                 continue;
             },
-            else => return err
+            else => return err,
         } orelse return null;
-            
+
         return std.fmt.parseInt(T, buf_read, 10) catch |err| {
-            switch(err) {
+            switch (err) {
                 error.InvalidCharacter => try printErrResetPrompt("Error: Invalid input", .{}),
                 error.Overflow => try printErrResetPrompt("Error: Number too large", .{}),
             }
@@ -43,7 +41,7 @@ pub fn getWff(allocator: std.mem.Allocator) !?wffs.Wff {
 
     var buf: [1024]u8 = undefined;
     while (true) {
-        const buf_read = stdin.readUntilDelimiterOrEof(&buf, '\n') catch |err| switch(err) {
+        const buf_read = stdin.readUntilDelimiterOrEof(&buf, '\n') catch |err| switch (err) {
             error.StreamTooLong => {
                 try printErrResetPrompt("Error: Max input length exceeded. Try entering a shorter wff or removing unnecessary whitespace.", .{});
                 try stdin.skipUntilDelimiterOrEof('\n');
@@ -52,24 +50,22 @@ pub fn getWff(allocator: std.mem.Allocator) !?wffs.Wff {
             else => return err,
         } orelse return null;
 
-        var wff = wffs.Wff.init(allocator, buf_read) catch |err| switch(err) {
+        var wff = wffs.Wff.init(allocator, buf_read) catch |err| switch (err) {
             error.OutOfMemory => return err,
             else => {
                 try printErrResetPrompt("Error: Invalid wff", .{});
                 continue;
-            }
+            },
         };
         return wff;
     }
 }
 
-
-
 pub fn getStep(allocator: std.mem.Allocator, proof: proofs.Proof) !?proofs.Proof.Step {
     var buf: [1024]u8 = undefined;
 
-    while(true) {
-        const buf_read = stdin.readUntilDelimiterOrEof(&buf, '\n') catch |err| switch(err) {
+    while (true) {
+        const buf_read = stdin.readUntilDelimiterOrEof(&buf, '\n') catch |err| switch (err) {
             error.StreamTooLong => {
                 try printErrResetPrompt("Error: Max input length exceeded.", .{});
                 try stdin.skipUntilDelimiterOrEof('\n');
@@ -78,7 +74,7 @@ pub fn getStep(allocator: std.mem.Allocator, proof: proofs.Proof) !?proofs.Proof
             else => return err,
         } orelse return null;
 
-        var step = step_parse.parseStep(allocator, buf_read, proof) catch |err| switch(err) {
+        var step = step_parse.parseStep(allocator, buf_read, proof) catch |err| switch (err) {
             error.OutOfMemory => return err,
             else => {
                 try printErrResetPrompt("Error: Invalid input.", .{});
@@ -166,17 +162,17 @@ pub fn main() !void {
     defer wff.deinit();
 
     var proof_methods: [4]proofs.Proof.Method = undefined;
-    var available_methods : []proofs.Proof.Method = undefined;
+    var available_methods: []proofs.Proof.Method = undefined;
     {
         var implication_form = try wffs.Wff.init(allocator, "(p => q)");
         defer implication_form.deinit();
         if (try wff.match(implication_form)) |match| {
             var m = match;
             m.deinit();
-            proof_methods = .{proofs.Proof.Method.None, proofs.Proof.Method.Direct, proofs.Proof.Method.Indirect, proofs.Proof.Method.Contradiction};
+            proof_methods = .{ proofs.Proof.Method.None, proofs.Proof.Method.Direct, proofs.Proof.Method.Indirect, proofs.Proof.Method.Contradiction };
             available_methods = proof_methods[0..4];
         } else {
-            proof_methods = .{proofs.Proof.Method.None, proofs.Proof.Method.Contradiction, undefined, undefined};
+            proof_methods = .{ proofs.Proof.Method.None, proofs.Proof.Method.Contradiction, undefined, undefined };
             available_methods = proof_methods[0..2];
         }
     }
@@ -185,8 +181,8 @@ pub fn main() !void {
     try clearInstructions();
     try stdout.print("Proving: {s}\n\n", .{wff.string});
     try stdout.print("Available proof methods:\n", .{});
-    for (available_methods) |method, i| {  
-        try stdout.print("{d}: {s}\n", .{i + 1, method.getString()});
+    for (available_methods, 0..) |method, i| {
+        try stdout.print("{d}: {s}\n", .{ i + 1, method.getString() });
     }
     try stdout.print("\nSelect a proof method", .{});
     try resetPromptClearError();
@@ -197,8 +193,8 @@ pub fn main() !void {
     }
 
     var proof = try proofs.Proof.init(
-        allocator, 
-        &wff, 
+        allocator,
+        &wff,
         available_methods[choice - 1],
         null,
         &equivalence_rules,

@@ -19,14 +19,14 @@ const StepParsingError = error {
 /// Remove leading and trailing whitespace from a string.
 fn strStrip(ascii_string: []const u8) []const u8 {
     var start: usize = 0;
-    for (ascii_string) |c, i| {
+    for (ascii_string, 0..) |c, i| {
         if (!std.ascii.isWhitespace(c)) {
             start = i;
             break;
         }
     }
     var end: usize = start;
-    for (ascii_string[start..]) |c, i| {
+    for (ascii_string[start..], 0..) |c, i| {
         if (!std.ascii.isWhitespace(c)) {
             end = i + start + 1;
         }
