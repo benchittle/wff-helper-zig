@@ -52,3 +52,155 @@ Adding precedence
 
 Bugs:
 - ~F == T and ~T == F needs to be established
+
+
+IDEA: shift+space skips any closing ) and adds space
+
+Grammar 1.0:
+R1: S   -> wff
+R2: wff -> Proposition
+R3: wff -> Not    wff
+R4: wff -> LParen wff And    wff RParen
+R5: wff -> LParen wff Or     wff RParen
+R6: wff -> LParen wff Cond   wff RParen
+R7: wff -> LParen wff Bicond wff RParen
+
+
+Grammar 2.0:
+
+S      -> wff1
+
+wff1   -> wff(1)   | wff2
+wff(1) -> (wff(1)) | wff(1) op1 wff2 | wff(1) op1 (wff(1))
+op1    -> <=>
+
+wff2   -> wff(2)   | wff3
+wff(2) -> (wff(2)) | wff(2) op2 wff3 | wff(2) op2 (S)
+op2    -> =>
+
+
+Grammar 2.1:
+PROBLEM: Different productions produce same thing (e.g. S1 -> wff2 and S2 -> wff2) causes reduce conflicts
+
+S -> S1
+
+S1     -> wff1 | wff2 | wff3 | wff4 | prop
+S2     -> wff2 | wff3 | wff4 | prop
+S3     -> wff3 | wff4 | prop
+S4     -> wff4 | prop
+
+X1     -> wff1
+X2     -> wff1 | wff2
+X3     -> wff1 | wff2 | wff3
+
+wff1   -> (wff1) | S1 op1 S2 | S1 op1 (X1)
+op1    -> <=>
+
+wff2   -> (wff2) | S2 op2 S3 | S2 op2 (X2)
+op2    -> =>
+
+wff3   -> (wff3) | S3 op3 S4 | S3 op3 (X3)
+op3    -> v | ^
+
+wff4   -> (wff4) | op4 S4
+op4    -> ~
+
+prop   -> (prop) | PROPTOK
+
+
+Grammer 2.2:
+
+R0:  S -> wff1
+
+R1:  wff1 -> wff2
+R2:  wff1 -> wff1 <=> wff2
+
+R3:  wff2 -> wff3 
+R4:  wff2 -> wff2 => wff3
+
+R5:  wff3 -> wff4 
+R6:  wff3 -> wff3 v wff4 
+R7:  wff3 -> wff3 ^ wff4
+
+R8:  wff4 -> prop
+R9:  wff4 -> ~ wff4
+
+R10: prop -> (wff1)
+R11: prop -> PROPTOK
+
+FOLLOW(S) = {$}                      = {$}
+FOLLOW(wff1) = FOLLOW(S) + {<=>, )}  = {$, <=>, )}
+FOLLOW(wff2) = FOLLOW(wff1) + {=>}   = {$, <=>, ), =>}
+FOLLOW(wff3) = FOLLOW(wff2) + {v, ^} = {$, <=>, ), =>, v, ^}
+FOLLOW(wff4) = FOLLOW(wff3)          = {$, <=>, ), =>, v, ^}
+FOLLOW(prop) = FOLLOW(wff4)          = {$, <=>, ), =>, v, ^}
+
+
+
+
+====
+
+ProductionVariable:
+    name: str
+
+ProductionRule:
+    LHS: Variable
+    RHS: a sequence of terminals (tokens) and Variables
+
+ProductionCursor:
+    production: ProductionRule
+    cursor: index of a symbol in the RHS of production (this is the symbol being read)
+
+State:
+    productions: set of ProductionCursors
+    actions: set of (terminal, StateOrReduce) pairs 
+    goto: set of (Variable, State) pairs
+
+
+Algorithm: SLR Parse Table Generator
+Input: A set of productions and an indication of the starting production 
+Output: Parse table
+
+begin
+    generate augmented grammar
+    statenum = 1
+    add new state from start production to stack
+    generate table with first row from above state
+
+    // populate table transitions, but not reductions
+    while not at end of table
+        get current row of table
+        state.num = statenum
+        branches = expand(state.starting_productions, grammar)
+        for symbol, prodlist in branches:
+            if prodlist results in a state already in table:
+                state.transitions[symbol] = existingstate.num
+            else:
+                append new state(nextstate, prodlist) to table
+                state.transitions[symbol] = newstate.num
+                nextstate += 1
+
+        move to next row of table
+
+    
+
+end
+
+Algorithm: expand
+Input: a set S of ProductionCursor, the grammar
+Output: 
+
+begin
+    insert given productions into queue
+    while queue not empty
+        production = pop front from queue
+        symbol = read cursor
+        if symbol is non terminal and symbol is not in map.keys
+            for production from symbol:
+                push production to front of queue
+        map[symbol].append(productionCursor)
+    return map
+end
+
+
+    
