@@ -862,7 +862,7 @@ const Parser = struct {
 
     fn parse(self: *Self, wff_string: []const u8) !*ParseTree.Node {
         // Tokenize given string
-        var tokens = try tokenize(self.allocator, wff_string);
+        var tokens = try lex.tokenize(self.allocator, wff_string);
         defer {
             tokens.deinit();
         }

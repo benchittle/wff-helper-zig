@@ -5,6 +5,10 @@ const stdout = std.io.getStdOut().writer();
 
 const lex = @import("wff-lexing.zig");
 
+pub const TableGeneratorError = error{
+    shiftShiftError,
+};
+
 const Variable = struct {
     const Self = @This();
 
@@ -48,9 +52,20 @@ const Symbol = union(enum) {
 const Production = struct {
     // TODO: Both of these helper structs should probably have dynamically 
     // allocated strings
+    const Self = @This();
     
     lhs: Variable,
     rhs: []const Symbol,
+
+    fn eql(self: Self, other: Self) bool {
+        if (!self.lhs.eql(other.lhs)) return false;
+        if (self.rhs.len != other.rhs.len) return false;
+        for (self.rhs, other.rhs) |sym1, sym2| {
+            if (!sym1.eql(sym2)) return false;
+        }
+
+        return true;
+    }
 };
 
 const ProductionInstance = struct {
@@ -61,6 +76,10 @@ const ProductionInstance = struct {
 
     fn fromProduction(production: Production) Self {
         return ProductionInstance{ .production = production, .cursor = 0 };
+    }
+
+    fn eql(self: Self, other: Self) bool {
+        return self.cursor == other.cursor and self.production.eql(other.production);
     }
 
     fn readCursor(self: Self) ?Symbol {
@@ -80,11 +99,18 @@ const Grammar = struct {
     const Self = @This();
 
     rules: []const Production,
-    variables: []const * u8,
-    terminals: []const lex.Token,
+    variables: []const u8,
+    terminals: []const u8,
 
     fn getSymbolCount(self: Self) usize {
         return self.variables.len + self.terminals.len;
+    }
+
+    fn idIsVariable(self: Self, id: usize) bool {
+        for (self.variables) |v| {
+            if (v == id) return true;
+        }
+        return false;
     }
 
     pub fn printProductionInstance(_: Self, prod: ProductionInstance) !void {
@@ -107,11 +133,17 @@ const Grammar = struct {
     }
 };
 
+
 const ParseTable = struct {
     const Self = @This();
+    const Action = union(enum) {
+        state: usize,  
+        reduce: usize, // index of grammar.rules
+        invalid,
+    };
 
     grammar: Grammar,
-
+    action_goto_table: [][]Action,
 
     fn expandProductions(self: Self, allocator: std.mem.Allocator, productions: []const ProductionInstance) ![]std.ArrayList(ProductionInstance) {
         // const? 
@@ -152,6 +184,52 @@ const ParseTable = struct {
         }
 
         return branches;
+    }
+
+    fn checkProductionsAlreadyExpanded(starting_productions_table: std.ArrayList([]ProductionInstance), productions: std.ArrayList(ProductionInstance)) ?usize {
+        for (starting_productions_table.items, 0..) |start_prod_list, state| {
+            for (productions.items) |prod| {
+                for (start_prod_list) |start_prod| {
+                    if (prod.eql(start_prod)) break;
+                } else {
+                    break;
+                }
+            } else {
+                return state;
+            }
+        }
+
+        return null;
+    }
+
+    fn populate(self: *Self, allocator: std.mem.Allocator, augmented_production: Production) !void {
+        // TODO: defers
+        var action_goto_table = std.ArrayList([]Action).init(allocator);
+        var primary_productions_table = std.ArrayList([]ProductionInstance).init(allocator);
+        
+        try action_goto_table.append(try allocator.alloc(Action, self.grammar.getSymbolCount()));
+        for (0..action_goto_table.items[0].len) |i| {
+            action_goto_table.items[0][i] = Action.invalid;
+        }
+        try primary_productions_table.append(try allocator.alloc(ProductionInstance, 1));
+        primary_productions_table.items[0][0] = ProductionInstance.fromProduction(augmented_production);
+
+        var state: usize = 0;
+        while (state < action_goto_table.items.len) : (state += 1) {
+            var branches = try self.expandProductions(allocator, primary_productions_table.items[state]);
+            for (branches, 0..) |*prod_list, id| {
+                if (checkProductionsAlreadyExpanded(primary_productions_table, prod_list.*)) |existing_state| {
+                    switch (action_goto_table.items[state][id]) {
+                        .state => |_| return TableGeneratorError.shiftShiftError,
+                        else => action_goto_table.items[state][id] = Action{.state = existing_state},
+                    }
+                } else {
+                    try action_goto_table.append(try allocator.alloc(Action, self.grammar.getSymbolCount()));
+                    try primary_productions_table.append(try prod_list.toOwnedSlice());
+                }               
+            }
+        }
+        self.action_goto_table = try action_goto_table.toOwnedSlice();
     }
 };
 
@@ -232,30 +310,33 @@ test "expandProductions-grammar1_0" {
         .rhs = &[_] Symbol{Symbol{.variable = Variable{.id = 0}}}
     };
 
-    var grammar = Grammar{
-        .rules = &[_] Production{r0, r1, r2, r3, r4, r5, r6},
-        .terminals = &[_] lex.Token {undefined} ** 8,
-        .variables = &[_] *u8{undefined} ** 2,
+    var grammar = Grammar {
+        .rules = &[_] Production{r1, r2, r3, r4, r5, r6},
+        .variables = &[_] u8{0},
+        .terminals = &[_] u8{1, 2, 3, 4, 5, 6, 7, 8},
     };
     
     var table = ParseTable{
-        .grammar = grammar
+        .grammar = grammar,
+        .action_goto_table = undefined,
     };
 
     const start_productions = [_]ProductionInstance {ProductionInstance.fromProduction(r0)};
     var branches = try table.expandProductions(std.testing.allocator, &start_productions);
-    
-    for (branches, 0..) |prods, i| {
-        try stdout.print("\n{d}\n", .{i});
-        for (prods.items) |p| {
-            try grammar.printProductionInstance(p);
-        }
-    }
     defer {
         for (branches) |list| {
             list.deinit();
         }
         std.testing.allocator.free(branches);
     }
+    
+    for (branches, 0..) |prods, i| {
+        try stdout.print("\n{d}\n", .{i});
+        for (prods.items) |p| {
+            try grammar.printProductionInstance(p);
+        }
+    }   
 
+    try table.populate(std.testing.allocator, r0);
 }
+
