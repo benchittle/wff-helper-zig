@@ -205,27 +205,44 @@ const ParseTable = struct {
     fn populate(self: *Self, allocator: std.mem.Allocator, augmented_production: Production) !void {
         // TODO: defers
         var action_goto_table = std.ArrayList([]Action).init(allocator);
+        defer action_goto_table.deinit();
+        errdefer for (action_goto_table.items) |row| {
+            allocator.free(row);
+        };
         var primary_productions_table = std.ArrayList([]ProductionInstance).init(allocator);
-        
-        try action_goto_table.append(try allocator.alloc(Action, self.grammar.getSymbolCount()));
-        for (0..action_goto_table.items[0].len) |i| {
-            action_goto_table.items[0][i] = Action.invalid;
+        defer {
+            for (primary_productions_table.items) |row| {
+                allocator.free(row);
+            }
+            primary_productions_table.deinit();
         }
+
+        try action_goto_table.append(try allocator.alloc(Action, self.grammar.getSymbolCount()));
         try primary_productions_table.append(try allocator.alloc(ProductionInstance, 1));
         primary_productions_table.items[0][0] = ProductionInstance.fromProduction(augmented_production);
 
         var state: usize = 0;
         while (state < action_goto_table.items.len) : (state += 1) {
             var branches = try self.expandProductions(allocator, primary_productions_table.items[state]);
+            defer {
+                for (branches) |prod_list| {
+                    prod_list.deinit();
+                }
+                allocator.free(branches);
+            }
             for (branches, 0..) |*prod_list, id| {
-                if (checkProductionsAlreadyExpanded(primary_productions_table, prod_list.*)) |existing_state| {
+                if (prod_list.items.len == 0) {
+                    action_goto_table.items[state][id] = Action.invalid;
+                } else if (checkProductionsAlreadyExpanded(primary_productions_table, prod_list.*)) |existing_state| {
                     switch (action_goto_table.items[state][id]) {
                         .state => |_| return TableGeneratorError.shiftShiftError,
                         else => action_goto_table.items[state][id] = Action{.state = existing_state},
                     }
                 } else {
-                    try action_goto_table.append(try allocator.alloc(Action, self.grammar.getSymbolCount()));
+                    var new_prod_list = try allocator.alloc(Action, self.grammar.getSymbolCount());
+                    try action_goto_table.append(new_prod_list);
                     try primary_productions_table.append(try prod_list.toOwnedSlice());
+                    action_goto_table.items[state][id] = Action{.state = action_goto_table.items.len - 1};
                 }               
             }
         }
@@ -338,5 +355,21 @@ test "expandProductions-grammar1_0" {
     }   
 
     try table.populate(std.testing.allocator, r0);
+    defer {
+        for (table.action_goto_table) |row| {
+            std.testing.allocator.free(row);
+        }
+        std.testing.allocator.free(table.action_goto_table);
+    }
+
+    for (table.action_goto_table, 0..) |row, s| {
+        try stdout.print("{d: >3} ||", .{s});
+        for (row) |entry| switch(entry) {
+            .state => |state_num| try stdout.print(" {d: ^3} |", .{state_num}),
+            .reduce => |rule_num| try stdout.print("R{d: ^3} |", .{rule_num}),
+            .invalid => try stdout.print("     |", .{}),
+        };
+        try stdout.print("\n", .{});
+    }
 }
 
