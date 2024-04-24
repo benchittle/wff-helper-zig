@@ -47,6 +47,13 @@ const Symbol = union(enum) {
             }
         };
     }
+
+    fn getId(self: Self) usize {
+        return switch(self) {
+            .variable => |v| v.id,
+            .terminal => |t| t.id,
+        };
+    }
 };
 
 const Production = struct {
@@ -95,12 +102,79 @@ const ProductionInstance = struct {
     }
 };
 
+// NOTE: variables ids MUST START AT 0 and MUST BE SMALLER THAN ALL TERMINAL IDS
 const Grammar = struct {
     const Self = @This();
 
+    allocator: std.mem.Allocator,
     rules: []const Production,
-    variables: []const u8,
-    terminals: []const u8,
+    variables: []const usize,
+    terminals: []const usize,
+
+    firsts: [][]const bool,
+
+    fn getOffsetTerminalId(self: Self, id: usize) usize {
+        return id - self.variables.len;
+    }
+
+
+    fn populateFirstsTable(self: *Self) !void {
+        var firsts = try self.allocator.alloc([]bool, self.variables.len);
+        errdefer self.allocator.free(firsts);
+        var num_firsts_allocated: usize = 0;
+        for (0..firsts.len) |i| {
+            firsts[i] = try self.allocator.alloc(bool, self.terminals.len);
+            for (0..firsts[i].len) |j| {
+                firsts[i][j] = false;
+            } 
+            num_firsts_allocated += 1;
+        }
+        errdefer for (firsts[0..num_firsts_allocated]) |list| {
+            self.allocator.free(list);
+        };
+
+        for (self.variables) |v| {
+            var seen = try self.allocator.alloc(bool, self.variables.len);
+            defer self.allocator.free(seen);
+            for (0..seen.len) |i| {
+                seen[i] = false;
+            }
+            seen[v] = true;
+
+            var stack = std.ArrayList(usize).init(self.allocator);
+            defer stack.deinit();
+            try stack.append(v);
+
+            while (stack.popOrNull()) |top| {
+                for (self.rules) |rule| {
+                    // const first_rule_symbol = rule.rhs[0].getId();
+                    switch(rule.rhs[0]) {
+                        .terminal => |t| {
+                            if (rule.lhs.id == top) {
+                                firsts[v][self.getOffsetTerminalId(t.id)] = true;
+                            }
+                        },
+                        .variable => |v2| {
+                            if (rule.lhs.id == top and !seen[v2.id]) {
+                                if (v2.id < v) { // entry already populated
+                                    for (firsts[v2.id], 0..) |isInFirstList, i| {
+                                        if (isInFirstList) {
+                                            firsts[v][i] = true;
+                                        }
+                                    }
+                                } else {
+                                    try stack.append(v2.id);
+                                }
+                                seen[v2.id] = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        self.firsts = firsts;
+    }
 
     fn getSymbolCount(self: Self) usize {
         return self.variables.len + self.terminals.len;
@@ -111,6 +185,10 @@ const Grammar = struct {
             if (v == id) return true;
         }
         return false;
+    }
+
+    fn idIsTerminal(self: Self, id: usize) bool {
+        return !self.idIsVariable(id);
     }
 
     pub fn printProductionInstance(_: Self, prod: ProductionInstance) !void {
@@ -132,6 +210,92 @@ const Grammar = struct {
         try stdout.print("\n", .{});
     }
 };
+
+test "firsts" {
+    // R1: (0) -> (1)
+    // R2: (0) -> 4
+    // R3: (0) -> (3)
+    // R4: (1) -> (2)
+    // R6: (2) -> (1)
+    // R7: (2) -> 5
+    // R8: (3) -> 6
+    
+    // R5: (2) -> (0)
+    var r1 = Production{
+        .lhs = Variable{.id = 0},
+        .rhs = &[_]Symbol{Symbol{.variable = Variable{.id = 1}}, 
+        }
+    };
+
+    var r2 = Production{
+        .lhs = Variable{.id = 0},
+        .rhs = &[_]Symbol{Symbol{.terminal = Terminal{.id = 4}}, 
+        }
+    };
+
+    var r3 = Production{
+        .lhs = Variable{.id = 0},
+        .rhs = &[_]Symbol{Symbol{.variable = Variable{.id = 3}}, 
+        }
+    };
+
+    var r4 = Production{
+        .lhs = Variable{.id = 1},
+        .rhs = &[_]Symbol{Symbol{.variable = Variable{.id = 2}}, 
+        }
+    };
+
+    // var r5 = Production{
+    //     .lhs = Variable{.id = 2},
+    //     .rhs = &[_]Symbol{Symbol{.variable = Variable{.id = 0}}, 
+    //     }
+    // };
+
+    var r6 = Production{
+        .lhs = Variable{.id = 2},
+        .rhs = &[_]Symbol{Symbol{.variable = Variable{.id = 1}}, 
+        }
+    };
+
+    var r7 = Production{
+        .lhs = Variable{.id = 2},
+        .rhs = &[_]Symbol{Symbol{.terminal = Terminal{.id = 5}}, 
+        }
+    };
+
+    var r8 = Production{
+        .lhs = Variable{.id = 3},
+        .rhs = &[_]Symbol{Symbol{.terminal = Terminal{.id = 6}}, 
+        }
+    };
+
+    var grammar = Grammar{
+        .allocator = std.testing.allocator,
+        .variables = &[_] usize{0, 1, 2, 3},
+        .terminals = &[_] usize{4, 5, 6},
+        .rules = &[_] Production{r1, r2, r3, r4, r6, r7, r8},
+        .firsts = undefined,
+    };
+
+    try grammar.populateFirstsTable();
+    defer {
+        for (0..grammar.firsts.len) |i| {
+            grammar.allocator.free(grammar.firsts[i]);
+        }
+        grammar.allocator.free(grammar.firsts);
+    }
+
+    debug.print("\n", .{});
+    for (grammar.firsts, 0..) |list, i| {
+        debug.print("({d}):", .{i});
+        for (list, grammar.variables.len..) |isFirst, j| {
+            if (isFirst) {
+                debug.print(" {d}", .{j});
+            }
+        }
+        debug.print("\n", .{});
+    }
+}
 
 
 const ParseTable = struct {
@@ -246,6 +410,9 @@ const ParseTable = struct {
                 }               
             }
         }
+
+        
+
         self.action_goto_table = try action_goto_table.toOwnedSlice();
     }
 };
@@ -328,9 +495,11 @@ test "expandProductions-grammar1_0" {
     };
 
     var grammar = Grammar {
+        .allocator = std.testing.allocator,
         .rules = &[_] Production{r1, r2, r3, r4, r5, r6},
-        .variables = &[_] u8{0},
-        .terminals = &[_] u8{1, 2, 3, 4, 5, 6, 7, 8},
+        .variables = &[_] usize{0},
+        .terminals = &[_] usize{1, 2, 3, 4, 5, 6, 7, 8},
+        .firsts = undefined,
     };
     
     var table = ParseTable{
@@ -348,7 +517,7 @@ test "expandProductions-grammar1_0" {
     }
     
     for (branches, 0..) |prods, i| {
-        try stdout.print("\n{d}\n", .{i});
+        debug.print("\n{d}\n", .{i});
         for (prods.items) |p| {
             try grammar.printProductionInstance(p);
         }
@@ -363,13 +532,13 @@ test "expandProductions-grammar1_0" {
     }
 
     for (table.action_goto_table, 0..) |row, s| {
-        try stdout.print("{d: >3} ||", .{s});
+        debug.print("{d: >3} ||", .{s});
         for (row) |entry| switch(entry) {
-            .state => |state_num| try stdout.print(" {d: ^3} |", .{state_num}),
-            .reduce => |rule_num| try stdout.print("R{d: ^3} |", .{rule_num}),
-            .invalid => try stdout.print("     |", .{}),
+            .state => |state_num| debug.print(" {d: ^3} |", .{state_num}),
+            .reduce => |rule_num| debug.print("R{d: ^3} |", .{rule_num}),
+            .invalid => debug.print("     |", .{}),
         };
-        try stdout.print("\n", .{});
+        debug.print("\n", .{});
     }
 }
 

@@ -182,7 +182,14 @@ begin
 
         move to next row of table
 
-    
+    // populate reductions
+    determine follow sets of variables
+    for state in table
+        for prod in state.primary_productions
+            if prod.is_done()
+                get corresponding rule_id
+                for sym_id in follow(rule.lhs)
+                    state[sym_id] = rule_id
 
 end
 
@@ -203,4 +210,36 @@ begin
 end
 
 
-    
+example: Determining follow set
+A -> (B)
+A -> C
+B -> C
+C -> p
+
+A -> b
+A -> B
+B -> A
+
+First(A) = First(B) + {b}
+First(B) = First(A)
+First(A) = First(A) + {b}
+
+First: For any -> xYz, Follow(Y) contains First(z)
+Build a "first" table
+For nonterm in grammar:
+    seen = {nonterm}
+    create stack containing nonterm
+    while stack not empty
+        top = stack.pop()
+        if top is terminal
+            firsts[nonterm].append(top)
+        else:
+            for rule in grammar
+                if rule.lhs == top and rule.rhs[0] not in seen
+                    if firsts[rule.rhs[0]] already populated:
+                        firsts[nonterm].extend(firsts[rule.rhs[0]])
+                    else:
+                        add rule.rhs[0] to stack
+                    seen.add(rule.rhs[0])
+            
+                    
