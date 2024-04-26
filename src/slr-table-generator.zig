@@ -9,50 +9,13 @@ pub const TableGeneratorError = error{
     shiftShiftError,
 };
 
-const Variable = struct {
-    const Self = @This();
-
-    id: usize,
-
-    fn eql(self: Self, other: Self) bool {
-        return self.id == other.id;
-    }
-};
-
-const Terminal = struct {
-    const Self = @This();
-
-    id: usize,
-
-    fn eql(self: Self, other: Self) bool {
-        return self.id == other.id;
-    }
-};
-
 const Symbol = union(enum) {
     const Self = @This();
 
-    variable: Variable,
-    terminal: Terminal,
+    id: usize,
 
     fn eql(self: Self, other: Self) bool {
-        return switch(self) {
-            .variable => |v1| switch(other) {
-                .variable => |v2| v1.eql(v2),
-                .terminal => |_| false,
-            },
-            .terminal => |t1| switch(other) {
-                .variable => |_| false,
-                .terminal => |t2| t1.eql(t2),
-            }
-        };
-    }
-
-    fn getId(self: Self) usize {
-        return switch(self) {
-            .variable => |v| v.id,
-            .terminal => |t| t.id,
-        };
+        return self.id == other.id;
     }
 };
 
@@ -61,7 +24,7 @@ const Production = struct {
     // allocated strings
     const Self = @This();
     
-    lhs: Variable,
+    lhs: Symbol,
     rhs: []const Symbol,
 
     fn eql(self: Self, other: Self) bool {
@@ -108,13 +71,13 @@ const Grammar = struct {
 
     allocator: std.mem.Allocator,
     rules: []const Production,
-    variables: []const usize,
-    terminals: []const usize,
+    variables: []const Symbol,
+    terminals: []const Symbol,
 
     firsts: [][]const bool,
 
-    fn getOffsetTerminalId(self: Self, id: usize) usize {
-        return id - self.variables.len;
+    fn getOffsetTerminalId(self: Self, terminal: Symbol) usize {
+        return terminal.id - self.variables.len;
     }
 
 
@@ -139,34 +102,29 @@ const Grammar = struct {
             for (0..seen.len) |i| {
                 seen[i] = false;
             }
-            seen[v] = true;
+            seen[v.id] = true;
 
-            var stack = std.ArrayList(usize).init(self.allocator);
+            var stack = std.ArrayList(Symbol).init(self.allocator);
             defer stack.deinit();
             try stack.append(v);
 
             while (stack.popOrNull()) |top| {
                 for (self.rules) |rule| {
-                    // const first_rule_symbol = rule.rhs[0].getId();
-                    switch(rule.rhs[0]) {
-                        .terminal => |t| {
-                            if (rule.lhs.id == top) {
-                                firsts[v][self.getOffsetTerminalId(t.id)] = true;
-                            }
-                        },
-                        .variable => |v2| {
-                            if (rule.lhs.id == top and !seen[v2.id]) {
-                                if (v2.id < v) { // entry already populated
-                                    for (firsts[v2.id], 0..) |isInFirstList, i| {
-                                        if (isInFirstList) {
-                                            firsts[v][i] = true;
-                                        }
+                    const first_rule_symbol = rule.rhs[0];
+                    if (rule.lhs.id == top.id) {
+                        if (self.symbolIsTerminal(first_rule_symbol)) {
+                            firsts[v.id][self.getOffsetTerminalId(first_rule_symbol)] = true;
+                        } else if (!seen[first_rule_symbol.id]) {
+                            if (first_rule_symbol.id < v.id) { // entry already populated
+                                for (firsts[first_rule_symbol.id], 0..) |isInFirstList, i| {
+                                    if (isInFirstList) {
+                                        firsts[v.id][i] = true;
                                     }
-                                } else {
-                                    try stack.append(v2.id);
                                 }
-                                seen[v2.id] = true;
+                            } else {
+                                try stack.append(first_rule_symbol);
                             }
+                            seen[first_rule_symbol.id] = true;
                         }
                     }
                 }
@@ -180,38 +138,29 @@ const Grammar = struct {
         return self.variables.len + self.terminals.len;
     }
 
-    fn idIsVariable(self: Self, id: usize) bool {
-        for (self.variables) |v| {
-            if (v == id) return true;
-        }
-        return false;
+    fn symbolIsVariable(self: Self, sym: Symbol) bool {
+        return sym.id < self.variables.len;
     }
 
-    fn idIsTerminal(self: Self, id: usize) bool {
-        return !self.idIsVariable(id);
+    fn symbolIsTerminal(self: Self, sym: Symbol) bool {
+        return  self.variables.len <= sym.id and sym.id < self.getSymbolCount();
     }
 
     pub fn printProductionInstance(_: Self, prod: ProductionInstance) !void {
         try stdout.print("{d}", .{prod.production.lhs.id});
         try stdout.print(" ->", .{});
         for (prod.production.rhs[0..prod.cursor]) |sym| {
-            switch(sym) {
-                .terminal => |t| try stdout.print(" {d}", .{t.id}),
-                .variable => |v| try stdout.print(" {d}", .{v.id}),
-            }
+            try stdout.print(" {d}", .{sym.id});
         }
         try stdout.print(" *", .{});
         for (prod.production.rhs[prod.cursor..]) |sym| {
-            switch(sym) {
-                .terminal => |t| try stdout.print(" {d}", .{t.id}),
-                .variable => |v| try stdout.print(" {d}", .{v.id}),
-            }
+            try stdout.print(" {d}", .{sym.id});
         }
         try stdout.print("\n", .{});
     }
 };
 
-test "firsts" {
+test "firsts_simple" {
     // R1: (0) -> (1)
     // R2: (0) -> 4
     // R3: (0) -> (3)
@@ -222,57 +171,50 @@ test "firsts" {
     
     // R5: (2) -> (0)
     var r1 = Production{
-        .lhs = Variable{.id = 0},
-        .rhs = &[_]Symbol{Symbol{.variable = Variable{.id = 1}}, 
-        }
+        .lhs = Symbol{.id = 0},
+        .rhs = &[_]Symbol{Symbol{.id = 1}}, 
     };
 
     var r2 = Production{
-        .lhs = Variable{.id = 0},
-        .rhs = &[_]Symbol{Symbol{.terminal = Terminal{.id = 4}}, 
-        }
+        .lhs = Symbol{.id = 0},
+        .rhs = &[_]Symbol{Symbol{.id = 4}}, 
     };
 
     var r3 = Production{
-        .lhs = Variable{.id = 0},
-        .rhs = &[_]Symbol{Symbol{.variable = Variable{.id = 3}}, 
-        }
+        .lhs = Symbol{.id = 0},
+        .rhs = &[_]Symbol{Symbol{.id = 3}}, 
     };
 
     var r4 = Production{
-        .lhs = Variable{.id = 1},
-        .rhs = &[_]Symbol{Symbol{.variable = Variable{.id = 2}}, 
-        }
+        .lhs = Symbol{.id = 1},
+        .rhs = &[_]Symbol{Symbol{.id = 2}}, 
     };
 
     // var r5 = Production{
-    //     .lhs = Variable{.id = 2},
-    //     .rhs = &[_]Symbol{Symbol{.variable = Variable{.id = 0}}, 
-    //     }
+    //     .lhs = Symbol{.id = 2},
+    //     .rhs = &[_]Symbol{Symbol{.id = 0}}, 
+    //     
     // };
 
     var r6 = Production{
-        .lhs = Variable{.id = 2},
-        .rhs = &[_]Symbol{Symbol{.variable = Variable{.id = 1}}, 
-        }
+        .lhs = Symbol{.id = 2},
+        .rhs = &[_]Symbol{Symbol{.id = 1}}, 
     };
 
     var r7 = Production{
-        .lhs = Variable{.id = 2},
-        .rhs = &[_]Symbol{Symbol{.terminal = Terminal{.id = 5}}, 
-        }
+        .lhs = Symbol{.id = 2},
+        .rhs = &[_]Symbol{Symbol{.id = 5}}, 
     };
 
     var r8 = Production{
-        .lhs = Variable{.id = 3},
-        .rhs = &[_]Symbol{Symbol{.terminal = Terminal{.id = 6}}, 
-        }
+        .lhs = Symbol{.id = 3},
+        .rhs = &[_]Symbol{Symbol{.id = 6}}, 
     };
 
     var grammar = Grammar{
         .allocator = std.testing.allocator,
-        .variables = &[_] usize{0, 1, 2, 3},
-        .terminals = &[_] usize{4, 5, 6},
+        .variables = &[_] Symbol{.{.id=0}, .{.id=1}, .{.id=2}, .{.id=3}},
+        .terminals = &[_] Symbol{.{.id=4}, .{.id=5}, .{.id=6}},
         .rules = &[_] Production{r1, r2, r3, r4, r6, r7, r8},
         .firsts = undefined,
     };
@@ -297,6 +239,238 @@ test "firsts" {
     }
 }
 
+test "firsts_grammar1_0" {
+    // S' = 0
+    // wff = 1
+    // Proposition = 2
+    // Not = 3
+    // LParen = 4
+    // RParen = 5
+    // And = 6
+    // Or = 7
+    // Cond = 8
+    // Bicond = 9
+
+    var r1 = Production{
+        .lhs = Symbol{.id = 1},
+        .rhs = &[_]Symbol{Symbol{.id = 2}}
+    };
+
+    var r2 = Production{
+        .lhs = Symbol{.id = 1},
+        .rhs = &[_]Symbol{
+            Symbol{.id = 3}, 
+            Symbol{.id = 1}
+        }
+    };
+
+    var r3 = Production{
+        .lhs = Symbol{.id = 1},
+        .rhs = &[_]Symbol{
+            Symbol{.id = 4}, 
+            Symbol{.id = 1},
+            Symbol{.id = 6}, 
+            Symbol{.id = 1},
+            Symbol{.id = 5}, 
+        }
+    };
+
+    var r4 = Production{
+        .lhs = Symbol{.id = 1},
+        .rhs = &[_]Symbol{
+            Symbol{.id = 4}, 
+            Symbol{.id = 1},
+            Symbol{.id = 7}, 
+            Symbol{.id = 1},
+            Symbol{.id = 5}, 
+        }
+    };
+
+    var r5 = Production{
+        .lhs = Symbol{.id = 1},
+        .rhs = &[_]Symbol{
+            Symbol{.id = 4}, 
+            Symbol{.id = 1},
+            Symbol{.id = 8}, 
+            Symbol{.id = 1},
+            Symbol{.id = 5}, 
+        }
+    };
+
+    var r6 = Production{
+        .lhs = Symbol{.id = 0},
+        .rhs = &[_]Symbol{
+            Symbol{.id = 4}, 
+            Symbol{.id = 1},
+            Symbol{.id = 9}, 
+            Symbol{.id = 1},
+            Symbol{.id = 5}, 
+        }
+    };
+
+
+    var r0 = Production{
+        .lhs = Symbol{.id = 0},
+        .rhs = &[_] Symbol{Symbol{.id = 1}}
+    };
+
+    var grammar = Grammar {
+        .allocator = std.testing.allocator,
+        .rules = &[_] Production{r0, r1, r2, r3, r4, r5, r6},
+        .variables = &[_] Symbol{.{.id=0}, .{.id=1}},
+        .terminals = &[_] Symbol{.{.id=2}, .{.id=3}, .{.id=4}, .{.id=5}, .{.id=6}, .{.id=7}, .{.id=8}, .{.id=9}, },
+        .firsts = undefined,
+    };
+
+    try grammar.populateFirstsTable();
+    defer {
+        for (0..grammar.firsts.len) |i| {
+            grammar.allocator.free(grammar.firsts[i]);
+        }
+        grammar.allocator.free(grammar.firsts);
+    }
+
+    debug.print("\n", .{});
+    for (grammar.firsts, 0..) |list, i| {
+        debug.print("({d}):", .{i});
+        for (list, grammar.variables.len..) |isFirst, j| {
+            if (isFirst) {
+                debug.print(" {d}", .{j});
+            }
+        }
+        debug.print("\n", .{});
+    }
+}
+
+test "firsts_grammar2_2" {
+    const V_S        = 0;
+    const V_WFF1     = 1;
+    const V_WFF2     = 2;
+    const V_WFF3     = 3;
+    const V_WFF4     = 4;
+    const V_PROP     = 5;
+    const T_BICOND   = 6;
+    const T_COND     = 7;
+    const T_OR       = 8;
+    const T_AND      = 9;
+    const T_NOT      = 10;
+    const T_LPAREN   = 11;
+    const T_RPAREN   = 12;
+    const T_PROPTOK  = 13;
+
+    var r1 = Production{
+        .lhs = Symbol{.id = V_S},
+        .rhs = &[_]Symbol{Symbol{.id = V_WFF1}}
+    };
+
+    var r2 = Production{
+        .lhs = Symbol{.id = V_WFF1},
+        .rhs = &[_]Symbol{
+            Symbol{.id = V_WFF1},
+            Symbol{.id = T_BICOND}, 
+            Symbol{.id = V_WFF2},
+        }
+    };
+
+    var r3 = Production{
+        .lhs = Symbol{.id = V_WFF2},
+        .rhs = &[_]Symbol{Symbol{.id = V_WFF3}}
+    };
+
+    var r4 = Production{
+        .lhs = Symbol{.id = V_WFF2},
+        .rhs = &[_]Symbol{
+            Symbol{.id = V_WFF2},
+            Symbol{.id = T_COND}, 
+            Symbol{.id = V_WFF3},
+        }
+    };
+
+    var r5 = Production{
+        .lhs = Symbol{.id = V_WFF3},
+        .rhs = &[_]Symbol{Symbol{.id = V_WFF4}}
+    };
+
+    var r6 = Production{
+        .lhs = Symbol{.id = V_WFF1},
+        .rhs = &[_]Symbol{
+            Symbol{.id = V_WFF3},
+            Symbol{.id = T_OR}, 
+            Symbol{.id = V_WFF4},
+        }
+    };
+
+    var r7 = Production{
+        .lhs = Symbol{.id = V_WFF3},
+        .rhs = &[_]Symbol{
+            Symbol{.id = V_WFF3},
+            Symbol{.id = T_AND}, 
+            Symbol{.id = V_WFF4},
+        }
+    };
+
+    var r8 = Production{
+        .lhs = Symbol{.id = V_WFF4},
+        .rhs = &[_]Symbol{Symbol{.id = V_PROP}}
+    };
+
+    var r9 = Production{
+        .lhs = Symbol{.id = V_WFF4},
+        .rhs = &[_]Symbol{
+            Symbol{.id = T_NOT},
+            Symbol{.id = V_WFF4}, 
+        }
+    };
+
+    var r10 = Production{
+        .lhs = Symbol{.id = V_PROP},
+        .rhs = &[_]Symbol{
+            Symbol{.id = T_LPAREN},
+            Symbol{.id = V_WFF1}, 
+            Symbol{.id = T_RPAREN},
+        }
+    };
+
+    var r11 = Production{
+        .lhs = Symbol{.id = V_PROP},
+        .rhs = &[_]Symbol{
+            Symbol{.id = T_PROPTOK},
+        }
+    };
+
+
+    var r0 = Production{
+        .lhs = Symbol{.id = V_S},
+        .rhs = &[_] Symbol{Symbol{.id = V_WFF1}}
+    };
+
+    var grammar = Grammar {
+        .allocator = std.testing.allocator,
+        .rules = &[_] Production{r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11},
+        .variables = &[_] Symbol{.{.id=V_S}, .{.id=V_WFF1}, .{.id=V_WFF2}, .{.id=V_WFF3}, .{.id=V_WFF4}, .{.id=V_PROP}},
+        .terminals = &[_] Symbol{.{.id=T_BICOND}, .{.id=T_COND}, .{.id=T_OR}, .{.id=T_AND}, .{.id=T_NOT}, .{.id=T_LPAREN}, .{.id=T_RPAREN}, .{.id=T_PROPTOK}},
+        .firsts = undefined,
+    };
+
+    try grammar.populateFirstsTable();
+    defer {
+        for (0..grammar.firsts.len) |i| {
+            grammar.allocator.free(grammar.firsts[i]);
+        }
+        grammar.allocator.free(grammar.firsts);
+    }
+
+    debug.print("\n", .{});
+    for (grammar.firsts, 0..) |list, i| {
+        debug.print("({d}):", .{i});
+        for (list, grammar.variables.len..) |isFirst, j| {
+            if (isFirst) {
+                debug.print(" {d}", .{j});
+            }
+        }
+        debug.print("\n", .{});
+    }
+}
 
 const ParseTable = struct {
     const Self = @This();
@@ -332,18 +506,19 @@ const ParseTable = struct {
         // Expand all given ProductionInstances and track all of the symbols
         // currently being read.
         while (stack.popOrNull()) |prod| {
-            switch (prod.readCursor() orelse continue) {
-                .variable => |v| {
-                    if (branches[v.id].items.len == 0) {
+            if (prod.readCursor()) |sym| {
+                if (self.grammar.symbolIsVariable(sym)) {
+                    if (branches[sym.id].items.len == 0) {
                         for (self.grammar.rules) |rule| {
-                            if (v.eql(rule.lhs)) {
+                            if (sym.eql(rule.lhs)) {
                                 try stack.append(ProductionInstance.fromProduction(rule));
                             }
                         }
                     }
-                    try branches[v.id].append(prod.copyAdvanceCursor());
-                },
-                .terminal => |t| try branches[t.id].append(prod.copyAdvanceCursor()), 
+                    try branches[sym.id].append(prod.copyAdvanceCursor());
+                } else {
+                    try branches[sym.id].append(prod.copyAdvanceCursor());
+                }
             }
         }
 
@@ -429,76 +604,74 @@ test "expandProductions-grammar1_0" {
     // Bicond = 8
     // S' = 9
 
-
-
     var r1 = Production{
-        .lhs = Variable{.id = 0},
-        .rhs = &[_]Symbol{Symbol{.terminal = Terminal{.id = 1}}}
+        .lhs = Symbol{.id = 0},
+        .rhs = &[_]Symbol{Symbol{.id = 1}}
     };
 
     var r2 = Production{
-        .lhs = Variable{.id = 0},
+        .lhs = Symbol{.id = 0},
         .rhs = &[_]Symbol{
-            Symbol{.terminal = Terminal{.id = 2}}, 
-            Symbol{.variable = Variable{.id = 0}}
+            Symbol{.id = 2}, 
+            Symbol{.id = 0}
         }
     };
 
     var r3 = Production{
-        .lhs = Variable{.id = 0},
+        .lhs = Symbol{.id = 0},
         .rhs = &[_]Symbol{
-            Symbol{.terminal = Terminal{.id = 3}}, 
-            Symbol{.variable = Variable{.id = 0}},
-            Symbol{.terminal = Terminal{.id = 5}}, 
-            Symbol{.variable = Variable{.id = 0}},
-            Symbol{.terminal = Terminal{.id = 4}}, 
+            Symbol{.id = 3}, 
+            Symbol{.id = 0},
+            Symbol{.id = 5}, 
+            Symbol{.id = 0},
+            Symbol{.id = 4}, 
         }
     };
 
     var r4 = Production{
-        .lhs = Variable{.id = 0},
+        .lhs = Symbol{.id = 0},
         .rhs = &[_]Symbol{
-            Symbol{.terminal = Terminal{.id = 3}}, 
-            Symbol{.variable = Variable{.id = 0}},
-            Symbol{.terminal = Terminal{.id = 6}}, 
-            Symbol{.variable = Variable{.id = 0}},
-            Symbol{.terminal = Terminal{.id = 4}}, 
+            Symbol{.id = 3}, 
+            Symbol{.id = 0},
+            Symbol{.id = 6}, 
+            Symbol{.id = 0},
+            Symbol{.id = 4}, 
         }
     };
 
     var r5 = Production{
-        .lhs = Variable{.id = 0},
+        .lhs = Symbol{.id = 0},
         .rhs = &[_]Symbol{
-            Symbol{.terminal = Terminal{.id = 3}}, 
-            Symbol{.variable = Variable{.id = 0}},
-            Symbol{.terminal = Terminal{.id = 7}}, 
-            Symbol{.variable = Variable{.id = 0}},
-            Symbol{.terminal = Terminal{.id = 4}}, 
+            Symbol{.id = 3}, 
+            Symbol{.id = 0},
+            Symbol{.id = 7}, 
+            Symbol{.id = 0},
+            Symbol{.id = 4}, 
         }
     };
 
     var r6 = Production{
-        .lhs = Variable{.id = 0},
+        .lhs = Symbol{.id = 0},
         .rhs = &[_]Symbol{
-            Symbol{.terminal = Terminal{.id = 3}}, 
-            Symbol{.variable = Variable{.id = 0}},
-            Symbol{.terminal = Terminal{.id = 8}}, 
-            Symbol{.variable = Variable{.id = 0}},
-            Symbol{.terminal = Terminal{.id = 4}}, 
+            Symbol{.id = 3}, 
+            Symbol{.id = 0},
+            Symbol{.id = 8}, 
+            Symbol{.id = 0},
+            Symbol{.id = 4}, 
         }
     };
 
 
     var r0 = Production{
-        .lhs = Variable{.id = 9},
-        .rhs = &[_] Symbol{Symbol{.variable = Variable{.id = 0}}}
+        .lhs = Symbol{.id = 9},
+        .rhs = &[_] Symbol{Symbol{.id = 0}}
     };
 
     var grammar = Grammar {
         .allocator = std.testing.allocator,
         .rules = &[_] Production{r1, r2, r3, r4, r5, r6},
-        .variables = &[_] usize{0},
-        .terminals = &[_] usize{1, 2, 3, 4, 5, 6, 7, 8},
+        .variables = &[_] Symbol{.{.id=0}},
+        .terminals = &[_] Symbol{.{.id=1}, .{.id=2}, .{.id=3}, .{.id=4}, .{.id=5}, .{.id=6}, .{.id=7}, .{.id=8}},
         .firsts = undefined,
     };
     
