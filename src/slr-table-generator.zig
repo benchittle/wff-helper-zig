@@ -9,10 +9,12 @@ pub const TableGeneratorError = error{
     shiftShiftError,
 };
 
+const SymbolID = u32;
+
 const Symbol = union(enum) {
     const Self = @This();
 
-    id: usize,
+    id: SymbolID,
 
     fn eql(self: Self, other: Self) bool {
         return self.id == other.id;
@@ -73,22 +75,21 @@ const Grammar = struct {
 
     allocator: std.mem.Allocator,
     rules: []const Production,
-    variables: []const Symbol,
-    terminals: []const Symbol,
+    variables: usize,
+    terminals: usize,
 
     firsts: [][]const bool,
 
     fn getOffsetTerminalId(self: Self, terminal: Symbol) usize {
-        return terminal.id - self.variables.len;
+        return terminal.id - self.variables;
     }
 
-
     fn getFollowSet(self: Self) ![][]const bool {
-        var follow = try self.allocator.alloc([]bool, self.variables.len);
+        var follow = try self.allocator.alloc([]bool, self.variables);
         errdefer self.allocator.free(follow);
         var num_follow_allocated: usize = 0;
         for (0..follow.len) |i| {
-            follow[i] = try self.allocator.alloc(bool, self.terminals.len);
+            follow[i] = try self.allocator.alloc(bool, self.terminals);
             for (0..follow[i].len) |j| {
                 follow[i][j] = false;
             } 
@@ -98,35 +99,35 @@ const Grammar = struct {
             self.allocator.free(list);
         };
 
-        for (self.variables) |v| {
-            var seen = try self.allocator.alloc(bool, self.variables.len);
+        for (0..self.variables) |v| {
+            var seen = try self.allocator.alloc(bool, self.variables);
             defer self.allocator.free(seen);
             for (0..seen.len) |i| {
                 seen[i] = false;
             }
-            seen[v.id] = true; // redundant?
+            seen[v] = true; // redundant?
 
-            var stack = std.ArrayList(Symbol).init(self.allocator);
+            var stack = std.ArrayList(SymbolID).init(self.allocator);
             defer stack.deinit();
-            try stack.append(v);
+            try stack.append(@intCast(v));
 
             while (stack.popOrNull()) |top| {
                 for (self.rules) |rule| {
                     for (rule.rhs, 0..) |symbol, symbol_index| {
-                        if (!symbol.eql(top)) {
+                        if (symbol.id != top) {
                             continue;
                         }
                         if (symbol_index + 1 == rule.rhs.len) {
                             if (!seen[rule.lhs.id]) { // optimize: if already caluclated, dont redo
-                                try stack.append(rule.lhs);
+                                try stack.append(rule.lhs.id);
                                 seen[rule.lhs.id] = true;
                             }
                         } else if (self.symbolIsTerminal(rule.rhs[symbol_index + 1])) {
-                            follow[v.id][self.getOffsetTerminalId(rule.rhs[symbol_index + 1])] = true;
+                            follow[v][self.getOffsetTerminalId(rule.rhs[symbol_index + 1])] = true;
                         } else {
                             for (self.firsts[symbol.id], 0..) |isFirst, first_symbol_id| {
                                 if (isFirst) {
-                                    follow[v.id][first_symbol_id] = true;
+                                    follow[v][first_symbol_id] = true;
                                 }
                             }
                         }
@@ -139,11 +140,11 @@ const Grammar = struct {
 
 
     fn populateFirstsTable(self: *Self) !void {
-        var firsts = try self.allocator.alloc([]bool, self.variables.len);
+        var firsts = try self.allocator.alloc([]bool, self.variables);
         errdefer self.allocator.free(firsts);
         var num_firsts_allocated: usize = 0;
         for (0..firsts.len) |i| {
-            firsts[i] = try self.allocator.alloc(bool, self.terminals.len);
+            firsts[i] = try self.allocator.alloc(bool, self.terminals);
             for (0..firsts[i].len) |j| {
                 firsts[i][j] = false;
             } 
@@ -152,34 +153,35 @@ const Grammar = struct {
         errdefer for (firsts[0..num_firsts_allocated]) |list| {
             self.allocator.free(list);
         };
-
-        for (self.variables) |v| {
-            var seen = try self.allocator.alloc(bool, self.variables.len);
+        
+        // Iterate over all variable ID's
+        for (0..self.variables) |v| {
+            var seen = try self.allocator.alloc(bool, self.variables);
             defer self.allocator.free(seen);
             for (0..seen.len) |i| {
                 seen[i] = false;
             }
-            seen[v.id] = true;
+            seen[v] = true;
 
-            var stack = std.ArrayList(Symbol).init(self.allocator);
+            var stack = std.ArrayList(SymbolID).init(self.allocator);
             defer stack.deinit();
-            try stack.append(v);
+            try stack.append(@intCast(v));
 
             while (stack.popOrNull()) |top| {
                 for (self.rules) |rule| {
                     const first_rule_symbol = rule.rhs[0];
-                    if (rule.lhs.id == top.id) {
+                    if (rule.lhs.id == top) {
                         if (self.symbolIsTerminal(first_rule_symbol)) {
-                            firsts[v.id][self.getOffsetTerminalId(first_rule_symbol)] = true;
+                            firsts[v][self.getOffsetTerminalId(first_rule_symbol)] = true;
                         } else if (!seen[first_rule_symbol.id]) {
-                            if (first_rule_symbol.id < v.id) { // entry already populated
+                            if (first_rule_symbol.id < v) { // entry already populated
                                 for (firsts[first_rule_symbol.id], 0..) |isInFirstList, i| {
                                     if (isInFirstList) {
-                                        firsts[v.id][i] = true;
+                                        firsts[v][i] = true;
                                     }
                                 }
                             } else {
-                                try stack.append(first_rule_symbol);
+                                try stack.append(first_rule_symbol.id);
                             }
                             seen[first_rule_symbol.id] = true;
                         }
@@ -192,15 +194,15 @@ const Grammar = struct {
     }
 
     fn getSymbolCount(self: Self) usize {
-        return self.variables.len + self.terminals.len;
+        return self.variables + self.terminals;
     }
 
     fn symbolIsVariable(self: Self, sym: Symbol) bool {
-        return sym.id < self.variables.len;
+        return sym.id < self.variables;
     }
 
     fn symbolIsTerminal(self: Self, sym: Symbol) bool {
-        return  self.variables.len <= sym.id and sym.id < self.getSymbolCount();
+        return  self.variables <= sym.id and sym.id < self.getSymbolCount();
     }
 
     pub fn printProductionInstance(_: Self, prod: ProductionInstance) !void {
@@ -271,8 +273,8 @@ test "firsts_and_follows_simple" {
 
     var grammar = Grammar{
         .allocator = std.testing.allocator,
-        .variables = &[_] Symbol{.{.id=0}, .{.id=1}, .{.id=2}, .{.id=3}},
-        .terminals = &[_] Symbol{.{.id=4}, .{.id=5}, .{.id=6}},
+        .variables = 4,
+        .terminals = 3,
         .rules = &[_] Production{r1, r2, r3, r4, r6, r7, r8},
         .firsts = undefined,
     };
@@ -403,8 +405,8 @@ test "firsts_and_follows_grammar1_0" {
     var grammar = Grammar {
         .allocator = std.testing.allocator,
         .rules = &[_] Production{r0, r1, r2, r3, r4, r5, r6},
-        .variables = &[_] Symbol{.{.id=0}, .{.id=1}},
-        .terminals = &[_] Symbol{.{.id=2}, .{.id=3}, .{.id=4}, .{.id=5}, .{.id=6}, .{.id=7}, .{.id=8}, .{.id=9}, },
+        .variables = 2,
+        .terminals = 8,
         .firsts = undefined,
     };
 
@@ -557,8 +559,8 @@ test "follows_grammar2_2" {
     var grammar = Grammar {
         .allocator = std.testing.allocator,
         .rules = &[_] Production{r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11},
-        .variables = &[_] Symbol{.{.id=V_S}, .{.id=V_WFF1}, .{.id=V_WFF2}, .{.id=V_WFF3}, .{.id=V_WFF4}, .{.id=V_PROP}},
-        .terminals = &[_] Symbol{.{.id=T_BICOND}, .{.id=T_COND}, .{.id=T_OR}, .{.id=T_AND}, .{.id=T_NOT}, .{.id=T_LPAREN}, .{.id=T_RPAREN}, .{.id=T_PROPTOK}},
+        .variables = 6,
+        .terminals = 8,
         .firsts = undefined,
     };
 
@@ -813,8 +815,8 @@ test "expandProductions-grammar1_0" {
     var grammar = Grammar {
         .allocator = std.testing.allocator,
         .rules = &[_] Production{r1, r2, r3, r4, r5, r6},
-        .variables = &[_] Symbol{.{.id=0}},
-        .terminals = &[_] Symbol{.{.id=1}, .{.id=2}, .{.id=3}, .{.id=4}, .{.id=5}, .{.id=6}, .{.id=7}, .{.id=8}},
+        .variables = 1,
+        .terminals = 8,
         .firsts = undefined,
     };
     
