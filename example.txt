@@ -129,9 +129,9 @@ R10: prop -> (wff1)
 R11: prop -> PROPTOK
 
 FOLLOW(S) = {$}                      = {$}
-FOLLOW(wff1) = FOLLOW(S) + {<=>, )}  = {$, <=>, )}
-FOLLOW(wff2) = FOLLOW(wff1) + {=>}   = {$, <=>, ), =>}
-FOLLOW(wff3) = FOLLOW(wff2) + {v, ^} = {$, <=>, ), =>, v, ^}
+FOLLOW(wff1) = FOLLOW(S) + {<=>, )}  = {$, <=>, )}           = {_, 6, 12}
+FOLLOW(wff2) = FOLLOW(wff1) + {=>}   = {$, <=>, ), =>}       = {_, 6, 12, 7}
+FOLLOW(wff3) = FOLLOW(wff2) + {v, ^} = {$, <=>, ), =>, v, ^} = {_, 6, 12, 7, 8, 9}
 FOLLOW(wff4) = FOLLOW(wff3)          = {$, <=>, ), =>, v, ^}
 FOLLOW(prop) = FOLLOW(wff4)          = {$, <=>, ), =>, v, ^}
 
@@ -225,6 +225,7 @@ First(B) = First(A)
 First(A) = First(A) + {b}
 
 First: For any -> xYz, Follow(Y) contains First(z)
+NOTE: This pseudoocde no longer matches the actual code after implementation!
 Build a "first" table
 For nonterm in grammar:
     seen = {nonterm}
@@ -242,4 +243,20 @@ For nonterm in grammar:
                         add rule.rhs[0] to stack
                     seen.add(rule.rhs[0])
             
-                    
+FOLLOW:
+Build a follow table
+For v in grammar.variables:
+    seen = {}
+    create stack containing nonterm
+    while stack not empty
+        top = stack.pop()
+        for rule in grammar that contains v on rhs:
+            for occurence of v in rhs:
+                if symbol to right is terminal:
+                    add symbol to follow set of v
+                else if symbol to right is nonterminal:
+                    combine first(symbol) to follow set of v
+                else (if at end):
+                    add rule.lhs to stack 
+
+            
