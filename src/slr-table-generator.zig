@@ -7,6 +7,7 @@ const lex = @import("wff-lexing.zig");
 
 pub const TableGeneratorError = error{
     shiftShiftError,
+    shiftReduceError,
 };
 
 const SymbolID = u32;
@@ -78,24 +79,28 @@ const Grammar = struct {
     variables: usize,
     terminals: usize,
 
-    firsts: [][]const bool,
-
     fn getOffsetTerminalId(self: Self, terminal: Symbol) usize {
         return terminal.id - self.variables;
     }
 
     fn getFollowSet(self: Self) ![][]const bool {
-        var follow = try self.allocator.alloc([]bool, self.variables);
-        errdefer self.allocator.free(follow);
+        var first_set = try self.getFirstSet();
+        defer {
+            for (first_set) |row| self.allocator.free(row);
+            self.allocator.free(first_set);
+        }
+
+        var follow_set = try self.allocator.alloc([]bool, self.variables);
+        errdefer self.allocator.free(follow_set);
         var num_follow_allocated: usize = 0;
-        for (0..follow.len) |i| {
-            follow[i] = try self.allocator.alloc(bool, self.terminals);
-            for (0..follow[i].len) |j| {
-                follow[i][j] = false;
+        for (0..follow_set.len) |i| {
+            follow_set[i] = try self.allocator.alloc(bool, self.terminals);
+            for (0..follow_set[i].len) |j| {
+                follow_set[i][j] = false;
             } 
             num_follow_allocated += 1;
         }
-        errdefer for (follow[0..num_follow_allocated]) |list| {
+        errdefer for (follow_set[0..num_follow_allocated]) |list| {
             self.allocator.free(list);
         };
 
@@ -123,11 +128,11 @@ const Grammar = struct {
                                 seen[rule.lhs.id] = true;
                             }
                         } else if (self.symbolIsTerminal(rule.rhs[symbol_index + 1])) {
-                            follow[v][self.getOffsetTerminalId(rule.rhs[symbol_index + 1])] = true;
+                            follow_set[v][self.getOffsetTerminalId(rule.rhs[symbol_index + 1])] = true;
                         } else {
-                            for (self.firsts[symbol.id], 0..) |isFirst, first_symbol_id| {
+                            for (first_set[symbol.id], 0..) |isFirst, offset_first_symbol_id| {
                                 if (isFirst) {
-                                    follow[v][first_symbol_id] = true;
+                                    follow_set[v][offset_first_symbol_id] = true;
                                 }
                             }
                         }
@@ -135,11 +140,11 @@ const Grammar = struct {
                 }
             }
         }
-        return follow;
+        return follow_set;
     }
 
 
-    fn populateFirstsTable(self: *Self) !void {
+    fn getFirstSet(self: Self) ![][]bool {
         var firsts = try self.allocator.alloc([]bool, self.variables);
         errdefer self.allocator.free(firsts);
         var num_firsts_allocated: usize = 0;
@@ -190,11 +195,20 @@ const Grammar = struct {
             }
         }
 
-        self.firsts = firsts;
+        return firsts;
     }
 
     fn getSymbolCount(self: Self) usize {
         return self.variables + self.terminals;
+    }
+
+    fn getRuleId(self: Self, rule: Production) ?usize {
+        for (self.rules, 0..) |known_rule, i| {
+            if (known_rule.eql(rule)) {
+                return i;
+            }
+        }
+        return null;
     }
 
     fn symbolIsVariable(self: Self, sym: Symbol) bool {
@@ -276,15 +290,14 @@ test "firsts_and_follows_simple" {
         .variables = 4,
         .terminals = 3,
         .rules = &[_] Production{r1, r2, r3, r4, r6, r7, r8},
-        .firsts = undefined,
     };
 
-    try grammar.populateFirstsTable();
+    var first_set = try grammar.getFirstSet();
     defer {
-        for (0..grammar.firsts.len) |i| {
-            grammar.allocator.free(grammar.firsts[i]);
+        for (0..first_set.len) |i| {
+            grammar.allocator.free(first_set[i]);
         }
-        grammar.allocator.free(grammar.firsts);
+        grammar.allocator.free(first_set);
     }
 
     var expected_firsts = [_][3]bool {
@@ -293,7 +306,7 @@ test "firsts_and_follows_simple" {
         .{false, true, false},
         .{false, false, true}
     };
-    for (grammar.firsts, expected_firsts) |actual, expected| {
+    for (first_set, expected_firsts) |actual, expected| {
         try std.testing.expectEqualSlices(bool, &expected, actual);
     }
 
@@ -407,22 +420,21 @@ test "firsts_and_follows_grammar1_0" {
         .rules = &[_] Production{r0, r1, r2, r3, r4, r5, r6},
         .variables = 2,
         .terminals = 8,
-        .firsts = undefined,
     };
 
-    try grammar.populateFirstsTable();
+    var first_set = try grammar.getFirstSet();
     defer {
-        for (0..grammar.firsts.len) |i| {
-            grammar.allocator.free(grammar.firsts[i]);
+        for (0..first_set.len) |i| {
+            grammar.allocator.free(first_set[i]);
         }
-        grammar.allocator.free(grammar.firsts);
+        grammar.allocator.free(first_set);
     }
 
     var expected_firsts = [_][8]bool {
         .{true, true, true, false, false, false, false, false},
         .{true, true, true, false, false, false, false, false},
     };
-    for (grammar.firsts, expected_firsts) |actual, expected| {
+    for (first_set, expected_firsts) |actual, expected| {
         try std.testing.expectEqualSlices(bool, &expected, actual);
     }
     
@@ -561,15 +573,14 @@ test "follows_grammar2_2" {
         .rules = &[_] Production{r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11},
         .variables = 6,
         .terminals = 8,
-        .firsts = undefined,
     };
 
-    try grammar.populateFirstsTable();
+    var first_set = try grammar.getFirstSet();
     defer {
-        for (0..grammar.firsts.len) |i| {
-            grammar.allocator.free(grammar.firsts[i]);
+        for (0..first_set.len) |i| {
+            grammar.allocator.free(first_set[i]);
         }
-        grammar.allocator.free(grammar.firsts);
+        grammar.allocator.free(first_set);
     }
 
     var expected_firsts = [_][8]bool {
@@ -580,7 +591,7 @@ test "follows_grammar2_2" {
         .{false, false, false, false, true, true, false, true},
         .{false, false, false, false, false, true, false, true},
     };
-    for (grammar.firsts, expected_firsts) |actual, expected| {
+    for (first_set, expected_firsts) |actual, expected| {
         try std.testing.expectEqualSlices(bool, &expected, actual);
     }
 
@@ -623,6 +634,7 @@ const ParseTable = struct {
         state: usize,  
         reduce: usize, // index of grammar.rules
         invalid,
+        accept,
     };
 
     grammar: Grammar,
@@ -731,93 +743,117 @@ const ParseTable = struct {
             }
         }
 
-        
+        var follow_set = try self.grammar.getFollowSet();
+        defer {
+            for (follow_set) |row| allocator.free(row);
+            allocator.free(follow_set);
+        }
+
+        // TODO: Populate reductions
+        // For each completed primary production in each state, identify the
+        // production rule's index and insert a reduction on each of the LHS's
+        // follow set
+        for (primary_productions_table.items, 0..) |row, state_num| {
+            for (row) |instance| {
+                if (instance.readCursor() != null) continue;
+
+                var rule_id = self.grammar.getRuleId(instance.production).?;
+                for (follow_set[instance.production.lhs.id], self.grammar.variables..) |isFollow, terminal_id| {
+                    if (!isFollow) continue;
+
+                    action_goto_table.items[state_num][terminal_id] = try switch(action_goto_table.items[state_num][terminal_id]) {
+                        .invalid => Action{.reduce = rule_id},
+                        .state => TableGeneratorError.shiftShiftError,
+                        .reduce => TableGeneratorError.shiftReduceError,
+                    };
+                }
+            }
+        } 
 
         self.action_goto_table = try action_goto_table.toOwnedSlice();
     }
 };
 
 test "expandProductions-grammar1_0" {
-    // wff = 0
-    // Proposition = 1
-    // Not = 2
-    // LParen = 3
-    // RParen = 4
-    // And = 5
-    // Or = 6
-    // Cond = 7
-    // Bicond = 8
-    // S' = 9
+    // S' = 0
+    // wff = 1
+    // Proposition = 2
+    // Not = 3
+    // LParen = 4
+    // RParen = 5
+    // And = 6
+    // Or = 7
+    // Cond = 8
+    // Bicond = 9
 
     var r1 = Production{
-        .lhs = Symbol{.id = 0},
-        .rhs = &[_]Symbol{Symbol{.id = 1}}
+        .lhs = Symbol{.id = 1},
+        .rhs = &[_]Symbol{Symbol{.id = 2}}
     };
 
     var r2 = Production{
-        .lhs = Symbol{.id = 0},
+        .lhs = Symbol{.id = 1},
         .rhs = &[_]Symbol{
-            Symbol{.id = 2}, 
-            Symbol{.id = 0}
+            Symbol{.id = 3}, 
+            Symbol{.id = 1}
         }
     };
 
     var r3 = Production{
-        .lhs = Symbol{.id = 0},
+        .lhs = Symbol{.id = 1},
         .rhs = &[_]Symbol{
-            Symbol{.id = 3}, 
-            Symbol{.id = 0},
-            Symbol{.id = 5}, 
-            Symbol{.id = 0},
             Symbol{.id = 4}, 
+            Symbol{.id = 1},
+            Symbol{.id = 6}, 
+            Symbol{.id = 1},
+            Symbol{.id = 5}, 
         }
     };
 
     var r4 = Production{
-        .lhs = Symbol{.id = 0},
+        .lhs = Symbol{.id = 1},
         .rhs = &[_]Symbol{
-            Symbol{.id = 3}, 
-            Symbol{.id = 0},
-            Symbol{.id = 6}, 
-            Symbol{.id = 0},
             Symbol{.id = 4}, 
+            Symbol{.id = 1},
+            Symbol{.id = 7}, 
+            Symbol{.id = 1},
+            Symbol{.id = 5}, 
         }
     };
 
     var r5 = Production{
-        .lhs = Symbol{.id = 0},
+        .lhs = Symbol{.id = 1},
         .rhs = &[_]Symbol{
-            Symbol{.id = 3}, 
-            Symbol{.id = 0},
-            Symbol{.id = 7}, 
-            Symbol{.id = 0},
             Symbol{.id = 4}, 
+            Symbol{.id = 1},
+            Symbol{.id = 8}, 
+            Symbol{.id = 1},
+            Symbol{.id = 5}, 
         }
     };
 
     var r6 = Production{
         .lhs = Symbol{.id = 0},
         .rhs = &[_]Symbol{
-            Symbol{.id = 3}, 
-            Symbol{.id = 0},
-            Symbol{.id = 8}, 
-            Symbol{.id = 0},
             Symbol{.id = 4}, 
+            Symbol{.id = 1},
+            Symbol{.id = 9}, 
+            Symbol{.id = 1},
+            Symbol{.id = 5}, 
         }
     };
 
 
     var r0 = Production{
-        .lhs = Symbol{.id = 9},
-        .rhs = &[_] Symbol{Symbol{.id = 0}}
+        .lhs = Symbol{.id = 0},
+        .rhs = &[_] Symbol{Symbol{.id = 1}}
     };
 
     var grammar = Grammar {
         .allocator = std.testing.allocator,
-        .rules = &[_] Production{r1, r2, r3, r4, r5, r6},
-        .variables = 1,
+        .rules = &[_] Production{r0, r1, r2, r3, r4, r5, r6},
+        .variables = 2,
         .terminals = 8,
-        .firsts = undefined,
     };
     
     var table = ParseTable{
