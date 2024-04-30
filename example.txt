@@ -260,3 +260,4 @@ For v in grammar.variables:
                     add rule.lhs to stack 
 
             
+TODO: Comptime everything????
