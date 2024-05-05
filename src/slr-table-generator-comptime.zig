@@ -32,7 +32,7 @@ fn strStrip(ascii_string: []u8) []u8 {
     return ascii_string[start..end];
 }
 
-const SymbolId = usize;
+const SymbolId = i32;
 
 const Symbol = union(enum) {
     const Self = @This();
@@ -222,7 +222,9 @@ fn Grammar(comptime V: type, comptime T: type) type {
 
     return struct {
         const Self = @This();
-
+        
+        initialized_at_comptime: bool,
+        allocator: std.mem.Allocator,
         rules: []const Production,
         variables: []const V,
         terminals: []const T,
@@ -230,10 +232,13 @@ fn Grammar(comptime V: type, comptime T: type) type {
         fn initFromTuples(
             comptime rule_tuples: anytype,
             comptime start_variable: V,
+            comptime end_token: T
         ) Self {
             comptime {
                 // Initialize a grammar struct to populate.
                 var grammar = Self {
+                    .initialized_at_comptime = true,
+                    .allocator = undefined,
                     .rules = &[_] Production {},
                     .variables = &[_] V {start_variable},
                     .terminals = &[_] T {},
@@ -247,6 +252,7 @@ fn Grammar(comptime V: type, comptime T: type) type {
                 inline for (std.meta.fieldNames(@TypeOf(rule_tuples))) |rule_tuples_field_name| {
                     const rule_tuple = @field(rule_tuples, rule_tuples_field_name);
                     
+
                     // Initialize a rule struct to populate.
                     var rule = Production {
                         .lhs = undefined,
@@ -261,7 +267,7 @@ fn Grammar(comptime V: type, comptime T: type) type {
                     } else {
                         // If we haven't seen this variable yet, append it to 
                         // the variables list.
-                        rule.lhs = grammar.variables.len;
+                        rule.lhs = grammar.getVariableCount();
                         grammar.variables = grammar.variables ++ &[_]V {lhs};
                     }
 
@@ -276,7 +282,7 @@ fn Grammar(comptime V: type, comptime T: type) type {
                             } else {
                                 // If we haven't seen this variable yet, append
                                 // it to the variables list.
-                                rule.rhs = rule.rhs ++ &[_]SymbolId {grammar.variables.len};
+                                rule.rhs = rule.rhs ++ &[_]SymbolId {@as(SymbolId, grammar.getVariableCount())};
                                 grammar.variables = grammar.variables ++ &[_]V {symbol};
                             }
                         } else {
@@ -285,7 +291,7 @@ fn Grammar(comptime V: type, comptime T: type) type {
                             } else {
                                 // If we haven't seen this terminal yet, append 
                                 // it to the terminals list.
-                                rule.rhs = rule.rhs ++ &[_]SymbolId {grammar.terminals.len};
+                                rule.rhs = rule.rhs ++ &[_]SymbolId {-@as(SymbolId, grammar.getTerminalCount()) - 1};
                                 grammar.terminals = grammar.terminals ++ &[_]T {symbol};
                             }
                         }
@@ -293,7 +299,16 @@ fn Grammar(comptime V: type, comptime T: type) type {
                     // Append the populated rule.
                     grammar.rules = grammar.rules ++ &[_]Production {rule};
                 }
+                grammar.terminals = grammar.terminals ++ &[_]T {end_token};
                 return grammar;
+            }
+        }
+        
+        fn deinit(self: Self) void {
+            if (!self.initialized_at_comptime) {
+                self.allocator.free(self.rules);
+                self.allocator.free(self.variables);
+                self.allocator.free(self.terminals);
             }
         }
 
@@ -359,8 +374,20 @@ fn Grammar(comptime V: type, comptime T: type) type {
                 }
             }
         }
-    
-        fn getVariableId(self: Self, variable: V) ?usize {
+
+        fn getVariableCount(self: Self) usize {
+            return self.variables.len;
+        }
+
+        fn getTerminalCount(self: Self) usize {
+            return self.terminals.len;
+        }
+
+        fn getSymbolCount(self: Self) usize {
+            return self.getVariableCount() + self.getTerminalCount();
+        }
+
+        fn getVariableId(self: Self, variable: V) ?SymbolId {
             for (self.variables, 0..) |v, i| {
                 if (variable.eql(v)) {
                     return i;
@@ -369,7 +396,7 @@ fn Grammar(comptime V: type, comptime T: type) type {
             return null;
         }
 
-        fn getTerminalId(self: Self, terminal: T) ?usize {
+        fn getTerminalId(self: Self, terminal: T) ?SymbolId {
             for (self.terminals, self.variables.len..) |t, i| {
                 if (terminal.eql(t)) {
                     return i;
@@ -377,10 +404,186 @@ fn Grammar(comptime V: type, comptime T: type) type {
             }
             return null;
         }
+
+        fn getVariableIndexFromId(_: Self, symbol: SymbolId) usize {
+            std.debug.assert(symbol >= 0);
+            return symbol;
+        }
+
+        // TODO: Rename this or other "get" functions, arguments are different
+        // (SymbolId vs T)
+        fn getTerminalIndexFromId(_: Self, symbol: SymbolId) usize {
+            std.debug.assert(symbol < 0);
+            return -symbol + 1;
+        }
+
+        fn symbolIsVariable(self: Self, symbol: SymbolId) ?usize {
+            if (symbol >= 0 and symbol < self.getVariableCount()) {
+                return symbol;
+            }
+            return null;
+        }
+
+        fn symbolIsTerminal(self: Self, symbol: SymbolId) ?usize {
+            if (symbol < 0) {
+                const index = self.getTerminalIndexFromId(symbol);
+                if (index < self.getTerminalCount()) {
+                    return index;
+                }
+            }
+            return null;
+        }
+    
+        // NOTE: $ (END character) can never be first
+        fn getFirstSet(self: Self, allocator: std.mem.Allocator) ![][]bool {
+            var firsts = try allocator.alloc([]bool, self.getVariableCount());
+            errdefer allocator.free(firsts);
+            var num_firsts_allocated: usize = 0;
+            for (0..firsts.len) |i| {
+                firsts[i] = try allocator.alloc(bool, self.getTerminalCount());
+                for (0..firsts[i].len) |j| {
+                    firsts[i][j] = false; // Set default state to false, including for $
+                }
+                num_firsts_allocated += 1;
+            }
+            errdefer for (firsts[0..num_firsts_allocated]) |list| {
+                allocator.free(list);
+            };
+
+            // Iterate over all variable ID's
+            for (0..self.getVariableCount()) |v| {
+                var seen = try allocator.alloc(bool, self.getVariableCount());
+                defer allocator.free(seen);
+                for (0..seen.len) |i| {
+                    seen[i] = false;
+                }
+                seen[v] = true;
+
+                // TODO: When issues with ArrayList and FixedBufferAllocator are
+                // resolved, use an ArrayList instead.
+                var stack = try allocator.alloc(SymbolId, self.getVariableCount());
+                defer allocator.free(stack);
+                stack[0] = @intCast(v);
+                var stack_size: usize = 1;
+
+                while (stack_size > 0) {
+                    var top_symbol_id = stack[stack_size - 1];
+                    stack_size -= 1;
+
+                    for (self.rules) |rule| {
+                        if (rule.lhs != top_symbol_id) {
+                            continue;
+                        }
+                        const first_rule_symbol_id = rule.rhs[0];
+                        if (self.symbolIsTerminal(first_rule_symbol_id)) |index| {
+                            firsts[v][index] = true;
+                        } else if (self.symbolIsVariable(first_rule_symbol_id)) |index| {
+                            if (!seen[index]) {
+                                if (index < v) { // entry already populated
+                                    for (firsts[index], 0..) |isInFirstList, i| {
+                                        if (isInFirstList) {
+                                            firsts[v][i] = true;
+                                        }
+                                    }
+                                } else {
+                                    stack[stack_size] = first_rule_symbol_id;
+                                    stack_size += 1;
+                                }
+                                seen[index] = true;
+                            }
+                        }
+                    }
+                }
+            }
+            return firsts;
+        }
+
+        // NOTE: Assumes $ is last terminal symbol ID and S' is the first symbol ID
+        //       (0). FOLLOW(S') will be initialized to {$}, which will then be
+        //       propogated as needed
+        fn getFollowSet(self: Self, allocator: std.mem.Allocator) ![][]const bool {
+            var first_set = try self.getFirstSet(allocator);
+            defer {
+                for (first_set) |row| allocator.free(row);
+                allocator.free(first_set);
+            }
+
+            var follow_set = try allocator.alloc([]bool, self.getVariableCount());
+            errdefer allocator.free(follow_set);
+            var num_follow_allocated: usize = 0;
+            for (0..follow_set.len) |i| {
+                follow_set[i] = try allocator.alloc(bool, self.getTerminalCount());
+                for (0..follow_set[i].len) |j| {
+                    follow_set[i][j] = false;
+                }
+                num_follow_allocated += 1;
+            }
+            // Initialize FOLLOW(startsymbol) to include end of input symbol.
+            follow_set[0][self.getTerminalCount() - 1] = true;
+            errdefer for (follow_set[0..num_follow_allocated]) |list| {
+                allocator.free(list);
+            };
+
+            for (0..self.getVariableCount()) |v| {
+                var seen = try allocator.alloc(bool, self.getVariableCount());
+                defer allocator.free(seen);
+                for (0..seen.len) |i| {
+                    seen[i] = false;
+                }
+                seen[v] = true; // redundant?
+
+                // TODO: When issues with ArrayList and FixedBufferAllocator are
+                // resolved, use an ArrayList instead.
+                var stack = try allocator.alloc(SymbolId, self.getVariableCount());
+                defer allocator.free(stack);
+                stack[0] = @intCast(v);
+                var stack_size: usize = 1;
+
+                while (stack_size > 0) {
+                    var top_symbol_id = stack[stack_size - 1];
+                    stack_size -= 1;
+
+                    for (self.rules) |rule| {
+                        for (rule.rhs, 0..) |symbol_id, i| {
+                            if (symbol_id != top_symbol_id) {
+                                continue;
+                            }
+                            // If this is the last symbol in the rule
+                            // TODO: Only iter from [0..end-1] and move this outside loop?
+                            if (i + 1 == rule.rhs.len) {
+                                if (!seen[rule.lhs]) {
+                                    // Check if we already have the Follow set for this variable
+                                    if (rule.lhs < top_symbol_id) { 
+                                        for (follow_set[rule.lhs], 0..) |isFollow, offset_follow_symbol_id| {
+                                            if (isFollow) {
+                                                follow_set[v][offset_follow_symbol_id] = true;
+                                            }
+                                        }
+                                    } else {
+                                        stack[stack_size] = rule.lhs;
+                                        stack_size += 1;
+                                    }
+                                    seen[rule.lhs] = true;
+                                }
+                            } else if (self.symbolIsTerminal(rule.rhs[i + 1])) {
+                                follow_set[v][self.getTerminalIndexFromId(rule.rhs[i + 1])] = true;
+                            } else {
+                                for (first_set[symbol_id], 0..) |isFirst, offset_first_symbol_id| {
+                                    if (isFirst) {
+                                        follow_set[v][offset_first_symbol_id] = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            return follow_set;
+        }
     };
 }
 
-const Token = enum {
+const TestToken = enum {
     const Self = @This();
 
     Proposition,
@@ -391,6 +594,7 @@ const Token = enum {
     Or,
     Cond,
     Bicond,
+    End,
 
     fn eql(self: Self, other: Self) bool {
         return self == other;
@@ -411,160 +615,150 @@ const Variable = struct {
     }
 };
 
-test "dev" {
-    comptime {
-        const V = Variable.fromString;
-        var g = Grammar(Variable, Token).initFromTuples(
-            .{
-                .{V("S"), .{V("wff")}},
-                .{V("wff"), .{Token.Proposition}},
-                .{V("wff"), .{Token.Not, V("wff")}},
-                .{V("wff"), .{Token.LParen, V("wff"), Token.And, V("wff"), Token.RParen}},
-                .{V("wff"), .{Token.LParen, V("wff"), Token.Or, V("wff"), Token.RParen}},
-                .{V("wff"), .{Token.LParen, V("wff"), Token.Cond, V("wff"), Token.RParen}},
-                .{V("wff"), .{Token.LParen, V("wff"), Token.Bicond, V("wff"), Token.RParen}},
-            },
-            V("S"),
-        );
-        _ = g;
-    }
+test "initFromTuples_grammar1_0" {
+    // R0: S   -> wff
+    // R1: wff -> Proposition
+    // R2: wff -> Not    wff
+    // R3: wff -> LParen wff And    wff RParen
+    // R4: wff -> LParen wff Or     wff RParen
+    // R5: wff -> LParen wff Cond   wff RParen
+    // R6: wff -> LParen wff Bicond wff RParen
+    //
+    // S' = 0
+    // wff = 1
+    // Proposition = 2
+    // Not = 3
+    // LParen = 4
+    // And = 5
+    // RParen = 6
+    // Or = 7
+    // Cond = 8
+    // Bicond = 9
+    // $ = 10
+
+    const V = Variable.fromString;
+    const G = Grammar(Variable, TestToken);
+    comptime var actual_grammar = G.initFromTuples(
+        .{
+            .{V("S"), .{V("wff")}},
+            .{V("wff"), .{TestToken.Proposition}},
+            .{V("wff"), .{TestToken.Not, V("wff")}},
+            .{V("wff"), .{TestToken.LParen, V("wff"), TestToken.And, V("wff"), TestToken.RParen}},
+            .{V("wff"), .{TestToken.LParen, V("wff"), TestToken.Or, V("wff"), TestToken.RParen}},
+            .{V("wff"), .{TestToken.LParen, V("wff"), TestToken.Cond, V("wff"), TestToken.RParen}},
+            .{V("wff"), .{TestToken.LParen, V("wff"), TestToken.Bicond, V("wff"), TestToken.RParen}},
+        },
+        V("S"),
+        TestToken.End,
+    );
+    defer actual_grammar.deinit();
+
+    var r0 = Production{.lhs = 0, .rhs = &[_]SymbolId {1}};
+    var r1 = Production{.lhs = 1, .rhs = &[_]SymbolId {2}};
+    var r2 = Production{.lhs = 1, .rhs = &[_]SymbolId {3, 1}};
+    var r3 = Production{.lhs = 1, .rhs = &[_]SymbolId {4, 1, 5, 1, 6}};
+    var r4 = Production{.lhs = 1, .rhs = &[_]SymbolId {4, 1, 7, 1, 6}};
+    var r5 = Production{.lhs = 1, .rhs = &[_]SymbolId {4, 1, 8, 1, 6}};
+    var r6 = Production{.lhs = 1, .rhs = &[_]SymbolId {4, 1, 9, 1, 6}};
+
+    var expected_grammar = G {
+        .initialized_at_comptime = true,
+        .allocator = std.testing.allocator,
+        .rules = &[_]Production{ r0, r1, r2, r3, r4, r5, r6 },
+        .variables = &[_]Variable {V("S"), V("wff")},
+        .terminals = &[_]TestToken {TestToken.Proposition, TestToken.Not, TestToken.LParen, TestToken.And, TestToken.RParen, TestToken.Or, TestToken.Cond, TestToken.Bicond, TestToken.End},
+    };
+    defer expected_grammar.deinit();
+
+    try std.testing.expectEqualDeep(expected_grammar.rules, actual_grammar.rules);
+    try std.testing.expectEqualDeep(expected_grammar.variables, actual_grammar.variables);
+    try std.testing.expectEqualDeep(expected_grammar.terminals, actual_grammar.terminals);
 }
 
-    //     fn getOffsetTerminalId(self: Self, terminal: Symbol) usize {
-    //         return terminal.id - self.variables;
-    //     }
+test "initFromTuples_grammar2_2" {    
+    const V_S = 0;
+    const V_WFF1 = 1;
+    const V_WFF2 = 2;
+    const V_WFF3 = 3;
+    const V_WFF4 = 4;
+    const V_PROP = 5;
+    const T_BICOND = 6;
+    const T_COND = 7;
+    const T_OR = 8;
+    const T_AND = 9;
+    const T_NOT = 10;
+    const T_LPAREN = 11;
+    const T_RPAREN = 12;
+    const T_PROPTOK = 13;
 
-    //     // NOTE: Assumes $ is last terminal symbol ID and S' is the first symbol ID
-    //     //       (0). FOLLOW(S') will be initialized to {$}, which will then be
-    //     //       propogated as needed
-    //     fn getFollowSet(self: Self) ![][]const bool {
-    //         var first_set = try self.getFirstSet();
-    //         defer {
-    //             for (first_set) |row| self.allocator.free(row);
-    //             self.allocator.free(first_set);
-    //         }
+    // R0:  S -> wff1
+    // R1:  wff1 -> wff2
+    // R2:  wff1 -> wff1 <=> wff2
+    // R3:  wff2 -> wff3 
+    // R4:  wff2 -> wff2 => wff3
+    // R5:  wff3 -> wff4 
+    // R6:  wff3 -> wff3 v wff4 
+    // R7:  wff3 -> wff3 ^ wff4
+    // R8:  wff4 -> prop
+    // R9:  wff4 -> ~ wff4
+    // R10: prop -> (wff1)
+    // R11: prop -> PROPTOK
 
-    //         var follow_set = try self.allocator.alloc([]bool, self.variables);
-    //         errdefer self.allocator.free(follow_set);
-    //         var num_follow_allocated: usize = 0;
-    //         for (0..follow_set.len) |i| {
-    //             follow_set[i] = try self.allocator.alloc(bool, self.terminals);
-    //             for (0..follow_set[i].len) |j| {
-    //                 follow_set[i][j] = false;
-    //             }
-    //             num_follow_allocated += 1;
-    //         }
-    //         // Initialize FOLLOW(S') to include END symbol.
-    //         follow_set[0][self.terminals - 1] = true;
-    //         errdefer for (follow_set[0..num_follow_allocated]) |list| {
-    //             self.allocator.free(list);
-    //         };
+    const V = Variable.fromString;
+    const G = Grammar(Variable, TestToken);
 
-    //         for (0..self.variables) |v| {
-    //             var seen = try self.allocator.alloc(bool, self.variables);
-    //             defer self.allocator.free(seen);
-    //             for (0..seen.len) |i| {
-    //                 seen[i] = false;
-    //             }
-    //             seen[v] = true; // redundant?
+    comptime var actual_grammar = G.initFromTuples(
+        .{
+            .{V("S"), .{V("wff1")}},
 
-    //             var stack = std.ArrayList(SymbolID).init(self.allocator);
-    //             defer stack.deinit();
-    //             try stack.append(@intCast(v));
+            .{V("wff1"), .{V("wff2")}},
+            .{V("wff1"), .{V("wff1"), TestToken.Bicond, V("wff2")}},
 
-    //             while (stack.popOrNull()) |top| {
-    //                 for (self.rules) |rule| {
-    //                     for (rule.rhs, 0..) |symbol, symbol_index| {
-    //                         if (symbol.id != top) {
-    //                             continue;
-    //                         }
-    //                         if (symbol_index + 1 == rule.rhs.len) {
-    //                             if (!seen[rule.lhs.id]) { // optimize: if already caluclated, dont redo
-    //                                 if (rule.lhs.id < top) {
-    //                                     for (follow_set[rule.lhs.id], 0..) |isFollow, offset_follow_symbol_id| {
-    //                                         if (isFollow) {
-    //                                             follow_set[v][offset_follow_symbol_id] = true;
-    //                                         }
-    //                                     }
-    //                                 } else {
-    //                                     try stack.append(rule.lhs.id);
-    //                                 }
-    //                                 seen[rule.lhs.id] = true;
-    //                             }
-    //                         } else if (self.symbolIsTerminal(rule.rhs[symbol_index + 1])) {
-    //                             follow_set[v][self.getOffsetTerminalId(rule.rhs[symbol_index + 1])] = true;
-    //                         } else {
-    //                             for (first_set[symbol.id], 0..) |isFirst, offset_first_symbol_id| {
-    //                                 if (isFirst) {
-    //                                     follow_set[v][offset_first_symbol_id] = true;
-    //                                 }
-    //                             }
-    //                         }
-    //                     }
-    //                 }
-    //             }
-    //         }
-    //         return follow_set;
-    //     }
+            .{V("wff2"), .{V("wff3")}},
+            .{V("wff2"), .{V("wff2"), TestToken.Cond, V("wff3")}},
+            
+            .{V("wff3"), .{V("wff4")}},
+            .{V("wff3"), .{V("wff3"), TestToken.Or, V("wff4")}},
+            .{V("wff3"), .{V("wff3"), TestToken.And, V("wff4")}},
 
-    //     // NOTE: $ (END character) can never be first
-    //     fn getFirstSet(self: Self) ![][]bool {
-    //         var firsts = try self.allocator.alloc([]bool, self.variables);
-    //         errdefer self.allocator.free(firsts);
-    //         var num_firsts_allocated: usize = 0;
-    //         for (0..firsts.len) |i| {
-    //             firsts[i] = try self.allocator.alloc(bool, self.terminals);
-    //             for (0..firsts[i].len) |j| {
-    //                 firsts[i][j] = false; // Set default state to false, including for $
-    //             }
-    //             num_firsts_allocated += 1;
-    //         }
-    //         errdefer for (firsts[0..num_firsts_allocated]) |list| {
-    //             self.allocator.free(list);
-    //         };
+            .{V("wff4"), .{V("prop")}},
+            .{V("wff4"), .{TestToken.Not, V("wff4")}},
 
-    //         // Iterate over all variable ID's
-    //         for (0..self.variables) |v| {
-    //             var seen = try self.allocator.alloc(bool, self.variables);
-    //             defer self.allocator.free(seen);
-    //             for (0..seen.len) |i| {
-    //                 seen[i] = false;
-    //             }
-    //             seen[v] = true;
+            .{V("prop"), .{TestToken.LParen, V("wff1"), TestToken.RParen}},
+            .{V("wff1"), .{TestToken.Proposition}},
+        },
+        V("S"),
+        TestToken.End,
+    );
+    defer actual_grammar.deinit();
 
-    //             var stack = std.ArrayList(SymbolID).init(self.allocator);
-    //             defer stack.deinit();
-    //             try stack.append(@intCast(v));
+    var r0  = Production{ .lhs = V_S, .rhs = &[_]SymbolId {V_WFF1} };
+    var r1  = Production{ .lhs = V_WFF1, .rhs = &[_]SymbolId {V_WFF2} };
+    var r2  = Production{ .lhs = V_WFF1, .rhs = &[_]SymbolId {V_WFF1, T_BICOND, V_WFF2}};
+    var r3  = Production{ .lhs = V_WFF2, .rhs = &[_]SymbolId {V_WFF3} };
+    var r4  = Production{ .lhs = V_WFF2, .rhs = &[_]SymbolId {V_WFF2, T_COND, V_WFF3}};
+    var r5  = Production{ .lhs = V_WFF3, .rhs = &[_]SymbolId {V_WFF4} };
+    var r6  = Production{ .lhs = V_WFF1, .rhs = &[_]SymbolId {V_WFF3, T_OR, V_WFF4}};
+    var r7  = Production{ .lhs = V_WFF3, .rhs = &[_]SymbolId {V_WFF3, T_AND, V_WFF4}};
+    var r8  = Production{ .lhs = V_WFF4, .rhs = &[_]SymbolId {V_PROP} };
+    var r9  = Production{ .lhs = V_WFF4, .rhs = &[_]SymbolId {T_NOT, V_WFF4}};
+    var r10 = Production{ .lhs = V_PROP, .rhs = &[_]SymbolId {T_LPAREN, V_WFF1, T_RPAREN}};
+    var r11 = Production{ .lhs = V_PROP, .rhs = &[_]SymbolId {T_PROPTOK}};
 
-    //             while (stack.popOrNull()) |top| {
-    //                 for (self.rules) |rule| {
-    //                     const first_rule_symbol = rule.rhs[0];
-    //                     if (rule.lhs.id == top) {
-    //                         if (self.symbolIsTerminal(first_rule_symbol)) {
-    //                             firsts[v][self.getOffsetTerminalId(first_rule_symbol)] = true;
-    //                         } else if (!seen[first_rule_symbol.id]) {
-    //                             if (first_rule_symbol.id < v) { // entry already populated
-    //                                 for (firsts[first_rule_symbol.id], 0..) |isInFirstList, i| {
-    //                                     if (isInFirstList) {
-    //                                         firsts[v][i] = true;
-    //                                     }
-    //                                 }
-    //                             } else {
-    //                                 try stack.append(first_rule_symbol.id);
-    //                             }
-    //                             seen[first_rule_symbol.id] = true;
-    //                         }
-    //                     }
-    //                 }
-    //             }
-    //         }
+    var expected_grammar = G{
+        .initialized_at_comptime = true,
+        .allocator = std.testing.allocator,
+        .rules = &[_]Production{ r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11 },
+        .variables = &[_]Variable {V("S"), V("wff1"), V("wff2"), V("wff3"), V("wff4"), V("prop")},
+        .terminals = &[_]TestToken {.Bicond, .Cond, .Or, .And, .Not, .LParen, .RParen, .Proposition, .End},
+    };
+    defer expected_grammar.deinit();
 
-    //         return firsts;
-    //     }
-
-    //     fn getSymbolCount(self: Self) usize {
-    //         return self.variables + self.terminals;
-    //     }
+    try std.testing.expectEqualDeep(expected_grammar.rules, actual_grammar.rules);
+    try std.testing.expectEqualDeep(expected_grammar.variables, actual_grammar.variables);
+    try std.testing.expectEqualDeep(expected_grammar.terminals, actual_grammar.terminals);
+}
+    
 
     //     fn getRuleId(self: Self, rule: Production) ?usize {
     //         for (self.rules, 0..) |known_rule, i| {
@@ -575,13 +769,7 @@ test "dev" {
     //         return null;
     //     }
 
-    //     fn symbolIsVariable(self: Self, sym: Symbol) bool {
-    //         return sym.id < self.variables;
-    //     }
-
-    //     fn symbolIsTerminal(self: Self, sym: Symbol) bool {
-    //         return self.variables <= sym.id and sym.id < self.getSymbolCount();
-    //     }
+    //     
 
     //     pub fn printProductionInstance(_: Self, prod: ProductionInstance) !void {
     //         try stdout.print("{d}", .{prod.production.lhs.id});
@@ -598,279 +786,174 @@ test "dev" {
 //     };
 // }
 
-// test "firsts_and_follows_simple" {
-//     // R0: (0) -> (1) (augment)
-//     // R1: (1) -> (2)
-//     // R2: (1) -> 5
-//     // R3: (1) -> (4)
-//     // R4: (2) -> (3)
-//     // R6: (3) -> (2)
-//     // R7: (3) -> 6
-//     // R8: (4) -> 7
+test "firsts_and_follows_simple" {
+    // R0: (0) -> (1) (augment)
+    // R1: (1) -> (2)
+    // R2: (1) -> 5
+    // R3: (1) -> (4)
+    // R4: (2) -> (3)
+    // R6: (3) -> (2)
+    // R7: (3) -> 6
+    // R8: (4) -> 7
 
-//     // R5: (3) -> (1)
-//     // $ = 8
-//     var r0 = Production{ .lhs = Symbol{ .id = 0 }, .rhs = &[_]Symbol{Symbol{ .id = 1 }} };
+    // R5: (3) -> (1)
+    // $ = 8
+    var r0 = Production{ .lhs = 0, .rhs = &[_]SymbolId {1} };
 
-//     var r1 = Production{
-//         .lhs = Symbol{ .id = 1 },
-//         .rhs = &[_]Symbol{Symbol{ .id = 2 }},
-//     };
+    var r1 = Production{
+        .lhs = 1,
+        .rhs = &[_]SymbolId {2},
+    };
 
-//     var r2 = Production{
-//         .lhs = Symbol{ .id = 1 },
-//         .rhs = &[_]Symbol{Symbol{ .id = 5 }},
-//     };
+    var r2 = Production{
+        .lhs = 1,
+        .rhs = &[_]SymbolId {5},
+    };
 
-//     var r3 = Production{
-//         .lhs = Symbol{ .id = 1 },
-//         .rhs = &[_]Symbol{Symbol{ .id = 4 }},
-//     };
+    var r3 = Production{
+        .lhs = 1,
+        .rhs = &[_]SymbolId {4},
+    };
 
-//     var r4 = Production{
-//         .lhs = Symbol{ .id = 2 },
-//         .rhs = &[_]Symbol{Symbol{ .id = 3 }},
-//     };
+    var r4 = Production{
+        .lhs = 2,
+        .rhs = &[_]SymbolId {3},
+    };
 
-//     // var r5 = Production{
-//     //     .lhs = Symbol{.id = 2},
-//     //     .rhs = &[_]Symbol{Symbol{.id = 0}},
-//     //
-//     // };
+    // var r5 = Production{
+    //     .lhs = Symbol{.id = 2},
+    //     .rhs = &[_]Symbol{Symbol{.id = 0}},
+    //
+    // };
 
-//     var r6 = Production{
-//         .lhs = Symbol{ .id = 3 },
-//         .rhs = &[_]Symbol{Symbol{ .id = 2 }},
-//     };
+    var r6 = Production{
+        .lhs = 3,
+        .rhs = &[_]SymbolId {2},
+    };
 
-//     var r7 = Production{
-//         .lhs = Symbol{ .id = 3 },
-//         .rhs = &[_]Symbol{Symbol{ .id = 6 }},
-//     };
+    var r7 = Production{
+        .lhs = 3,
+        .rhs = &[_]SymbolId {6},
+    };
 
-//     var r8 = Production{
-//         .lhs = Symbol{ .id = 4 },
-//         .rhs = &[_]Symbol{Symbol{ .id = 7 }},
-//     };
+    var r8 = Production{
+        .lhs = 4,
+        .rhs = &[_]SymbolId {7},
+    };
+    const G = Grammar(Variable, TestToken);
+    var grammar = G{
+        .initialized_at_comptime = true,
+        .allocator = std.testing.allocator,
+        .variables = &[_]Variable {undefined} ** 5,
+        .terminals = &[_]TestToken {undefined} ** 4,
+        .rules = &[_]Production{ r0, r1, r2, r3, r4, r6, r7, r8 },
+    };
 
-//     var grammar = Grammar{
-//         .allocator = std.testing.allocator,
-//         .variables = 5,
-//         .terminals = 4,
-//         .rules = &[_]Production{ r0, r1, r2, r3, r4, r6, r7, r8 },
-//     };
+    var first_set = try grammar.getFirstSet(std.testing.allocator);
+    defer {
+        for (0..first_set.len) |i| {
+            grammar.allocator.free(first_set[i]);
+        }
+        grammar.allocator.free(first_set);
+    }
 
-//     var first_set = try grammar.getFirstSet();
-//     defer {
-//         for (0..first_set.len) |i| {
-//             grammar.allocator.free(first_set[i]);
-//         }
-//         grammar.allocator.free(first_set);
-//     }
+    var expected_firsts = [_][4]bool{ .{ true, true, true, false }, .{ true, true, true, false }, .{ false, true, false, false }, .{ false, true, false, false }, .{ false, false, true, false } };
+    for (first_set, expected_firsts) |actual, expected| {
+        try std.testing.expectEqualSlices(bool, &expected, actual);
+    }
 
-//     var expected_firsts = [_][4]bool{ .{ true, true, true, false }, .{ true, true, true, false }, .{ false, true, false, false }, .{ false, true, false, false }, .{ false, false, true, false } };
-//     for (first_set, expected_firsts) |actual, expected| {
-//         try std.testing.expectEqualSlices(bool, &expected, actual);
-//     }
+    var follow = try grammar.getFollowSet(std.testing.allocator);
+    defer {
+        for (0..follow.len) |i| {
+            grammar.allocator.free(follow[i]);
+        }
+        grammar.allocator.free(follow);
+    }
 
-//     var follow = try grammar.getFollowSet();
-//     defer {
-//         for (0..follow.len) |i| {
-//             grammar.allocator.free(follow[i]);
-//         }
-//         grammar.allocator.free(follow);
-//     }
+    var expected_follow = [_][4]bool{ .{ false, false, false, true }, .{ false, false, false, true }, .{ false, false, false, true }, .{ false, false, false, true }, .{ false, false, false, true } };
+    for (follow, expected_follow) |actual, expected| {
+        try std.testing.expectEqualSlices(bool, &expected, actual);
+    }
 
-//     var expected_follow = [_][4]bool{ .{ false, false, false, true }, .{ false, false, false, true }, .{ false, false, false, true }, .{ false, false, false, true }, .{ false, false, false, true } };
-//     for (follow, expected_follow) |actual, expected| {
-//         try std.testing.expectEqualSlices(bool, &expected, actual);
-//     }
+    grammar.deinit();
 
-//     // debug.print("\n", .{});
-//     // for (follow, 0..) |list, i| {
-//     //     debug.print("({d}):", .{i});
-//     //     for (list, grammar.variables.len..) |isFollow, j| {
-//     //         if (isFollow) {
-//     //             debug.print(" {d}", .{j});
-//     //         }
-//     //     }
-//     //     debug.print("\n", .{});
-//     // }
-// }
+    // debug.print("\n", .{});
+    // for (follow, 0..) |list, i| {
+    //     debug.print("({d}):", .{i});
+    //     for (list, grammar.variables.len..) |isFollow, j| {
+    //         if (isFollow) {
+    //             debug.print(" {d}", .{j});
+    //         }
+    //     }
+    //     debug.print("\n", .{});
+    // }
+}
 
-// test "firsts_and_follows_grammar1_0" {
-//     // S' = 0
-//     // wff = 1
-//     // Proposition = 2
-//     // Not = 3
-//     // LParen = 4
-//     // RParen = 5
-//     // And = 6
-//     // Or = 7
-//     // Cond = 8
-//     // Bicond = 9
-//     // $ = 10
-//     var r1 = Production{ .lhs = Symbol{ .id = 1 }, .rhs = &[_]Symbol{Symbol{ .id = 2 }} };
+test "firsts_and_follows_grammar1_0" {
+    const V = Variable.fromString;
+    comptime var grammar = Grammar(Variable, TestToken).initFromTuples(
+        .{
+            .{V("S"), .{V("wff")}},
+            .{V("wff"), .{TestToken.Proposition}},
+            .{V("wff"), .{TestToken.Not, V("wff")}},
+            .{V("wff"), .{TestToken.LParen, V("wff"), TestToken.And, V("wff"), TestToken.RParen}},
+            .{V("wff"), .{TestToken.LParen, V("wff"), TestToken.Or, V("wff"), TestToken.RParen}},
+            .{V("wff"), .{TestToken.LParen, V("wff"), TestToken.Cond, V("wff"), TestToken.RParen}},
+            .{V("wff"), .{TestToken.LParen, V("wff"), TestToken.Bicond, V("wff"), TestToken.RParen}},
+        },
+        V("S"),
+        TestToken.End
+    );
+    defer grammar.deinit();
 
-//     var r2 = Production{ .lhs = Symbol{ .id = 1 }, .rhs = &[_]Symbol{ Symbol{ .id = 3 }, Symbol{ .id = 1 } } };
+    var allocator = std.testing.allocator;
 
-//     var r3 = Production{ .lhs = Symbol{ .id = 1 }, .rhs = &[_]Symbol{
-//         Symbol{ .id = 4 },
-//         Symbol{ .id = 1 },
-//         Symbol{ .id = 6 },
-//         Symbol{ .id = 1 },
-//         Symbol{ .id = 5 },
-//     } };
+    var first_set = try grammar.getFirstSet(allocator);
+    defer {
+        for (0..first_set.len) |i| {
+            allocator.free(first_set[i]);
+        }
+        allocator.free(first_set);
+    }
 
-//     var r4 = Production{ .lhs = Symbol{ .id = 1 }, .rhs = &[_]Symbol{
-//         Symbol{ .id = 4 },
-//         Symbol{ .id = 1 },
-//         Symbol{ .id = 7 },
-//         Symbol{ .id = 1 },
-//         Symbol{ .id = 5 },
-//     } };
+    var expected_firsts = [_][9]bool{
+        .{ true, true, true, false, false, false, false, false, false },
+        .{ true, true, true, false, false, false, false, false, false },
+    };
+    for (first_set, expected_firsts) |actual, expected| {
+        try std.testing.expectEqualSlices(bool, &expected, actual);
+    }
 
-//     var r5 = Production{ .lhs = Symbol{ .id = 1 }, .rhs = &[_]Symbol{
-//         Symbol{ .id = 4 },
-//         Symbol{ .id = 1 },
-//         Symbol{ .id = 8 },
-//         Symbol{ .id = 1 },
-//         Symbol{ .id = 5 },
-//     } };
+    var follow = try grammar.getFollowSet(allocator);
+    defer {
+        for (0..follow.len) |i| {
+            allocator.free(follow[i]);
+        }
+        allocator.free(follow);
+    }
 
-//     var r6 = Production{ .lhs = Symbol{ .id = 0 }, .rhs = &[_]Symbol{
-//         Symbol{ .id = 4 },
-//         Symbol{ .id = 1 },
-//         Symbol{ .id = 9 },
-//         Symbol{ .id = 1 },
-//         Symbol{ .id = 5 },
-//     } };
+    var expected_follow = [_][9]bool{
+        .{ false, false, false, false, false, false, false, false, true },
+        .{ false, false, false, true, true, true, true, true, true },
+    };
+    for (follow, expected_follow) |actual, expected| {
+        try std.testing.expectEqualSlices(bool, &expected, actual);
+    }
 
-//     var r0 = Production{ .lhs = Symbol{ .id = 0 }, .rhs = &[_]Symbol{Symbol{ .id = 1 }} };
-
-//     var grammar = Grammar{
-//         .allocator = std.testing.allocator,
-//         .rules = &[_]Production{ r0, r1, r2, r3, r4, r5, r6 },
-//         .variables = 2,
-//         .terminals = 9,
-//     };
-
-//     var first_set = try grammar.getFirstSet();
-//     defer {
-//         for (0..first_set.len) |i| {
-//             grammar.allocator.free(first_set[i]);
-//         }
-//         grammar.allocator.free(first_set);
-//     }
-
-//     var expected_firsts = [_][9]bool{
-//         .{ true, true, true, false, false, false, false, false, false },
-//         .{ true, true, true, false, false, false, false, false, false },
-//     };
-//     for (first_set, expected_firsts) |actual, expected| {
-//         try std.testing.expectEqualSlices(bool, &expected, actual);
-//     }
-
-//     var follow = try grammar.getFollowSet();
-//     defer {
-//         for (0..follow.len) |i| {
-//             grammar.allocator.free(follow[i]);
-//         }
-//         grammar.allocator.free(follow);
-//     }
-
-//     var expected_follow = [_][9]bool{
-//         .{ false, false, false, false, false, false, false, false, true },
-//         .{ false, false, false, true, true, true, true, true, true },
-//     };
-//     for (follow, expected_follow) |actual, expected| {
-//         try std.testing.expectEqualSlices(bool, &expected, actual);
-//     }
-
-//     // debug.print("\n", .{});
-//     // for (follow, 0..) |list, i| {
-//     //     debug.print("({d}):", .{i});
-//     //     for (list, grammar.variables.len..) |isFollow, j| {
-//     //         if (isFollow) {
-//     //             debug.print(" {d}", .{j});
-//     //         }
-//     //     }
-//     //     debug.print("\n", .{});
-//     // }
-// }
+    // debug.print("\n", .{});
+    // for (follow, 0..) |list, i| {
+    //     debug.print("({d}):", .{i});
+    //     for (list, grammar.variables.len..) |isFollow, j| {
+    //         if (isFollow) {
+    //             debug.print(" {d}", .{j});
+    //         }
+    //     }
+    //     debug.print("\n", .{});
+    // }
+}
 
 // test "follows_grammar2_2" {
-//     const V_S = 0;
-//     const V_WFF1 = 1;
-//     const V_WFF2 = 2;
-//     const V_WFF3 = 3;
-//     const V_WFF4 = 4;
-//     const V_PROP = 5;
-//     const T_BICOND = 6;
-//     const T_COND = 7;
-//     const T_OR = 8;
-//     const T_AND = 9;
-//     const T_NOT = 10;
-//     const T_LPAREN = 11;
-//     const T_RPAREN = 12;
-//     const T_PROPTOK = 13;
-//     // const T_DOLLAR   = 14;
-
-//     var r1 = Production{ .lhs = Symbol{ .id = V_S }, .rhs = &[_]Symbol{Symbol{ .id = V_WFF1 }} };
-
-//     var r2 = Production{ .lhs = Symbol{ .id = V_WFF1 }, .rhs = &[_]Symbol{
-//         Symbol{ .id = V_WFF1 },
-//         Symbol{ .id = T_BICOND },
-//         Symbol{ .id = V_WFF2 },
-//     } };
-
-//     var r3 = Production{ .lhs = Symbol{ .id = V_WFF2 }, .rhs = &[_]Symbol{Symbol{ .id = V_WFF3 }} };
-
-//     var r4 = Production{ .lhs = Symbol{ .id = V_WFF2 }, .rhs = &[_]Symbol{
-//         Symbol{ .id = V_WFF2 },
-//         Symbol{ .id = T_COND },
-//         Symbol{ .id = V_WFF3 },
-//     } };
-
-//     var r5 = Production{ .lhs = Symbol{ .id = V_WFF3 }, .rhs = &[_]Symbol{Symbol{ .id = V_WFF4 }} };
-
-//     var r6 = Production{ .lhs = Symbol{ .id = V_WFF1 }, .rhs = &[_]Symbol{
-//         Symbol{ .id = V_WFF3 },
-//         Symbol{ .id = T_OR },
-//         Symbol{ .id = V_WFF4 },
-//     } };
-
-//     var r7 = Production{ .lhs = Symbol{ .id = V_WFF3 }, .rhs = &[_]Symbol{
-//         Symbol{ .id = V_WFF3 },
-//         Symbol{ .id = T_AND },
-//         Symbol{ .id = V_WFF4 },
-//     } };
-
-//     var r8 = Production{ .lhs = Symbol{ .id = V_WFF4 }, .rhs = &[_]Symbol{Symbol{ .id = V_PROP }} };
-
-//     var r9 = Production{ .lhs = Symbol{ .id = V_WFF4 }, .rhs = &[_]Symbol{
-//         Symbol{ .id = T_NOT },
-//         Symbol{ .id = V_WFF4 },
-//     } };
-
-//     var r10 = Production{ .lhs = Symbol{ .id = V_PROP }, .rhs = &[_]Symbol{
-//         Symbol{ .id = T_LPAREN },
-//         Symbol{ .id = V_WFF1 },
-//         Symbol{ .id = T_RPAREN },
-//     } };
-
-//     var r11 = Production{ .lhs = Symbol{ .id = V_PROP }, .rhs = &[_]Symbol{
-//         Symbol{ .id = T_PROPTOK },
-//     } };
-
-//     var r0 = Production{ .lhs = Symbol{ .id = V_S }, .rhs = &[_]Symbol{Symbol{ .id = V_WFF1 }} };
-
-//     var grammar = Grammar{
-//         .allocator = std.testing.allocator,
-//         .rules = &[_]Production{ r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11 },
-//         .variables = 6,
-//         .terminals = 9,
-//     };
+    
 
 //     var first_set = try grammar.getFirstSet();
 //     defer {
