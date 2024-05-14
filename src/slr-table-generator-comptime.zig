@@ -259,7 +259,7 @@ fn Grammar(comptime V: type, comptime T: type) type {
                 verifyTuples(rule_tuples);
                 
                 // Iterate over each rule tuple and populate our grammar rules.
-                inline for (std.meta.fieldNames(@TypeOf(rule_tuples))) |rule_tuples_field_name| {
+                for (std.meta.fieldNames(@TypeOf(rule_tuples))) |rule_tuples_field_name| {
                     const rule_tuple = @field(rule_tuples, rule_tuples_field_name);
                     
 
@@ -284,7 +284,7 @@ fn Grammar(comptime V: type, comptime T: type) type {
                     // Iterate over the symbols on the right hand side of the 
                     // rule tuple and unpack each into the grammar rule.
                     const rhs = rule_tuple.@"1";
-                    inline for (std.meta.fieldNames(@TypeOf(rhs))) |rhs_tuple_field_name| {
+                    for (std.meta.fieldNames(@TypeOf(rhs))) |rhs_tuple_field_name| {
                         const var_or_token = @field(rhs, rhs_tuple_field_name);
                         if (@TypeOf(var_or_token) == V) {
                             if (grammar.getVariableSymbol(var_or_token)) |symbol| {
@@ -385,6 +385,15 @@ fn Grammar(comptime V: type, comptime T: type) type {
             }
         }
 
+        fn getRuleIdx(self: Self, rule: Production) ?usize {
+            for (self.rules, 0..) |known_rule, i| {
+                if (known_rule.eql(rule)) {
+                    return i;
+                }
+            }
+            return null;
+        }
+
         fn getVariableCount(self: Self) usize {
             return self.variables.len;
         }
@@ -415,33 +424,8 @@ fn Grammar(comptime V: type, comptime T: type) type {
             return null;
         }
 
-        fn getVariableIndexFromId(_: Self, symbol: Symbol) usize {
-            std.debug.assert(symbol >= 0);
-            return symbol;
-        }
-
-        // TODO: Rename this or other "get" functions, arguments are different
-        // (SymbolId vs T)
-        fn getTerminalIndexFromId(_: Self, symbol: Symbol) usize {
-            std.debug.assert(symbol < 0);
-            return -symbol + 1;
-        }
-
-        fn symbolIsVariable(self: Self, symbol: Symbol) ?usize {
-            if (symbol >= 0 and symbol < self.getVariableCount()) {
-                return symbol;
-            }
-            return null;
-        }
-
-        fn symbolIsTerminal(self: Self, symbol: Symbol) ?usize {
-            if (symbol < 0) {
-                const index = self.getTerminalIndexFromId(symbol);
-                if (index < self.getTerminalCount()) {
-                    return index;
-                }
-            }
-            return null;
+        fn getOffsetIdx(self: Self, idx: @TypeOf(Symbol.terminal)) @TypeOf(Symbol.terminal) {
+            return self.getVariableCount() + idx;
         }
     
         // NOTE: $ (END character) can never be first
@@ -477,7 +461,7 @@ fn Grammar(comptime V: type, comptime T: type) type {
                 var stack_size: usize = 1;
 
                 while (stack_size > 0) {
-                    var top_symbol = stack[stack_size - 1];
+                    const top_symbol = stack[stack_size - 1];
                     stack_size -= 1;
 
                     for (self.rules) |rule| {
@@ -488,19 +472,21 @@ fn Grammar(comptime V: type, comptime T: type) type {
                         switch(first_rule_symbol) {
                             .terminal => |idx| firsts[v_idx][idx] = true,
                             .variable => |idx| {
-                                if (!seen[idx]) {
-                                    if (idx < v_idx) { // entry already populated
-                                        for (firsts[idx], 0..) |isInFirstList, i| {
-                                            if (isInFirstList) {
-                                                firsts[v_idx][i] = true;
-                                            }
-                                        }
-                                    } else {
-                                        stack[stack_size] = first_rule_symbol;
-                                        stack_size += 1;
-                                    }
-                                    seen[idx] = true;
+                                if (seen[idx]) {
+                                    continue;
                                 }
+                                if (idx < v_idx) { // entry already populated
+                                    // TODO: Make union function?
+                                    for (firsts[idx], 0..) |isInFirstList, i| {
+                                        if (isInFirstList) {
+                                            firsts[v_idx][i] = true;
+                                        }
+                                    }
+                                } else {
+                                    stack[stack_size] = first_rule_symbol;
+                                    stack_size += 1;
+                                }
+                                seen[idx] = true;
                             }
                         }
                     }
@@ -509,11 +495,66 @@ fn Grammar(comptime V: type, comptime T: type) type {
             return firsts;
         }
 
+        // NOTE: $ (END character) can never be first
+        fn getFirstSetComptime(comptime self: Self) []const []const bool {
+            return comptime ret: {
+                var firsts = [_][self.getTerminalCount()]bool {
+                    [_]bool {false} ** self.getTerminalCount()
+                } ** self.getVariableCount();
+                
+                // Iterate over all variable ID's
+                for (0..self.getVariableCount()) |v_idx| {
+                    var seen = [_]bool {false} ** self.getVariableCount();
+                    seen[v_idx] = true;
+
+                    var stack: []const Symbol = &[_]Symbol {Symbol{.variable=@intCast(v_idx)}};
+
+                    while (stack.len > 0) {
+                        const top_symbol = stack[stack.len - 1];
+                        stack = stack[0..stack.len - 1];
+
+                        for (self.rules) |rule| {
+                            if (!rule.lhs.eql(top_symbol)) {
+                                continue;
+                            }
+                            const first_rule_symbol = rule.rhs[0];
+                            switch(first_rule_symbol) {
+                                .terminal => |idx| firsts[v_idx][idx] = true,
+                                .variable => |idx| {
+                                    if (seen[idx]) {
+                                        continue;
+                                    }
+                                    if (idx < v_idx) { // entry already populated
+                                        // TODO: Make union function?
+                                        for (firsts[idx], 0..) |isInFirstList, i| {
+                                            if (isInFirstList) {
+                                                firsts[v_idx][i] = true;
+                                            }
+                                        }
+                                    } else {
+                                        stack = stack ++ &[_]Symbol {first_rule_symbol};
+                                    }
+                                    seen[idx] = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                const firsts_const = firsts;
+                var firsts_as_slices = [_][]const bool {undefined} ** firsts_const.len;
+                for (0..firsts_const.len) |i| {
+                    firsts_as_slices[i] = &firsts_const[i];
+                }
+                const firsts_as_slices_const = firsts_as_slices;
+                break :ret &firsts_as_slices_const;
+            };
+        }
+
         // NOTE: Assumes $ is last terminal symbol ID and S' is the first symbol ID
         //       (0). FOLLOW(S') will be initialized to {$}, which will then be
         //       propogated as needed
         fn getFollowSet(self: Self, allocator: std.mem.Allocator) ![][]const bool {
-            var first_set = try self.getFirstSet(allocator);
+            const first_set = try self.getFirstSet(allocator);
             defer {
                 for (first_set) |row| allocator.free(row);
                 allocator.free(first_set);
@@ -530,10 +571,10 @@ fn Grammar(comptime V: type, comptime T: type) type {
                 num_follow_allocated += 1;
             }
             // Initialize FOLLOW(startsymbol) to include end of input symbol.
-            follow_set[0][self.getTerminalCount() - 1] = true;
             errdefer for (follow_set[0..num_follow_allocated]) |list| {
                 allocator.free(list);
             };
+            follow_set[0][self.getTerminalCount() - 1] = true;
 
             for (0..self.getVariableCount()) |v_idx| {
                 var seen = try allocator.alloc(bool, self.getVariableCount());
@@ -551,33 +592,18 @@ fn Grammar(comptime V: type, comptime T: type) type {
                 var stack_size: usize = 1;
 
                 while (stack_size > 0) {
-                    var top_symbol = stack[stack_size - 1];
+                    const top_symbol = stack[stack_size - 1];
                     stack_size -= 1;
 
                     for (self.rules) |rule| {
-                        for (rule.rhs, 0..) |rhs_symbol, i| {
+                        for (rule.rhs[0..rule.rhs.len - 1], 0..) |rhs_symbol, i| {
                             if (!rhs_symbol.eql(top_symbol)) {
                                 continue;
                             }
-                            // If this is the last symbol in the rule
-                            // TODO: Only iter from [0..end-1] and move this outside loop?
-                            if (i + 1 == rule.rhs.len) {
-                                if (!seen[rule.lhs.variable]) {
-                                    // Check if we already have the Follow set for this variable
-                                    if (rule.lhs.variable < v_idx) { 
-                                        for (follow_set[rule.lhs.variable], 0..) |isFollow, terminal_idx| {
-                                            if (isFollow) {
-                                                follow_set[v_idx][terminal_idx] = true;
-                                            }
-                                        }
-                                    } else {
-                                        stack[stack_size] = rule.lhs;
-                                        stack_size += 1;
-                                    }
-                                    seen[rule.lhs.variable] = true;
-                                }
-                            } else switch(rule.rhs[i + 1]) {
+                                
+                            switch(rule.rhs[i + 1]) {
                                 .terminal => |idx| follow_set[v_idx][idx] = true,
+                                // TODO: Make union function?
                                 .variable => |idx| for (first_set[idx], 0..) |isFirst, terminal_idx| {
                                     if (isFirst) {
                                         follow_set[v_idx][terminal_idx] = true;
@@ -585,10 +611,118 @@ fn Grammar(comptime V: type, comptime T: type) type {
                                 }
                             }
                         }
+
+                        // Handle the last RHS symbol separetly //
+
+                        const last_rhs_symbol = rule.rhs[rule.rhs.len - 1];
+                        if (!last_rhs_symbol.eql(top_symbol) or seen[rule.lhs.variable]) {
+                            continue;
+                        }
+                        // Check if we already have the Follow set for this variable
+                        // TODO: Make this more explicit?
+                        if (rule.lhs.variable < v_idx) { 
+                            for (follow_set[rule.lhs.variable], 0..) |isFollow, terminal_idx| {
+                                if (isFollow) {
+                                    follow_set[v_idx][terminal_idx] = true;
+                                }
+                            }
+                        } else {
+                            stack[stack_size] = rule.lhs;
+                            stack_size += 1;
+                        }
+                        seen[rule.lhs.variable] = true;
                     }
                 }
             }
             return follow_set;
+        }
+
+        fn getFollowSetComptime(comptime self: Self) []const []const bool {
+            return comptime ret: { 
+                const first_set = self.getFirstSetComptime();
+
+                var follow_set = [_][self.getTerminalCount()]bool {
+                    [_]bool {false} ** self.getTerminalCount()
+                } ** self.getVariableCount();
+                
+                // Initialize FOLLOW(startsymbol) to include end of input symbol.
+                follow_set[0][self.getTerminalCount() - 1] = true;
+
+                for (0..self.getVariableCount()) |v_idx| {
+                    var seen = [_]bool {false} ** self.getVariableCount();
+                    seen[v_idx] = true; // redundant?
+
+                    var stack: []const Symbol = &[_]Symbol {Symbol{.variable=@intCast(v_idx)}};
+
+                    while (stack.len > 0) {
+                        const top_symbol = stack[stack.len - 1];
+                        stack = stack[0..stack.len - 1];
+
+                        for (self.rules) |rule| {
+                            for (rule.rhs[0..rule.rhs.len - 1], 0..) |rhs_symbol, i| {
+                                if (!rhs_symbol.eql(top_symbol)) {
+                                    continue;
+                                }
+                                    
+                                switch(rule.rhs[i + 1]) {
+                                    .terminal => |idx| follow_set[v_idx][idx] = true,
+                                    // TODO: Make union function?
+                                    .variable => |idx| for (first_set[idx], 0..) |isFirst, terminal_idx| {
+                                        if (isFirst) {
+                                            follow_set[v_idx][terminal_idx] = true;
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Handle the last RHS symbol separetly //
+
+                            const last_rhs_symbol = rule.rhs[rule.rhs.len - 1];
+                            if (!last_rhs_symbol.eql(top_symbol) or seen[rule.lhs.variable]) {
+                                continue;
+                            }
+                            // Check if we already have the Follow set for this variable
+                            // TODO: Make this more explicit?
+                            if (rule.lhs.variable < v_idx) { 
+                                for (follow_set[rule.lhs.variable], 0..) |isFollow, terminal_idx| {
+                                    if (isFollow) {
+                                        follow_set[v_idx][terminal_idx] = true;
+                                    }
+                                }
+                            } else {
+                                stack = stack ++ &[_]Symbol {rule.lhs};
+                            }
+                            seen[rule.lhs.variable] = true;
+                        }
+                    }
+                }
+                const follow_set_const = follow_set;
+                var follow_set_as_slices = [_][]const bool {undefined} ** follow_set_const.len;
+                for (0..follow_set_const.len) |i| {
+                    follow_set_as_slices[i] = &follow_set_const[i];
+                }
+                const follow_set_as_slices_const = follow_set_as_slices;
+                break :ret &follow_set_as_slices_const;
+            };
+        }
+
+        pub fn printProductionInstance(_: Self, prod: ProductionInstance) !void {
+            try stdout.print("({d})", .{prod.production.lhs.variable});
+            try stdout.print(" ->", .{});
+            for (prod.production.rhs[0..prod.cursor]) |sym| {
+                switch(sym) {
+                    .variable => |idx| try stdout.print(" ({d})", .{idx}),
+                    .terminal => |idx| try stdout.print(" {d}", .{idx}),
+                }
+            }
+            try stdout.print(" *", .{});
+            for (prod.production.rhs[prod.cursor..]) |sym| {
+                switch(sym) {
+                    .variable => |idx| try stdout.print(" ({d})", .{idx}),
+                    .terminal => |idx| try stdout.print(" {d}", .{idx}),
+                }
+            }
+            try stdout.print("\n", .{});
         }
     };
 }
@@ -663,13 +797,13 @@ test "initFromTuples_grammar1_0" {
     );
     defer actual_grammar.deinit();
 
-    var r0 = Production{.lhs = .{.variable=V_S},   .rhs = &[_]Symbol {.{.variable=V_WFF}}};
-    var r1 = Production{.lhs = .{.variable=V_WFF}, .rhs = &[_]Symbol {.{.terminal=T_PROPOSITION}}};
-    var r2 = Production{.lhs = .{.variable=V_WFF}, .rhs = &[_]Symbol {.{.terminal=T_NOT},    .{.variable=V_WFF}}};
-    var r3 = Production{.lhs = .{.variable=V_WFF}, .rhs = &[_]Symbol {.{.terminal=T_LPAREN}, .{.variable=V_WFF}, .{.terminal=T_AND},    .{.variable=V_WFF}, .{.terminal=T_RPAREN}}};
-    var r4 = Production{.lhs = .{.variable=V_WFF}, .rhs = &[_]Symbol {.{.terminal=T_LPAREN}, .{.variable=V_WFF}, .{.terminal=T_OR},     .{.variable=V_WFF}, .{.terminal=T_RPAREN}}};
-    var r5 = Production{.lhs = .{.variable=V_WFF}, .rhs = &[_]Symbol {.{.terminal=T_LPAREN}, .{.variable=V_WFF}, .{.terminal=T_COND},   .{.variable=V_WFF}, .{.terminal=T_RPAREN}}};
-    var r6 = Production{.lhs = .{.variable=V_WFF}, .rhs = &[_]Symbol {.{.terminal=T_LPAREN}, .{.variable=V_WFF}, .{.terminal=T_BICOND}, .{.variable=V_WFF}, .{.terminal=T_RPAREN}}};
+    const r0 = Production{.lhs = .{.variable=V_S},   .rhs = &[_]Symbol {.{.variable=V_WFF}}};
+    const r1 = Production{.lhs = .{.variable=V_WFF}, .rhs = &[_]Symbol {.{.terminal=T_PROPOSITION}}};
+    const r2 = Production{.lhs = .{.variable=V_WFF}, .rhs = &[_]Symbol {.{.terminal=T_NOT},    .{.variable=V_WFF}}};
+    const r3 = Production{.lhs = .{.variable=V_WFF}, .rhs = &[_]Symbol {.{.terminal=T_LPAREN}, .{.variable=V_WFF}, .{.terminal=T_AND},    .{.variable=V_WFF}, .{.terminal=T_RPAREN}}};
+    const r4 = Production{.lhs = .{.variable=V_WFF}, .rhs = &[_]Symbol {.{.terminal=T_LPAREN}, .{.variable=V_WFF}, .{.terminal=T_OR},     .{.variable=V_WFF}, .{.terminal=T_RPAREN}}};
+    const r5 = Production{.lhs = .{.variable=V_WFF}, .rhs = &[_]Symbol {.{.terminal=T_LPAREN}, .{.variable=V_WFF}, .{.terminal=T_COND},   .{.variable=V_WFF}, .{.terminal=T_RPAREN}}};
+    const r6 = Production{.lhs = .{.variable=V_WFF}, .rhs = &[_]Symbol {.{.terminal=T_LPAREN}, .{.variable=V_WFF}, .{.terminal=T_BICOND}, .{.variable=V_WFF}, .{.terminal=T_RPAREN}}};
 
     var expected_grammar = G {
         .initialized_at_comptime = true,
@@ -742,18 +876,18 @@ test "initFromTuples_grammar2_2" {
     );
     defer actual_grammar.deinit();
 
-    var r0  = Production{ .lhs = .{.variable=V_S},    .rhs = &[_]Symbol {.{.variable=V_WFF1}} };
-    var r1  = Production{ .lhs = .{.variable=V_WFF1}, .rhs = &[_]Symbol {.{.variable=V_WFF2}} };
-    var r2  = Production{ .lhs = .{.variable=V_WFF1}, .rhs = &[_]Symbol {.{.variable=V_WFF1},   .{.terminal=T_BICOND}, .{.variable=V_WFF2}}};
-    var r3  = Production{ .lhs = .{.variable=V_WFF2}, .rhs = &[_]Symbol {.{.variable=V_WFF3}} };
-    var r4  = Production{ .lhs = .{.variable=V_WFF2}, .rhs = &[_]Symbol {.{.variable=V_WFF2},   .{.terminal=T_COND},   .{.variable=V_WFF3}}};
-    var r5  = Production{ .lhs = .{.variable=V_WFF3}, .rhs = &[_]Symbol {.{.variable=V_WFF4}} };
-    var r6  = Production{ .lhs = .{.variable=V_WFF3}, .rhs = &[_]Symbol {.{.variable=V_WFF3},   .{.terminal=T_OR},     .{.variable=V_WFF4}}};
-    var r7  = Production{ .lhs = .{.variable=V_WFF3}, .rhs = &[_]Symbol {.{.variable=V_WFF3},   .{.terminal=T_AND},    .{.variable=V_WFF4}}};
-    var r8  = Production{ .lhs = .{.variable=V_WFF4}, .rhs = &[_]Symbol {.{.variable=V_PROP}} };
-    var r9  = Production{ .lhs = .{.variable=V_WFF4}, .rhs = &[_]Symbol {.{.terminal=T_NOT},    .{.variable=V_WFF4}}};
-    var r10 = Production{ .lhs = .{.variable=V_PROP}, .rhs = &[_]Symbol {.{.terminal=T_LPAREN}, .{.variable=V_WFF1},   .{.terminal=T_RPAREN}}};
-    var r11 = Production{ .lhs = .{.variable=V_PROP}, .rhs = &[_]Symbol {.{.terminal=T_PROPTOK}}};
+    const r0  = Production{ .lhs = .{.variable=V_S},    .rhs = &[_]Symbol {.{.variable=V_WFF1}} };
+    const r1  = Production{ .lhs = .{.variable=V_WFF1}, .rhs = &[_]Symbol {.{.variable=V_WFF2}} };
+    const r2  = Production{ .lhs = .{.variable=V_WFF1}, .rhs = &[_]Symbol {.{.variable=V_WFF1},   .{.terminal=T_BICOND}, .{.variable=V_WFF2}}};
+    const r3  = Production{ .lhs = .{.variable=V_WFF2}, .rhs = &[_]Symbol {.{.variable=V_WFF3}} };
+    const r4  = Production{ .lhs = .{.variable=V_WFF2}, .rhs = &[_]Symbol {.{.variable=V_WFF2},   .{.terminal=T_COND},   .{.variable=V_WFF3}}};
+    const r5  = Production{ .lhs = .{.variable=V_WFF3}, .rhs = &[_]Symbol {.{.variable=V_WFF4}} };
+    const r6  = Production{ .lhs = .{.variable=V_WFF3}, .rhs = &[_]Symbol {.{.variable=V_WFF3},   .{.terminal=T_OR},     .{.variable=V_WFF4}}};
+    const r7  = Production{ .lhs = .{.variable=V_WFF3}, .rhs = &[_]Symbol {.{.variable=V_WFF3},   .{.terminal=T_AND},    .{.variable=V_WFF4}}};
+    const r8  = Production{ .lhs = .{.variable=V_WFF4}, .rhs = &[_]Symbol {.{.variable=V_PROP}} };
+    const r9  = Production{ .lhs = .{.variable=V_WFF4}, .rhs = &[_]Symbol {.{.terminal=T_NOT},    .{.variable=V_WFF4}}};
+    const r10 = Production{ .lhs = .{.variable=V_PROP}, .rhs = &[_]Symbol {.{.terminal=T_LPAREN}, .{.variable=V_WFF1},   .{.terminal=T_RPAREN}}};
+    const r11 = Production{ .lhs = .{.variable=V_PROP}, .rhs = &[_]Symbol {.{.terminal=T_PROPTOK}}};
 
     var expected_grammar = G{
         .initialized_at_comptime = true,
@@ -769,30 +903,11 @@ test "initFromTuples_grammar2_2" {
     try std.testing.expectEqualDeep(expected_grammar.terminals, actual_grammar.terminals);
 }
     
-
-    //     fn getRuleId(self: Self, rule: Production) ?usize {
-    //         for (self.rules, 0..) |known_rule, i| {
-    //             if (known_rule.eql(rule)) {
-    //                 return i;
-    //             }
-    //         }
-    //         return null;
-    //     }
+    
 
     //     
 
-    //     pub fn printProductionInstance(_: Self, prod: ProductionInstance) !void {
-    //         try stdout.print("{d}", .{prod.production.lhs.id});
-    //         try stdout.print(" ->", .{});
-    //         for (prod.production.rhs[0..prod.cursor]) |sym| {
-    //             try stdout.print(" {d}", .{sym.id});
-    //         }
-    //         try stdout.print(" *", .{});
-    //         for (prod.production.rhs[prod.cursor..]) |sym| {
-    //             try stdout.print(" {d}", .{sym.id});
-    //         }
-    //         try stdout.print("\n", .{});
-    //     }
+    
 //     };
 // }
 
@@ -918,7 +1033,7 @@ test "firsts_and_follows_grammar1_0" {
 
     var allocator = std.testing.allocator;
 
-    var first_set = try grammar.getFirstSet(allocator);
+    const first_set = try grammar.getFirstSet(allocator);
     defer {
         for (0..first_set.len) |i| {
             allocator.free(first_set[i]);
@@ -926,15 +1041,20 @@ test "firsts_and_follows_grammar1_0" {
         allocator.free(first_set);
     }
 
-    var expected_firsts = [_][9]bool{
+    const first_set_comptime = grammar.getFirstSetComptime();
+
+    const expected_firsts = [_][9]bool{
         .{ true, true, true, false, false, false, false, false, false },
         .{ true, true, true, false, false, false, false, false, false },
     };
     for (first_set, expected_firsts) |actual, expected| {
         try std.testing.expectEqualSlices(bool, &expected, actual);
     }
+    for (first_set_comptime, expected_firsts) |actual, expected| {
+        try std.testing.expectEqualSlices(bool, &expected, actual);
+    }
 
-    var follow = try grammar.getFollowSet(allocator);
+    const follow = try grammar.getFollowSet(allocator);
     defer {
         for (0..follow.len) |i| {
             allocator.free(follow[i]);
@@ -942,11 +1062,16 @@ test "firsts_and_follows_grammar1_0" {
         allocator.free(follow);
     }
 
-    var expected_follow = [_][9]bool{
+    const follow_comptime = grammar.getFollowSetComptime();
+
+    const expected_follow = [_][9]bool{
         .{ false, false, false, false, false, false, false, false, true },
         .{ false, false, false, true, true, true, true, true, true },
     };
     for (follow, expected_follow) |actual, expected| {
+        try std.testing.expectEqualSlices(bool, &expected, actual);
+    }
+    for (follow_comptime, expected_follow) |actual, expected| {
         try std.testing.expectEqualSlices(bool, &expected, actual);
     }
 
@@ -1006,7 +1131,7 @@ test "firsts_and_follows_grammar2_2" {
 
     var allocator = std.testing.allocator;
 
-    var first_set = try grammar.getFirstSet(allocator);
+    const first_set = try grammar.getFirstSet(allocator);
     defer {
         for (0..first_set.len) |i| {
             allocator.free(first_set[i]);
@@ -1014,7 +1139,9 @@ test "firsts_and_follows_grammar2_2" {
         allocator.free(first_set);
     }
 
-    var expected_firsts = [_][9]bool{
+    const first_set_comptime = grammar.getFirstSetComptime();
+
+    const expected_firsts = [_][9]bool{
         .{ false, false, false, false, true, true, false, true, false },
         .{ false, false, false, false, true, true, false, true, false },
         .{ false, false, false, false, true, true, false, true, false },
@@ -1025,16 +1152,20 @@ test "firsts_and_follows_grammar2_2" {
     for (first_set, expected_firsts) |actual, expected| {
         try std.testing.expectEqualSlices(bool, &expected, actual);
     }
+    for (first_set_comptime, expected_firsts) |actual, expected| {
+        try std.testing.expectEqualSlices(bool, &expected, actual);
+    }
 
-    var follow = try grammar.getFollowSet(allocator);
+    const follow = try grammar.getFollowSet(allocator);
     defer {
         for (0..follow.len) |i| {
             allocator.free(follow[i]);
         }
         allocator.free(follow);
     }
+    const follow_comptime = grammar.getFollowSetComptime();
 
-    var expected_follow = [_][9]bool{
+    const expected_follow = [_][9]bool{
         .{ false, false, false, false, false, false, false, false, true },
         .{ true, false, false, false, false, false, true, false, true },
         .{ true, true, false, false, false, false, true, false, true },
@@ -1043,6 +1174,9 @@ test "firsts_and_follows_grammar2_2" {
         .{ true, true, true, true, false, false, true, false, true },
     };
     for (follow, expected_follow) |actual, expected| {
+        try std.testing.expectEqualSlices(bool, &expected, actual);
+    }
+    for (follow_comptime, expected_follow) |actual, expected| {
         try std.testing.expectEqualSlices(bool, &expected, actual);
     }
 
@@ -1058,228 +1192,197 @@ test "firsts_and_follows_grammar2_2" {
     // }
 }
 
-// const ParseTable = struct {
-//     const Self = @This();
-//     const Action = union(enum) {
-//         state: usize,
-//         reduce: usize, // index of grammar.rules
-//         invalid,
-//         accept,
-//     };
-
-//     grammar: Grammar,
-//     action_goto_table: [][]Action,
-
-//     fn expandProductions(self: Self, allocator: std.mem.Allocator, productions: []const ProductionInstance) ![]std.ArrayList(ProductionInstance) {
-//         // const?
-//         var branches = try allocator.alloc(std.ArrayList(ProductionInstance), self.grammar.getSymbolCount());
-//         errdefer allocator.free(branches);
-
-//         for (branches, 0..) |_, i| {
-//             branches[i] = std.ArrayList(ProductionInstance).init(allocator);
-//         }
-//         errdefer {
-//             for (branches) |list| {
-//                 list.deinit();
-//             }
-//             allocator.free(branches);
-//         }
-
-//         var stack = std.ArrayList(ProductionInstance).init(allocator);
-//         defer stack.deinit();
-
-//         try stack.appendSlice(productions);
-
-//         // Expand all given ProductionInstances and track all of the symbols
-//         // currently being read.
-//         while (stack.popOrNull()) |prod| {
-//             if (prod.readCursor()) |sym| {
-//                 if (self.grammar.symbolIsVariable(sym)) {
-//                     if (branches[sym.id].items.len == 0) {
-//                         for (self.grammar.rules) |rule| {
-//                             if (sym.eql(rule.lhs)) {
-//                                 try stack.append(ProductionInstance.fromProduction(rule));
-//                             }
-//                         }
-//                     }
-//                     try branches[sym.id].append(prod.copyAdvanceCursor());
-//                 } else {
-//                     try branches[sym.id].append(prod.copyAdvanceCursor());
-//                 }
-//             }
-//         }
-
-//         return branches;
-//     }
-
-//     fn checkProductionsAlreadyExpanded(starting_productions_table: std.ArrayList([]ProductionInstance), productions: std.ArrayList(ProductionInstance)) ?usize {
-//         for (starting_productions_table.items, 0..) |start_prod_list, state| {
-//             for (productions.items) |prod| {
-//                 for (start_prod_list) |start_prod| {
-//                     if (prod.eql(start_prod)) break;
-//                 } else {
-//                     break;
-//                 }
-//             } else {
-//                 return state;
-//             }
-//         }
-
-//         return null;
-//     }
-
-//     fn populate(self: *Self, allocator: std.mem.Allocator, augmented_production: Production) !void {
-//         // TODO: defers
-//         var action_goto_table = std.ArrayList([]Action).init(allocator);
-//         defer action_goto_table.deinit();
-//         errdefer for (action_goto_table.items) |row| {
-//             allocator.free(row);
+// fn ParseTable(comptime G: type) type {
+//     return struct {
+//         const Self = @This();
+//         const Action = union(enum) {
+//             state: usize,
+//             reduce: usize, // index of grammar.rules
+//             invalid,
+//             accept,
 //         };
-//         var primary_productions_table = std.ArrayList([]ProductionInstance).init(allocator);
-//         defer {
-//             for (primary_productions_table.items) |row| {
-//                 allocator.free(row);
+
+//         grammar: G,
+//         action_goto_table: [][]Action,
+
+//         fn expandProductions(self: Self, allocator: std.mem.Allocator, productions: []const ProductionInstance) ![]std.ArrayList(ProductionInstance) {
+//             // const?
+//             var branches = try allocator.alloc(std.ArrayList(ProductionInstance), self.grammar.getSymbolCount());
+//             errdefer allocator.free(branches);
+
+//             for (branches, 0..) |_, i| {
+//                 branches[i] = std.ArrayList(ProductionInstance).init(allocator);
 //             }
-//             primary_productions_table.deinit();
-//         }
-
-//         try action_goto_table.append(try allocator.alloc(Action, self.grammar.getSymbolCount()));
-//         try primary_productions_table.append(try allocator.alloc(ProductionInstance, 1));
-//         primary_productions_table.items[0][0] = ProductionInstance.fromProduction(augmented_production);
-
-//         var state: usize = 0;
-//         while (state < action_goto_table.items.len) : (state += 1) {
-//             var branches = try self.expandProductions(allocator, primary_productions_table.items[state]);
-//             defer {
-//                 for (branches) |prod_list| {
-//                     prod_list.deinit();
+//             errdefer {
+//                 for (branches) |list| {
+//                     list.deinit();
 //                 }
 //                 allocator.free(branches);
 //             }
-//             for (branches, 0..) |*prod_list, id| {
-//                 if (prod_list.items.len == 0) {
-//                     action_goto_table.items[state][id] = Action.invalid;
-//                 } else if (checkProductionsAlreadyExpanded(primary_productions_table, prod_list.*)) |existing_state| {
-//                     action_goto_table.items[state][id] = try switch (action_goto_table.items[state][id]) {
-//                         .invalid => Action{ .state = existing_state },
-//                         .state => TableGeneratorError.shiftShiftError,
-//                         .reduce => TableGeneratorError.shiftReduceError,
-//                         .accept => TableGeneratorError.shiftAcceptError,
-//                     };
-//                 } else {
-//                     var new_prod_list = try allocator.alloc(Action, self.grammar.getSymbolCount());
-//                     try action_goto_table.append(new_prod_list);
-//                     try primary_productions_table.append(try prod_list.toOwnedSlice());
-//                     action_goto_table.items[state][id] = Action{ .state = action_goto_table.items.len - 1 };
-//                 }
-//             }
-//         }
 
-//         var follow_set = try self.grammar.getFollowSet();
-//         defer {
-//             for (follow_set) |row| allocator.free(row);
-//             allocator.free(follow_set);
-//         }
+//             var stack = std.ArrayList(ProductionInstance).init(allocator);
+//             defer stack.deinit();
 
-//         // TODO: Populate reductions
-//         // For each completed primary production in each state, identify the
-//         // production rule's index and insert a reduction on each of the LHS's
-//         // follow set
-//         for (primary_productions_table.items, 0..) |row, state_num| {
-//             for (row) |instance| {
-//                 if (instance.readCursor() != null) continue;
+//             try stack.appendSlice(productions);
 
-//                 var rule_id = self.grammar.getRuleId(instance.production).?;
-//                 for (follow_set[instance.production.lhs.id], self.grammar.variables..) |isFollow, terminal_id| {
-//                     if (!isFollow) continue;
-
-//                     action_goto_table.items[state_num][terminal_id] = try switch (action_goto_table.items[state_num][terminal_id]) {
-//                         .invalid => Action{ .reduce = rule_id },
-//                         .state => TableGeneratorError.shiftReduceError,
-//                         .reduce => TableGeneratorError.reduceReduceError,
-//                         .accept => TableGeneratorError.reduceAcceptError,
-//                     };
-//                 }
-
-//                 // TODO: hardcoded 0 kinda yucky
-//                 if (instance.production.lhs.id == 0) {
-//                     switch (action_goto_table.items[state_num][self.grammar.terminals - 1]) {
-//                         .invalid, .accept => action_goto_table.items[state_num][self.grammar.terminals - 1] = Action.accept,
-//                         .state => return TableGeneratorError.shiftAcceptError,
-//                         .reduce => return TableGeneratorError.reduceAcceptError,
+//             // Expand all given ProductionInstances and track all of the symbols
+//             // currently being read.
+//             while (stack.popOrNull()) |prod| {
+//                 if (prod.readCursor()) |sym| {
+//                     switch(sym) {
+//                         .variable => |idx| {
+//                             if (branches[idx].items.len == 0) {
+//                                 for (self.grammar.rules) |rule| {
+//                                     if (sym.eql(rule.lhs)) {
+//                                         try stack.append(ProductionInstance.fromProduction(rule));
+//                                     }
+//                                 }
+//                             }
+//                             try branches[idx].append(prod.copyAdvanceCursor());
+//                         },
+//                         // Use offset terminal index
+//                         .terminal => |idx| try branches[self.grammar.getOffsetIdx(idx)].append(prod.copyAdvanceCursor()),
 //                     }
 //                 }
 //             }
+
+//             return branches;
 //         }
 
-//         self.action_goto_table = try action_goto_table.toOwnedSlice();
-//     }
-// };
+//         fn checkProductionsAlreadyExpanded(starting_productions_table: std.ArrayList([]ProductionInstance), productions: std.ArrayList(ProductionInstance)) ?usize {
+//             for (starting_productions_table.items, 0..) |start_prod_list, state| {
+//                 for (productions.items) |prod| {
+//                     for (start_prod_list) |start_prod| {
+//                         if (prod.eql(start_prod)) break;
+//                     } else {
+//                         break;
+//                     }
+//                 } else {
+//                     return state;
+//                 }
+//             }
+
+//             return null;
+//         }
+
+//         fn populate(self: *Self, allocator: std.mem.Allocator, augmented_production: Production) !void {
+//             // Use a single table for all symbols. Variables are in indices 
+//             // 0..self.grammar.getVariableCount(), terminals are in indices
+//             // self.grammar.getVariableCount()..self.grammar.getSymbolCount()
+//             var action_goto_table = std.ArrayList([]Action).init(allocator);
+//             defer action_goto_table.deinit();
+//             errdefer for (action_goto_table.items) |row| {
+//                 allocator.free(row);
+//             };
+
+//             var primary_productions_table = std.ArrayList([]ProductionInstance).init(allocator);
+//             defer {
+//                 for (primary_productions_table.items) |row| {
+//                     allocator.free(row);
+//                 }
+//                 primary_productions_table.deinit();
+//             }
+
+//             //try action_table.append(try allocator.alloc(Action, self.grammar.getVariableCount()));
+//             try action_goto_table.append(try allocator.alloc(Action, self.grammar.getSymbolCount()));
+//             try primary_productions_table.append(try allocator.alloc(ProductionInstance, 1));
+//             primary_productions_table.items[0][0] = ProductionInstance.fromProduction(augmented_production);
+
+//             var state: usize = 0;
+//             while (state < action_goto_table.items.len) : (state += 1) {
+//                 var branches = try self.expandProductions(allocator, primary_productions_table.items[state]);
+//                 defer {
+//                     for (branches) |prod_list| {
+//                         prod_list.deinit();
+//                     }
+//                     allocator.free(branches);
+//                 }
+//                 for (branches, 0..) |*prod_list, idx| {
+//                     if (prod_list.items.len == 0) {
+//                         action_goto_table.items[state][idx] = Action.invalid;
+//                     } else if (checkProductionsAlreadyExpanded(primary_productions_table, prod_list.*)) |existing_state| {
+//                         action_goto_table.items[state][idx] = try switch (action_goto_table.items[state][idx]) {
+//                             .invalid => Action{ .state = existing_state },
+//                             .state => TableGeneratorError.shiftShiftError,
+//                             .reduce => TableGeneratorError.shiftReduceError,
+//                             .accept => TableGeneratorError.shiftAcceptError,
+//                         };
+//                     } else {
+//                         var new_prod_list = try allocator.alloc(Action, self.grammar.getSymbolCount());
+//                         try action_goto_table.append(new_prod_list);
+//                         try primary_productions_table.append(try prod_list.toOwnedSlice());
+//                         action_goto_table.items[state][idx] = Action{ .state = action_goto_table.items.len - 1 };
+//                     }
+//                 }
+//             }
+
+//             var follow_set = try self.grammar.getFollowSet(allocator);
+//             defer {
+//                 for (follow_set) |row| allocator.free(row);
+//                 allocator.free(follow_set);
+//             }
+
+//             // TODO: Populate reductions
+//             // For each completed primary production in each state, identify the
+//             // production rule's index and insert a reduction on each of the LHS's
+//             // follow set
+//             for (primary_productions_table.items, 0..) |row, state_num| {
+//                 for (row) |instance| {
+//                     if (instance.readCursor() != null) continue;
+
+//                     var rule_idx = self.grammar.getRuleId(instance.production).?;
+//                     for (follow_set[instance.production.lhs.variable], 0..) |isFollow, terminal_idx| {
+//                         if (!isFollow) continue;
+
+//                         action_goto_table.items[state_num][terminal_idx] = try switch (action_goto_table.items[state_num][terminal_idx]) {
+//                             .invalid => Action{ .reduce = rule_idx },
+//                             .state => TableGeneratorError.shiftReduceError,
+//                             .reduce => TableGeneratorError.reduceReduceError,
+//                             .accept => TableGeneratorError.reduceAcceptError,
+//                         };
+//                     }
+
+//                     // TODO: hardcoded 0 kinda yucky
+//                     if (instance.production.lhs.variable == 0) {
+//                         switch (action_goto_table.items[state_num][self.grammar.getSymbolCount() - 1]) {
+//                             .invalid, .accept => action_goto_table.items[state_num][self.grammar.getSymbolCount() - 1] = Action.accept,
+//                             .state => return TableGeneratorError.shiftAcceptError,
+//                             .reduce => return TableGeneratorError.reduceAcceptError,
+//                         }
+//                     }
+//                 }
+//             }
+
+//             self.action_goto_table = try action_goto_table.toOwnedSlice();
+//         }
+//     };
+// } 
 
 // test "expandProductions-grammar1_0" {
-//     // S' = 0
-//     // wff = 1
-//     // Proposition = 2
-//     // Not = 3
-//     // LParen = 4
-//     // RParen = 5
-//     // And = 6
-//     // Or = 7
-//     // Cond = 8
-//     // Bicond = 9
-//     // $ = 10
+//     const V = Variable.fromString;
+//     const G = Grammar(Variable, TestToken);
+//     comptime var grammar = G.initFromTuples(
+//         .{
+//             .{V("S"), .{V("wff")}},
+//             .{V("wff"), .{TestToken.Proposition}},
+//             .{V("wff"), .{TestToken.Not, V("wff")}},
+//             .{V("wff"), .{TestToken.LParen, V("wff"), TestToken.And, V("wff"), TestToken.RParen}},
+//             .{V("wff"), .{TestToken.LParen, V("wff"), TestToken.Or, V("wff"), TestToken.RParen}},
+//             .{V("wff"), .{TestToken.LParen, V("wff"), TestToken.Cond, V("wff"), TestToken.RParen}},
+//             .{V("wff"), .{TestToken.LParen, V("wff"), TestToken.Bicond, V("wff"), TestToken.RParen}},
+//         },
+//         V("S"),
+//         TestToken.End
+//     );
+//     defer grammar.deinit();
 
-//     var r1 = Production{ .lhs = Symbol{ .id = 1 }, .rhs = &[_]Symbol{Symbol{ .id = 2 }} };
-
-//     var r2 = Production{ .lhs = Symbol{ .id = 1 }, .rhs = &[_]Symbol{ Symbol{ .id = 3 }, Symbol{ .id = 1 } } };
-
-//     var r3 = Production{ .lhs = Symbol{ .id = 1 }, .rhs = &[_]Symbol{
-//         Symbol{ .id = 4 },
-//         Symbol{ .id = 1 },
-//         Symbol{ .id = 6 },
-//         Symbol{ .id = 1 },
-//         Symbol{ .id = 5 },
-//     } };
-
-//     var r4 = Production{ .lhs = Symbol{ .id = 1 }, .rhs = &[_]Symbol{
-//         Symbol{ .id = 4 },
-//         Symbol{ .id = 1 },
-//         Symbol{ .id = 7 },
-//         Symbol{ .id = 1 },
-//         Symbol{ .id = 5 },
-//     } };
-
-//     var r5 = Production{ .lhs = Symbol{ .id = 1 }, .rhs = &[_]Symbol{
-//         Symbol{ .id = 4 },
-//         Symbol{ .id = 1 },
-//         Symbol{ .id = 8 },
-//         Symbol{ .id = 1 },
-//         Symbol{ .id = 5 },
-//     } };
-
-//     var r6 = Production{ .lhs = Symbol{ .id = 0 }, .rhs = &[_]Symbol{
-//         Symbol{ .id = 4 },
-//         Symbol{ .id = 1 },
-//         Symbol{ .id = 9 },
-//         Symbol{ .id = 1 },
-//         Symbol{ .id = 5 },
-//     } };
-
-//     var r0 = Production{ .lhs = Symbol{ .id = 0 }, .rhs = &[_]Symbol{Symbol{ .id = 1 }} };
-
-//     var grammar = Grammar{
-//         .allocator = std.testing.allocator,
-//         .rules = &[_]Production{ r0, r1, r2, r3, r4, r5, r6 },
-//         .variables = 2,
-//         .terminals = 9,
-//     };
-
-//     var table = ParseTable{
+//     const P = ParseTable(G);
+//     var table = P {
 //         .grammar = grammar,
 //         .action_goto_table = undefined,
 //     };
 
-//     const start_productions = [_]ProductionInstance{ProductionInstance.fromProduction(r0)};
+//     const start_productions = [_]ProductionInstance{ProductionInstance.fromProduction(grammar.rules[0])};
 //     var branches = try table.expandProductions(std.testing.allocator, &start_productions);
 //     defer {
 //         for (branches) |list| {
@@ -1295,7 +1398,7 @@ test "firsts_and_follows_grammar2_2" {
 //         }
 //     }
 
-//     try table.populate(std.testing.allocator, r0);
+//     try table.populate(std.testing.allocator, grammar.rules[0]);
 //     defer {
 //         for (table.action_goto_table) |row| {
 //             std.testing.allocator.free(row);
