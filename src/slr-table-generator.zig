@@ -76,180 +76,196 @@ const ProductionInstance = struct {
 // NOTE: comparison of symbols is not always done using .eql in below functions, should try to make this consistent
 // NOTE: FOLLOW and FIRST sets generation code is way too nested, should ideally 
 //       be broken down into smaller functions 
-const Grammar = struct {
-    const Self = @This();
+fn Grammar(comptime T: type) type { 
+    return struct {
+        const Self = @This();
+        const TokenMapping: type = std.meta.Tuple{&[_]type {[]u8, T}};
 
-    allocator: std.mem.Allocator,
-    rules: []const Production,
-    variables: usize,
-    terminals: usize,
+        //allocator: std.mem.Allocator,
+        rules: []const Production,
+        variables: [][]const u8,
+        terminals: []T,
 
-    fn getOffsetTerminalId(self: Self, terminal: Symbol) usize {
-        return terminal.id - self.variables;
-    }
-
-    // NOTE: Assumes $ is last terminal symbol ID and S' is the first symbol ID 
-    //       (0). FOLLOW(S') will be initialized to {$}, which will then be
-    //       propogated as needed
-    fn getFollowSet(self: Self) ![][]const bool {
-        var first_set = try self.getFirstSet();
-        defer {
-            for (first_set) |row| self.allocator.free(row);
-            self.allocator.free(first_set);
-        }
-
-        var follow_set = try self.allocator.alloc([]bool, self.variables);
-        errdefer self.allocator.free(follow_set);
-        var num_follow_allocated: usize = 0;
-        for (0..follow_set.len) |i| {
-            follow_set[i] = try self.allocator.alloc(bool, self.terminals);
-            for (0..follow_set[i].len) |j| {
-                follow_set[i][j] = false;
-            } 
-            num_follow_allocated += 1;
-        }
-        // Initialize FOLLOW(S') to include END symbol.
-        follow_set[0][self.terminals - 1] = true;
-        errdefer for (follow_set[0..num_follow_allocated]) |list| {
-            self.allocator.free(list);
-        };
-
-        for (0..self.variables) |v| {
-            var seen = try self.allocator.alloc(bool, self.variables);
-            defer self.allocator.free(seen);
-            for (0..seen.len) |i| {
-                seen[i] = false;
+        fn initFromRuleStrings(
+            comptime rule_strings: [][]u8, 
+            comptime variable_names: [][]u8, 
+            comptime start_variable: []u8,
+            comptime terminal_token_map: []TokenMapping,
+        ) Self {
+            comptime {
+                var variables: [][]u8 = {};
+                // Parse rule strings into integer ID's
+                
             }
-            seen[v] = true; // redundant?
+        }
 
-            var stack = std.ArrayList(SymbolID).init(self.allocator);
-            defer stack.deinit();
-            try stack.append(@intCast(v));
+        fn getOffsetTerminalId(self: Self, terminal: Symbol) usize {
+            return terminal.id - self.variables;
+        }
 
-            while (stack.popOrNull()) |top| {
-                for (self.rules) |rule| {
-                    for (rule.rhs, 0..) |symbol, symbol_index| {
-                        if (symbol.id != top) {
-                            continue;
+        // NOTE: Assumes $ is last terminal symbol ID and S' is the first symbol ID 
+        //       (0). FOLLOW(S') will be initialized to {$}, which will then be
+        //       propogated as needed
+        fn getFollowSet(self: Self) ![][]const bool {
+            var first_set = try self.getFirstSet();
+            defer {
+                for (first_set) |row| self.allocator.free(row);
+                self.allocator.free(first_set);
+            }
+
+            var follow_set = try self.allocator.alloc([]bool, self.variables);
+            errdefer self.allocator.free(follow_set);
+            var num_follow_allocated: usize = 0;
+            for (0..follow_set.len) |i| {
+                follow_set[i] = try self.allocator.alloc(bool, self.terminals);
+                for (0..follow_set[i].len) |j| {
+                    follow_set[i][j] = false;
+                } 
+                num_follow_allocated += 1;
+            }
+            // Initialize FOLLOW(S') to include END symbol.
+            follow_set[0][self.terminals - 1] = true;
+            errdefer for (follow_set[0..num_follow_allocated]) |list| {
+                self.allocator.free(list);
+            };
+
+            for (0..self.variables) |v| {
+                var seen = try self.allocator.alloc(bool, self.variables);
+                defer self.allocator.free(seen);
+                for (0..seen.len) |i| {
+                    seen[i] = false;
+                }
+                seen[v] = true; // redundant?
+
+                var stack = std.ArrayList(SymbolID).init(self.allocator);
+                defer stack.deinit();
+                try stack.append(@intCast(v));
+
+                while (stack.popOrNull()) |top| {
+                    for (self.rules) |rule| {
+                        for (rule.rhs, 0..) |symbol, symbol_index| {
+                            if (symbol.id != top) {
+                                continue;
+                            }
+                            if (symbol_index + 1 == rule.rhs.len) {
+                                if (!seen[rule.lhs.id]) { // optimize: if already caluclated, dont redo
+                                    if (rule.lhs.id < top) {
+                                        for (follow_set[rule.lhs.id], 0..) |isFollow, offset_follow_symbol_id| {
+                                            if (isFollow) {
+                                                follow_set[v][offset_follow_symbol_id] = true;
+                                            }
+                                        }
+                                    } else {
+                                        try stack.append(rule.lhs.id);
+                                    }
+                                    seen[rule.lhs.id] = true;
+                                }
+                            } else if (self.symbolIsTerminal(rule.rhs[symbol_index + 1])) {
+                                follow_set[v][self.getOffsetTerminalId(rule.rhs[symbol_index + 1])] = true;
+                            } else {
+                                for (first_set[symbol.id], 0..) |isFirst, offset_first_symbol_id| {
+                                    if (isFirst) {
+                                        follow_set[v][offset_first_symbol_id] = true;
+                                    }
+                                }
+                            }
                         }
-                        if (symbol_index + 1 == rule.rhs.len) {
-                            if (!seen[rule.lhs.id]) { // optimize: if already caluclated, dont redo
-                                if (rule.lhs.id < top) {
-                                    for (follow_set[rule.lhs.id], 0..) |isFollow, offset_follow_symbol_id| {
-                                        if (isFollow) {
-                                            follow_set[v][offset_follow_symbol_id] = true;
+                    }
+                }
+            }
+            return follow_set;
+        }
+
+        // NOTE: $ (END character) can never be first
+        fn getFirstSet(self: Self) ![][]bool {
+            var firsts = try self.allocator.alloc([]bool, self.variables);
+            errdefer self.allocator.free(firsts);
+            var num_firsts_allocated: usize = 0;
+            for (0..firsts.len) |i| {
+                firsts[i] = try self.allocator.alloc(bool, self.terminals);
+                for (0..firsts[i].len) |j| {
+                    firsts[i][j] = false; // Set default state to false, including for $
+                } 
+                num_firsts_allocated += 1;
+            }
+            errdefer for (firsts[0..num_firsts_allocated]) |list| {
+                self.allocator.free(list);
+            };
+            
+            // Iterate over all variable ID's
+            for (0..self.variables) |v| {
+                var seen = try self.allocator.alloc(bool, self.variables);
+                defer self.allocator.free(seen);
+                for (0..seen.len) |i| {
+                    seen[i] = false;
+                }
+                seen[v] = true;
+
+                var stack = std.ArrayList(SymbolID).init(self.allocator);
+                defer stack.deinit();
+                try stack.append(@intCast(v));
+
+                while (stack.popOrNull()) |top| {
+                    for (self.rules) |rule| {
+                        const first_rule_symbol = rule.rhs[0];
+                        if (rule.lhs.id == top) {
+                            if (self.symbolIsTerminal(first_rule_symbol)) {
+                                firsts[v][self.getOffsetTerminalId(first_rule_symbol)] = true;
+                            } else if (!seen[first_rule_symbol.id]) {
+                                if (first_rule_symbol.id < v) { // entry already populated
+                                    for (firsts[first_rule_symbol.id], 0..) |isInFirstList, i| {
+                                        if (isInFirstList) {
+                                            firsts[v][i] = true;
                                         }
                                     }
                                 } else {
-                                    try stack.append(rule.lhs.id);
+                                    try stack.append(first_rule_symbol.id);
                                 }
-                                seen[rule.lhs.id] = true;
-                            }
-                        } else if (self.symbolIsTerminal(rule.rhs[symbol_index + 1])) {
-                            follow_set[v][self.getOffsetTerminalId(rule.rhs[symbol_index + 1])] = true;
-                        } else {
-                            for (first_set[symbol.id], 0..) |isFirst, offset_first_symbol_id| {
-                                if (isFirst) {
-                                    follow_set[v][offset_first_symbol_id] = true;
-                                }
+                                seen[first_rule_symbol.id] = true;
                             }
                         }
                     }
                 }
             }
+
+            return firsts;
         }
-        return follow_set;
-    }
 
-    // NOTE: $ (END character) can never be first
-    fn getFirstSet(self: Self) ![][]bool {
-        var firsts = try self.allocator.alloc([]bool, self.variables);
-        errdefer self.allocator.free(firsts);
-        var num_firsts_allocated: usize = 0;
-        for (0..firsts.len) |i| {
-            firsts[i] = try self.allocator.alloc(bool, self.terminals);
-            for (0..firsts[i].len) |j| {
-                firsts[i][j] = false; // Set default state to false, including for $
-            } 
-            num_firsts_allocated += 1;
+        fn getSymbolCount(self: Self) usize {
+            return self.variables + self.terminals;
         }
-        errdefer for (firsts[0..num_firsts_allocated]) |list| {
-            self.allocator.free(list);
-        };
-        
-        // Iterate over all variable ID's
-        for (0..self.variables) |v| {
-            var seen = try self.allocator.alloc(bool, self.variables);
-            defer self.allocator.free(seen);
-            for (0..seen.len) |i| {
-                seen[i] = false;
-            }
-            seen[v] = true;
 
-            var stack = std.ArrayList(SymbolID).init(self.allocator);
-            defer stack.deinit();
-            try stack.append(@intCast(v));
-
-            while (stack.popOrNull()) |top| {
-                for (self.rules) |rule| {
-                    const first_rule_symbol = rule.rhs[0];
-                    if (rule.lhs.id == top) {
-                        if (self.symbolIsTerminal(first_rule_symbol)) {
-                            firsts[v][self.getOffsetTerminalId(first_rule_symbol)] = true;
-                        } else if (!seen[first_rule_symbol.id]) {
-                            if (first_rule_symbol.id < v) { // entry already populated
-                                for (firsts[first_rule_symbol.id], 0..) |isInFirstList, i| {
-                                    if (isInFirstList) {
-                                        firsts[v][i] = true;
-                                    }
-                                }
-                            } else {
-                                try stack.append(first_rule_symbol.id);
-                            }
-                            seen[first_rule_symbol.id] = true;
-                        }
-                    }
+        fn getRuleId(self: Self, rule: Production) ?usize {
+            for (self.rules, 0..) |known_rule, i| {
+                if (known_rule.eql(rule)) {
+                    return i;
                 }
             }
+            return null;
         }
 
-        return firsts;
-    }
+        fn symbolIsVariable(self: Self, sym: Symbol) bool {
+            return sym.id < self.variables;
+        }
 
-    fn getSymbolCount(self: Self) usize {
-        return self.variables + self.terminals;
-    }
+        fn symbolIsTerminal(self: Self, sym: Symbol) bool {
+            return  self.variables <= sym.id and sym.id < self.getSymbolCount();
+        }
 
-    fn getRuleId(self: Self, rule: Production) ?usize {
-        for (self.rules, 0..) |known_rule, i| {
-            if (known_rule.eql(rule)) {
-                return i;
+        pub fn printProductionInstance(_: Self, prod: ProductionInstance) !void {
+            try stdout.print("{d}", .{prod.production.lhs.id});
+            try stdout.print(" ->", .{});
+            for (prod.production.rhs[0..prod.cursor]) |sym| {
+                try stdout.print(" {d}", .{sym.id});
             }
+            try stdout.print(" *", .{});
+            for (prod.production.rhs[prod.cursor..]) |sym| {
+                try stdout.print(" {d}", .{sym.id});
+            }
+            try stdout.print("\n", .{});
         }
-        return null;
-    }
-
-    fn symbolIsVariable(self: Self, sym: Symbol) bool {
-        return sym.id < self.variables;
-    }
-
-    fn symbolIsTerminal(self: Self, sym: Symbol) bool {
-        return  self.variables <= sym.id and sym.id < self.getSymbolCount();
-    }
-
-    pub fn printProductionInstance(_: Self, prod: ProductionInstance) !void {
-        try stdout.print("{d}", .{prod.production.lhs.id});
-        try stdout.print(" ->", .{});
-        for (prod.production.rhs[0..prod.cursor]) |sym| {
-            try stdout.print(" {d}", .{sym.id});
-        }
-        try stdout.print(" *", .{});
-        for (prod.production.rhs[prod.cursor..]) |sym| {
-            try stdout.print(" {d}", .{sym.id});
-        }
-        try stdout.print("\n", .{});
-    }
-};
+    };
+}
 
 
 test "firsts_and_follows_simple" {
