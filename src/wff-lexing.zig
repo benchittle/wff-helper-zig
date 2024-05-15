@@ -98,13 +98,13 @@ pub const Token = union(enum) {
 };
 
 test "Token.equals" {
-    var t1: Token = Token.LParen;
-    var t2: Token = Token.LParen;
-    var t3: Token = Token.RParen;
+    const t1: Token = Token.LParen;
+    const t2: Token = Token.LParen;
+    const t3: Token = Token.RParen;
 
-    var t4: Token = Token{ .Operator = WffOperator.And };
-    var t5: Token = Token{ .Operator = WffOperator.And };
-    var t6: Token = Token{ .Operator = WffOperator.Or };
+    const t4: Token = Token{ .Operator = WffOperator.And };
+    const t5: Token = Token{ .Operator = WffOperator.And };
+    const t6: Token = Token{ .Operator = WffOperator.Or };
 
     try std.testing.expect(t1.eql(t2));
     try std.testing.expect(!t1.eql(t3));
@@ -179,7 +179,7 @@ fn tokenize(allocator: std.mem.Allocator, wff_string: []const u8) !std.ArrayList
         //     and we continue right away to the next loop iteration without
         //     assigning a value to tok.
         // (3) An unexpected token is encountered => we return an error.
-        var tok = try switch (state) {
+        const tok = try switch (state) {
             .None => switch (c) {
                 '~' => Token{ .Operator = WffOperator.Not },
                 'v' => Token{ .Operator = WffOperator.Or },
