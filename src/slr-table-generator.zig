@@ -437,6 +437,9 @@ pub fn Grammar(comptime V: type, comptime T: type) type {
         }
     
         // NOTE: $ (END character) can never be first
+        // TODO: Make a Set struct so that we can abstract away the operations
+        // and use different internal representations with the same interface
+        // (in case I want to change the representation in the future)
         fn getFirstSet(self: Self, allocator: std.mem.Allocator) ![][]bool {
             var firsts = try allocator.alloc([]bool, self.getVariableCount());
             errdefer allocator.free(firsts);
@@ -740,7 +743,7 @@ const TestToken = enum {
 
     fn getString(self: Self) []const u8 {
        return switch (self) {
-            .Proposition => "prop",
+            .Proposition => "PROP",
             .Not => "~",
             .LParen => "(",
             .RParen => ")",

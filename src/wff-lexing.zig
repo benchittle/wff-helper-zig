@@ -143,7 +143,7 @@ test "Token.equals" {
 
 // Tokenize a string containing a WFF. Returns an ArrayList of Tokens if a valid
 // string is passed, else a LexError. Caller must free the returned ArrayList.
-fn tokenize(allocator: std.mem.Allocator, wff_string: []const u8) !std.ArrayList(Token) {
+pub fn tokenize(allocator: std.mem.Allocator, wff_string: []const u8) !std.ArrayList(Token) {
     const State = enum {
         None,
         Cond,

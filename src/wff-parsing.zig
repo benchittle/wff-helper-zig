@@ -74,7 +74,7 @@ test "ParseTreeDepthFirstIterator" {
     defer tree.deinit();
 
     try std.testing.expectEqual(tree.root, tree.root.data.Nonterminal.items[0].parent.?);
-    var c: *ParseTree.Node = tree.root.data.Nonterminal.items[1].parent.?;
+    const c: *ParseTree.Node = tree.root.data.Nonterminal.items[1].parent.?;
     try std.testing.expectEqual(c, c.data.Nonterminal.items[0].parent.?);
 
     var it = tree.root.iterDepthFirst();
@@ -238,7 +238,7 @@ pub const ParseTree = struct {
                     if (child == node) {
                         copy_child = copy_node;
                     } else {
-                        var c = try child.copy(allocator);
+                        const c = try child.copy(allocator);
                         copy_child = c.*;
                         allocator.destroy(c);
                     }
@@ -256,7 +256,7 @@ pub const ParseTree = struct {
                 copy_node = Node{.data = Data{.Nonterminal = copy_children}};
             }
 
-            var copy_root = try allocator.create(Node);
+            const copy_root = try allocator.create(Node);
             copy_root.* = copy_node;
 
             for (copy_root.data.Nonterminal.items) |*child| {
@@ -450,7 +450,7 @@ pub const ParseTree = struct {
 // TODO: fn to build trees more easily for testing larger expressions
 
 test "ParseTree: ''" {
-    try std.testing.expectError(ParseError.NoTokensFound, ParseTree.init(std.testing.allocator, ""));
+    try std.testing.expectError(lex.LexError.NoTokensFound, ParseTree.init(std.testing.allocator, ""));
 }
 
 test "ParseTree: '~)q p v('" {
@@ -458,7 +458,7 @@ test "ParseTree: '~)q p v('" {
 }
 
 test "ParseTree: '(p v q)'" {
-    var allocator = std.testing.allocator;
+    const allocator = std.testing.allocator;
     var tree = try ParseTree.init(allocator, "(p v q)");
     defer tree.deinit();
 
@@ -527,7 +527,7 @@ test "ParseTree.toString: (p v q)" {
     var tree = try ParseTree.init(std.testing.allocator, "(p v q)");
     defer tree.deinit();
 
-    var string = try tree.toString(std.testing.allocator);
+    const string = try tree.toString(std.testing.allocator);
     defer std.testing.allocator.free(string);
 
     try std.testing.expectEqualStrings("(p v q)", string);
@@ -537,14 +537,14 @@ test "ParseTree.toString: ~((a ^ b) => (c ^ ~d))" {
     var tree = try ParseTree.init(std.testing.allocator, "~((a ^ b) => (c ^ ~d))");
     defer tree.deinit();
 
-    var string = try tree.toString(std.testing.allocator);
+    const string = try tree.toString(std.testing.allocator);
     defer std.testing.allocator.free(string);
 
     try std.testing.expectEqualStrings("~((a ^ b) => (c ^ ~d))", string);
 }
 
 test "ParseTree.copy: (p v q)" {
-    var allocator = std.testing.allocator;
+    const allocator = std.testing.allocator;
     var tree = try ParseTree.init(allocator, "(p v q)");
     defer tree.deinit();
     var copy = try tree.copy();
@@ -554,7 +554,7 @@ test "ParseTree.copy: (p v q)" {
 }
 
 test "ParseTree.copy: ((a ^ b) v (c ^ d))" {
-    var allocator = std.testing.allocator;
+    const allocator = std.testing.allocator;
     var tree = try ParseTree.init(allocator, "((a ^ b) v (c ^ d))");
     defer tree.deinit();
     var copy = try tree.copy();
@@ -564,7 +564,7 @@ test "ParseTree.copy: ((a ^ b) v (c ^ d))" {
 }
 
 test "ParseTree.copy: p" {
-    var allocator = std.testing.allocator;
+    const allocator = std.testing.allocator;
     var tree = try ParseTree.init(allocator, "p");
     defer tree.deinit();
     var copy = try tree.copy();
@@ -579,9 +579,9 @@ test "ParseTree.Node.copyAbove" {
     defer tree.deinit();
 
     var bottom_right = &tree.root.data.Nonterminal.items[3].data.Nonterminal.items[1];
-    var bottom_right_copy = try bottom_right.copy(allocator);
+    const bottom_right_copy = try bottom_right.copy(allocator);
     defer allocator.destroy(bottom_right_copy);
-    var root_copy = try bottom_right.copyAbove(allocator, bottom_right_copy.*);
+    const root_copy = try bottom_right.copyAbove(allocator, bottom_right_copy.*);
     var tree_copy = ParseTree{.allocator = allocator, .root = root_copy};
     defer tree_copy.deinit();
 
@@ -596,7 +596,7 @@ test "ParseTree.Node.copyAbove" {
 }
 
 test "ParseTree.Node.match: (p v q) with pattern (p v q)" {
-    var allocator = std.testing.allocator;
+    const allocator = std.testing.allocator;
     var tree = try ParseTree.init(allocator, "(p v q)");
     defer tree.deinit();
     var pattern = try ParseTree.init(allocator, "(p v q)");
@@ -611,7 +611,7 @@ test "ParseTree.Node.match: (p v q) with pattern (p v q)" {
 }
 
 test "ParseTree.Node.match: ((a ^ b) v (c ^ d)) with pattern (p v q)" {
-    var allocator = std.testing.allocator;
+    const allocator = std.testing.allocator;
     var tree = try ParseTree.init(allocator, "((a ^ b) v (c ^ d))");
     defer tree.deinit();
     var pattern = try ParseTree.init(allocator, "(p v q)");
@@ -626,7 +626,7 @@ test "ParseTree.Node.match: ((a ^ b) v (c ^ d)) with pattern (p v q)" {
 }
 
 test "ParseTree.Node.match: (p v p) with pattern (p v p)" {
-    var allocator = std.testing.allocator;
+    const allocator = std.testing.allocator;
     var tree = try ParseTree.init(allocator, "(p v p)");
     defer tree.deinit();
     var pattern = try ParseTree.init(allocator, "(p v p)");
@@ -640,7 +640,7 @@ test "ParseTree.Node.match: (p v p) with pattern (p v p)" {
 }
 
 test "ParseTree.Node.match: (p v q) with pattern (p v p)" {
-    var allocator = std.testing.allocator;
+    const allocator = std.testing.allocator;
     var tree = try ParseTree.init(allocator, "(p v q)");
     defer tree.deinit();
     var pattern = try ParseTree.init(allocator, "(p v p)");
@@ -650,7 +650,7 @@ test "ParseTree.Node.match: (p v q) with pattern (p v p)" {
 }
 
 test "ParseTree.Node.match: ((a ^ b) => (a ^ b)) with pattern (p => p)" {
-    var allocator = std.testing.allocator;
+    const allocator = std.testing.allocator;
     var tree = try ParseTree.init(allocator, "((a ^ b) => (a ^ b))");
     defer tree.deinit();
     var pattern = try ParseTree.init(allocator, "(p => p)");
@@ -664,7 +664,7 @@ test "ParseTree.Node.match: ((a ^ b) => (a ^ b)) with pattern (p => p)" {
 }
 
 test "ParseTree.Node.match: ((a ^ b) => (a ^ a)) with pattern (p => p)" {
-    var allocator = std.testing.allocator;
+    const allocator = std.testing.allocator;
     var tree = try ParseTree.init(allocator, "((a ^ b) => (a ^ a))");
     defer tree.deinit();
     var pattern = try ParseTree.init(allocator, "(p => p)");
@@ -674,7 +674,7 @@ test "ParseTree.Node.match: ((a ^ b) => (a ^ a)) with pattern (p => p)" {
 }
 
 test "ParseTree.Node.match: (x <=> x) with pattern (p <=> q)" {
-    var allocator = std.testing.allocator;
+    const allocator = std.testing.allocator;
     var tree = try ParseTree.init(allocator, "(x <=> x)");
     defer tree.deinit();
     var pattern = try ParseTree.init(allocator, "(p <=> q)");
@@ -838,7 +838,7 @@ const Parser = struct {
         children.items.len = child_count; // manually set len so we can insert in correct order
         var i: usize = 1;
         while (i <= child_count) : (i += 1) {
-            var child = self.stack.pop().node;
+            const child = self.stack.pop().node;
             children.items[children.items.len - i] = child;
             switch (child.data) {
                 .Nonterminal => |grandchildren| {
@@ -903,7 +903,7 @@ const Parser = struct {
                 new_state = result_state;
             }
         }
-        var root = try self.allocator.create(ParseTree.Node);
+        const root = try self.allocator.create(ParseTree.Node);
         root.* = self.stack.pop().node;
         for (root.data.Nonterminal.items) |*child| {
             child.parent = root;
