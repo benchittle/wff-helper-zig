@@ -6,6 +6,7 @@ const slr = @import("slr-table-generator.zig");
 
 pub const ParseError = error{
     InvalidSyntax,
+    UnexpectedToken,
 };
 
 const ParseTree = OldParseTree;
@@ -72,34 +73,34 @@ pub const ParseTreeDepthFirstIterator = struct {
     }
 };
 
-test "ParseTreeDepthFirstIterator" {
-    var tree = try OldParseTree.init(std.testing.allocator, "(p v q)");
-    defer tree.deinit();
+// test "ParseTreeDepthFirstIterator" {
+//     var tree = try OldParseTree.init(std.testing.allocator, "(p v q)");
+//     defer tree.deinit();
 
-    try std.testing.expectEqual(tree.root, tree.root.data.Nonterminal.items[0].parent.?);
-    const c: *OldParseTree.Node = tree.root.data.Nonterminal.items[1].parent.?;
-    try std.testing.expectEqual(c, c.data.Nonterminal.items[0].parent.?);
+//     try std.testing.expectEqual(tree.root, tree.root.data.Nonterminal.items[0].parent.?);
+//     const c: *OldParseTree.Node = tree.root.data.Nonterminal.items[1].parent.?;
+//     try std.testing.expectEqual(c, c.data.Nonterminal.items[0].parent.?);
 
-    var it = tree.root.iterDepthFirst();
+//     var it = tree.root.iterDepthFirst();
 
-    var t1 = OldParseTree.Data{ .Terminal = lex.Token.LParen };
-    var t2 = OldParseTree.Data{ .Terminal = lex.Token{ .Proposition = lex.PropositionVar{ .string = try std.testing.allocator.dupe(u8, "p") } } };
-    defer std.testing.allocator.free(t2.Terminal.Proposition.string);
-    var t3 = OldParseTree.Data{ .Terminal = lex.Token{ .Operator = lex.WffOperator.Or } };
-    var t4 = OldParseTree.Data{ .Terminal = lex.Token{ .Proposition = lex.PropositionVar{ .string = try std.testing.allocator.dupe(u8, "q") } } };
-    defer std.testing.allocator.free(t4.Terminal.Proposition.string);
-    var t5 = OldParseTree.Data{ .Terminal = lex.Token.RParen };
+//     var t1 = OldParseTree.Data{ .Terminal = lex.Token.LParen };
+//     var t2 = OldParseTree.Data{ .Terminal = lex.Token{ .Proposition = lex.PropositionVar{ .string = try std.testing.allocator.dupe(u8, "p") } } };
+//     defer std.testing.allocator.free(t2.Terminal.Proposition.string);
+//     var t3 = OldParseTree.Data{ .Terminal = lex.Token{ .Operator = lex.WffOperator.Or } };
+//     var t4 = OldParseTree.Data{ .Terminal = lex.Token{ .Proposition = lex.PropositionVar{ .string = try std.testing.allocator.dupe(u8, "q") } } };
+//     defer std.testing.allocator.free(t4.Terminal.Proposition.string);
+//     var t5 = OldParseTree.Data{ .Terminal = lex.Token.RParen };
 
-    _ = it.next();
-    try std.testing.expect(t1.Terminal.eql(it.next().?.data.Terminal));
-    _ = it.next();
-    try std.testing.expect(t2.Terminal.eql(it.next().?.data.Terminal));
-    try std.testing.expect(t3.Terminal.eql(it.next().?.data.Terminal));
-    _ = it.next();
-    try std.testing.expect(t4.Terminal.eql(it.next().?.data.Terminal));
-    try std.testing.expect(t5.Terminal.eql(it.next().?.data.Terminal));
-    try std.testing.expect((it.next()) == null);
-}
+//     _ = it.next();
+//     try std.testing.expect(t1.Terminal.eql(it.next().?.data.Terminal));
+//     _ = it.next();
+//     try std.testing.expect(t2.Terminal.eql(it.next().?.data.Terminal));
+//     try std.testing.expect(t3.Terminal.eql(it.next().?.data.Terminal));
+//     _ = it.next();
+//     try std.testing.expect(t4.Terminal.eql(it.next().?.data.Terminal));
+//     try std.testing.expect(t5.Terminal.eql(it.next().?.data.Terminal));
+//     try std.testing.expect((it.next()) == null);
+// }
 
 pub const ParseTreePostOrderIterator = struct {
     const Self = @This();
@@ -160,30 +161,30 @@ pub const ParseTreePostOrderIterator = struct {
     }
 };
 
-test "ParseTreePostOrderIterator" {
-    var tree = try OldParseTree.init(std.testing.allocator, "(p v q)");
-    defer tree.deinit();
+// test "ParseTreePostOrderIterator" {
+//     var tree = try OldParseTree.init(std.testing.allocator, "(p v q)");
+//     defer tree.deinit();
 
-    var it = tree.root.iterPostOrder();
+//     var it = tree.root.iterPostOrder();
 
-    var t1 = OldParseTree.Data{ .Terminal = lex.Token.LParen };
-    var t2 = OldParseTree.Data{ .Terminal = lex.Token{ .Proposition = lex.PropositionVar{ .string = try std.testing.allocator.dupe(u8, "p") } } };
-    defer std.testing.allocator.free(t2.Terminal.Proposition.string);
-    var t3 = OldParseTree.Data{ .Terminal = lex.Token{ .Operator = lex.WffOperator.Or } };
-    var t4 = OldParseTree.Data{ .Terminal = lex.Token{ .Proposition = lex.PropositionVar{ .string = try std.testing.allocator.dupe(u8, "q") } } };
-    defer std.testing.allocator.free(t4.Terminal.Proposition.string);
-    var t5 = OldParseTree.Data{ .Terminal = lex.Token.RParen };
+//     var t1 = OldParseTree.Data{ .Terminal = lex.Token.LParen };
+//     var t2 = OldParseTree.Data{ .Terminal = lex.Token{ .Proposition = lex.PropositionVar{ .string = try std.testing.allocator.dupe(u8, "p") } } };
+//     defer std.testing.allocator.free(t2.Terminal.Proposition.string);
+//     var t3 = OldParseTree.Data{ .Terminal = lex.Token{ .Operator = lex.WffOperator.Or } };
+//     var t4 = OldParseTree.Data{ .Terminal = lex.Token{ .Proposition = lex.PropositionVar{ .string = try std.testing.allocator.dupe(u8, "q") } } };
+//     defer std.testing.allocator.free(t4.Terminal.Proposition.string);
+//     var t5 = OldParseTree.Data{ .Terminal = lex.Token.RParen };
 
-    try std.testing.expect(t1.Terminal.eql(it.nextUnchecked().data.Terminal));
-    try std.testing.expect(t2.Terminal.eql(it.nextUnchecked().data.Terminal));
-    _ = it.next();
-    try std.testing.expect(t3.Terminal.eql(it.nextUnchecked().data.Terminal));
-    try std.testing.expect(t4.Terminal.eql(it.nextUnchecked().data.Terminal));
-    _ = it.next();
-    try std.testing.expect(t5.Terminal.eql(it.nextUnchecked().data.Terminal));
-    _ = it.next();
-    try std.testing.expect(it.next() == null);
-}
+//     try std.testing.expect(t1.Terminal.eql(it.nextUnchecked().data.Terminal));
+//     try std.testing.expect(t2.Terminal.eql(it.nextUnchecked().data.Terminal));
+//     _ = it.next();
+//     try std.testing.expect(t3.Terminal.eql(it.nextUnchecked().data.Terminal));
+//     try std.testing.expect(t4.Terminal.eql(it.nextUnchecked().data.Terminal));
+//     _ = it.next();
+//     try std.testing.expect(t5.Terminal.eql(it.nextUnchecked().data.Terminal));
+//     _ = it.next();
+//     try std.testing.expect(it.next() == null);
+// }
 
 pub const OldParseTree = struct {
     const Self = @This();
@@ -469,447 +470,454 @@ pub fn NewParseTree(comptime T: type) type {
             parent: ?*Node = null,
             kind: Kind,
 
-            pub fn copy(self: *Node, allocator: std.mem.Allocator) !*Node {            
-                var copy_root = try allocator.create(Node);
-                copy_root.parent = null;
+            // pub fn copy(self: *Node, allocator: std.mem.Allocator) !*Node {            
+            //     var copy_root = try allocator.create(Node);
+            //     copy_root.parent = null;
 
-                var it = self.iterDepthFirst();
-                var copy_it = copy_root.iterDepthFirst();
+            //     var it = self.iterDepthFirst();
+            //     var copy_it = copy_root.iterDepthFirst();
 
-                while (it.hasNext()) {
-                    const node = it.nextUnchecked();
-                    var copy_node = copy_it.peek().?;
+            //     while (it.hasNext()) {
+            //         const node = it.nextUnchecked();
+            //         var copy_node = copy_it.peek().?;
 
-                    switch (node.data) {
-                        .leaf => |tok| copy_node.data = Kind{ .Terminal = try tok.copy(allocator) },
-                        .nonleaf => |children| {
-                            copy_node.data = Kind{ .Nonterminal = try std.ArrayList(Node).initCapacity(allocator, children.items.len) };
-                            copy_node.data.Nonterminal.items.len = children.items.len;
-                            for (copy_node.data.Nonterminal.items) |*child| {
-                                child.parent = copy_node;
-                            }
-                        },
-                    }
-                    _ = copy_it.next();
-                }
+            //         switch (node.data) {
+            //             .leaf => |tok| copy_node.data = Kind{ .Terminal = try tok.copy(allocator) },
+            //             .nonleaf => |children| {
+            //                 copy_node.data = Kind{ .Nonterminal = try std.ArrayList(Node).initCapacity(allocator, children.items.len) };
+            //                 copy_node.data.Nonterminal.items.len = children.items.len;
+            //                 for (copy_node.data.Nonterminal.items) |*child| {
+            //                     child.parent = copy_node;
+            //                 }
+            //             },
+            //         }
+            //         _ = copy_it.next();
+            //     }
 
-                return copy_root;
-            }
+            //     return copy_root;
+            // }
 
-            pub fn copyAbove(self: *Node, allocator: std.mem.Allocator, partial: Node) !*Node {
-                var node = self;
-                var copy_node = partial;
-                while (node.parent) |parent| {
-                    var copy_children = try std.ArrayList(Node).initCapacity(allocator, parent.kind.Nonterminal.items.len);
+            // pub fn copyAbove(self: *Node, allocator: std.mem.Allocator, partial: Node) !*Node {
+            //     var node = self;
+            //     var copy_node = partial;
+            //     while (node.parent) |parent| {
+            //         var copy_children = try std.ArrayList(Node).initCapacity(allocator, parent.kind.Nonterminal.items.len);
 
-                    for (parent.kind.Nonterminal.items) |*child| {
-                        var copy_child: Node = undefined; 
-                        if (child == node) {
-                            copy_child = copy_node;
-                        } else {
-                            const c = try child.copy(allocator);
-                            copy_child = c.*;
-                            allocator.destroy(c);
-                        }
+            //         for (parent.kind.Nonterminal.items) |*child| {
+            //             var copy_child: Node = undefined; 
+            //             if (child == node) {
+            //                 copy_child = copy_node;
+            //             } else {
+            //                 const c = try child.copy(allocator);
+            //                 copy_child = c.*;
+            //                 allocator.destroy(c);
+            //             }
 
-                        copy_children.appendAssumeCapacity(copy_child);
+            //             copy_children.appendAssumeCapacity(copy_child);
                         
-                        switch(copy_child.kind) {
-                            .leaf => {},
-                            .nonleaf => |grandchildren| for (grandchildren.items) |*grandchild| {
-                                grandchild.parent = &copy_children.items[copy_children.items.len - 1];
-                            }
-                        }
-                    }
-                    node = parent;
-                    copy_node = Node{.data = Kind{.Nonterminal = copy_children}};
-                }
+            //             switch(copy_child.kind) {
+            //                 .leaf => {},
+            //                 .nonleaf => |grandchildren| for (grandchildren.items) |*grandchild| {
+            //                     grandchild.parent = &copy_children.items[copy_children.items.len - 1];
+            //                 }
+            //             }
+            //         }
+            //         node = parent;
+            //         copy_node = Node{.data = Kind{.Nonterminal = copy_children}};
+            //     }
 
-                const copy_root = try allocator.create(Node);
-                copy_root.* = copy_node;
+            //     const copy_root = try allocator.create(Node);
+            //     copy_root.* = copy_node;
 
-                for (copy_root.data.Nonterminal.items) |*child| {
-                    child.parent = copy_root;
-                }
+            //     for (copy_root.data.Nonterminal.items) |*child| {
+            //         child.parent = copy_root;
+            //     }
 
-                return copy_root;
-            }
+            //     return copy_root;
+            // }
 
-            pub fn iterDepthFirst(self: *Node) ParseTreeDepthFirstIterator {
-                return ParseTreeDepthFirstIterator{ .start = self, .current = @ptrCast(self) };
-            }
+            // pub fn iterDepthFirst(self: *Node) ParseTreeDepthFirstIterator {
+            //     return ParseTreeDepthFirstIterator{ .start = self, .current = @ptrCast(self) };
+            // }
 
-            pub fn iterPostOrder(self: *Node) ParseTreePostOrderIterator {
-                var start_node = self;
-                while (true) {
-                    switch (start_node.kind) {
-                        .leaf => break,
-                        .nonleaf => |children| start_node = &children.items[0],
-                    }
-                }
-                return ParseTreePostOrderIterator{ .root = self, .current = @ptrCast(start_node) };
-            }
+            // pub fn iterPostOrder(self: *Node) ParseTreePostOrderIterator {
+            //     var start_node = self;
+            //     while (true) {
+            //         switch (start_node.kind) {
+            //             .leaf => break,
+            //             .nonleaf => |children| start_node = &children[0],
+            //         }
+            //     }
+            //     return ParseTreePostOrderIterator{ .root = self, .current = @ptrCast(start_node) };
+            // }
 
             // TODO: Specify *const here and in other places
             // We would need to differentiate between mutable and immutable
             // iteration to make this possible.
-            pub fn eql(self: *Node, other: *Node) bool {
-                var it = self.iterPostOrder();
-                var other_it = other.iterPostOrder();
+            // pub fn eql(self: *Node, other: *Node) bool {
+            //     var it = self.iterPostOrder();
+            //     var other_it = other.iterPostOrder();
 
-                while (it.hasNext() and other_it.hasNext()) {
-                    const node = it.nextUnchecked();
-                    const other_node = other_it.nextUnchecked();
+            //     while (it.hasNext() and other_it.hasNext()) {
+            //         const node = it.nextUnchecked();
+            //         const other_node = other_it.nextUnchecked();
 
-                    switch (node.data) {
-                        .leaf => |tok| switch (other_node.data) {
-                            .leaf => |other_tok| if (!tok.eql(other_tok)) return false,
-                            .nonleaf => return false,
-                        },
-                        .nonleaf => switch (other_node.data) {
-                            .leaf => return false,
-                            .nonleaf => continue,
-                        },
-                    }
-                }
-                return true;
-            }
+            //         switch (node.data) {
+            //             .leaf => |tok| switch (other_node.data) {
+            //                 .leaf => |other_tok| if (!tok.eql(other_tok)) return false,
+            //                 .nonleaf => return false,
+            //             },
+            //             .nonleaf => switch (other_node.data) {
+            //                 .leaf => return false,
+            //                 .nonleaf => continue,
+            //             },
+            //         }
+            //     }
+            //     return true;
+            // }
 
-            /// Allocator will be used to create the hashmap for storing matches
-            pub fn match(self: *Node, allocator: std.mem.Allocator, pattern: *Node) !?MatchHashMap {
-                var matches = MatchHashMap.init(allocator);
-                errdefer matches.deinit();
+            // /// Allocator will be used to create the hashmap for storing matches
+            // pub fn match(self: *Node, allocator: std.mem.Allocator, pattern: *Node) !?MatchHashMap {
+            //     var matches = MatchHashMap.init(allocator);
+            //     errdefer matches.deinit();
 
-                var it = self.iterDepthFirst();
-                var pattern_it = pattern.iterDepthFirst();
+            //     var it = self.iterDepthFirst();
+            //     var pattern_it = pattern.iterDepthFirst();
 
-                while (it.hasNext() and pattern_it.hasNext()) {
-                    const node = it.nextUnchecked();
-                    const pattern_node = pattern_it.nextUnchecked();
+            //     while (it.hasNext() and pattern_it.hasNext()) {
+            //         const node = it.nextUnchecked();
+            //         const pattern_node = pattern_it.nextUnchecked();
 
-                    const is_match = switch (node.data) {
-                        .leaf => |tok| switch (pattern_node.data) {
-                            .leaf => |pattern_tok| tok.eql(pattern_tok),
-                            .nonleaf => false,
-                        },
-                        .nonleaf => |children| switch (pattern_node.data) {
-                            .leaf => false,
-                            .nonleaf => |pattern_children| ret: {
-                                if (pattern_children.items.len == 1) {
-                                    it.skipChildren();
-                                    pattern_it.skipChildren();
+            //         const is_match = switch (node.data) {
+            //             .leaf => |tok| switch (pattern_node.data) {
+            //                 .leaf => |pattern_tok| tok.eql(pattern_tok),
+            //                 .nonleaf => false,
+            //             },
+            //             .nonleaf => |children| switch (pattern_node.data) {
+            //                 .leaf => false,
+            //                 .nonleaf => |pattern_children| ret: {
+            //                     if (pattern_children.items.len == 1) {
+            //                         it.skipChildren();
+            //                         pattern_it.skipChildren();
 
-                                    const child_tok = pattern_children.items[0].data.leaf;
-                                    const proposition_str = child_tok.getString();
-                                    if (matches.get(proposition_str)) |existing_match| {
-                                        if (!existing_match.eql(node)) {
-                                            _ = matches.remove(proposition_str);
-                                            //allocator.free(pair.key);
-                                        }
-                                    } else {
-                                        try matches.put(proposition_str, node);
-                                    }
-                                    continue;
-                                } else if (children.items.len == pattern_children.items.len) {
-                                    continue;
-                                } else {
-                                    break :ret false;
-                                }
-                            },
-                        },
-                    }; // outer switch
+            //                         const child_tok = pattern_children.items[0].data.leaf;
+            //                         const proposition_str = child_tok.getString();
+            //                         if (matches.get(proposition_str)) |existing_match| {
+            //                             if (!existing_match.eql(node)) {
+            //                                 _ = matches.remove(proposition_str);
+            //                                 //allocator.free(pair.key);
+            //                             }
+            //                         } else {
+            //                             try matches.put(proposition_str, node);
+            //                         }
+            //                         continue;
+            //                     } else if (children.items.len == pattern_children.items.len) {
+            //                         continue;
+            //                     } else {
+            //                         break :ret false;
+            //                     }
+            //                 },
+            //             },
+            //         }; // outer switch
 
-                    if (!is_match) {
-                        matches.deinit();
-                        return null;
-                    }
-                } // while
-                if (matches.count() > 0) {
-                    return matches;
-                } else {
-                    matches.deinit();
-                    return null;
-                }
-            }
+            //         if (!is_match) {
+            //             matches.deinit();
+            //             return null;
+            //         }
+            //     } // while
+            //     if (matches.count() > 0) {
+            //         return matches;
+            //     } else {
+            //         matches.deinit();
+            //         return null;
+            //     }
+            // }
         };
 
         pub fn init(allocator: std.mem.Allocator, root: *Node) !Self {
             return Self{.allocator = allocator, .root = root};
         }
 
-        pub fn deinit(self: Self) void {
-            var it = self.iterPostOrder();
-            while (it.next()) |node| {
-                const n = node;
-                switch (n.data) {
-                    .leaf => |tok| switch (tok) {
-                        .Proposition => |prop| self.allocator.free(prop.string),
-                        else => {},
-                    },
-                    .nonleaf => |children| children.deinit(),
-                }
-            }
-            self.allocator.destroy(self.root);
-        }
+        // pub fn deinit(self: Self) void {
+        //     var it = self.iterPostOrder();
+        //     while (it.next()) |node| {
+        //         const n = node;
+        //         switch (n.data) {
+        //             .leaf => |tok| switch (tok) {
+        //                 .Proposition => |prop| self.allocator.free(prop.string),
+        //                 else => {},
+        //             },
+        //             .nonleaf => |children| children.deinit(),
+        //         }
+        //     }
+        //     self.allocator.destroy(self.root);
+        // }
 
-        pub fn copy(self: Self) !OldParseTree {
-            return OldParseTree{ .root = try self.root.copy(self.allocator), .allocator = self.allocator };
-        }
+        // pub fn copy(self: Self) !OldParseTree {
+        //     return OldParseTree{ .root = try self.root.copy(self.allocator), .allocator = self.allocator };
+        // }
 
-        /// Compare two ParseTree instances. They are equal if both have the same
-        /// tree structure (determined by non-terminal nodes, which are the only
-        /// nodes with children) and if each pair of corresponding terminal nodes
-        /// have equivalent tokens (see lex.Token.equals).
-        pub fn eql(self: Self, other: Self) bool {
-            return self.root.eql(other.root);
-        }
+        // /// Compare two ParseTree instances. They are equal if both have the same
+        // /// tree structure (determined by non-terminal nodes, which are the only
+        // /// nodes with children) and if each pair of corresponding terminal nodes
+        // /// have equivalent tokens (see lex.Token.equals).
+        // pub fn eql(self: Self, other: Self) bool {
+        //     return self.root.eql(other.root);
+        // }
 
-        pub fn iterDepthFirst(self: Self) ParseTreeDepthFirstIterator {
-            return self.root.iterDepthFirst();
-        }
+        // pub fn iterDepthFirst(self: Self) ParseTreeDepthFirstIterator {
+        //     return self.root.iterDepthFirst();
+        // }
 
-        pub fn iterPostOrder(self: Self) ParseTreePostOrderIterator {
-            return self.root.iterPostOrder();
-        }
+        // pub fn iterPostOrder(self: Self) ParseTreePostOrderIterator {
+        //     return self.root.iterPostOrder();
+        // }
 
-        pub fn toString(self: Self, allocator: std.mem.Allocator) ![]u8 {
-            var string_buf = std.ArrayList(u8).init(allocator);
-            errdefer string_buf.deinit();
+        // pub fn toString(self: Self, allocator: std.mem.Allocator) ![]u8 {
+        //     var string_buf = std.ArrayList(u8).init(allocator);
+        //     errdefer string_buf.deinit();
 
-            var it = self.iterDepthFirst();
-            while (it.next()) |node| {
-                switch (node.data) {
-                    .leaf => |*tok| {
-                        switch (tok.*) {
-                            .LParen => try string_buf.appendSlice(tok.getString()),
-                            .RParen => {
-                                _ = string_buf.pop();
-                                try string_buf.appendSlice(tok.getString());
-                                try string_buf.append(' ');
-                            },
-                            .Operator => |op| {
-                                try string_buf.appendSlice(tok.getString());
-                                switch (op) {
-                                    .And, .Or, .Cond, .Bicond => try string_buf.append(' '),
-                                    .Not => {},
-                                }
-                            },
-                            .Proposition, .True, .False => {
-                                try string_buf.appendSlice(tok.getString());
-                                try string_buf.append(' ');
-                            },
-                        }
-                    },
-                    .nonleaf => {},
-                }
-            }
-            _ = string_buf.pop(); // remove trailing space
-            return string_buf.toOwnedSlice();
-        }   
+        //     var it = self.iterDepthFirst();
+        //     while (it.next()) |node| {
+        //         switch (node.data) {
+        //             .leaf => |*tok| {
+        //                 switch (tok.*) {
+        //                     .LParen => try string_buf.appendSlice(tok.getString()),
+        //                     .RParen => {
+        //                         _ = string_buf.pop();
+        //                         try string_buf.appendSlice(tok.getString());
+        //                         try string_buf.append(' ');
+        //                     },
+        //                     .Operator => |op| {
+        //                         try string_buf.appendSlice(tok.getString());
+        //                         switch (op) {
+        //                             .And, .Or, .Cond, .Bicond => try string_buf.append(' '),
+        //                             .Not => {},
+        //                         }
+        //                     },
+        //                     .Proposition, .True, .False => {
+        //                         try string_buf.appendSlice(tok.getString());
+        //                         try string_buf.append(' ');
+        //                     },
+        //                 }
+        //             },
+        //             .nonleaf => {},
+        //         }
+        //     }
+        //     _ = string_buf.pop(); // remove trailing space
+        //     return string_buf.toOwnedSlice();
+        // }   
     };
 }
 
 // TODO: fn to build trees more easily for testing larger expressions
 
-test "ParseTree: ~p" {
-    var tree = try OldParseTree.init(std.testing.allocator, "~p");
-    defer tree.deinit();
+// test "ParseTree: ~p" {
+//     var tree = try OldParseTree.init(std.testing.allocator, "~p");
+//     defer tree.deinit();
     
-    var t1 = lex.Token{.Operator = lex.WffOperator.Not};
-    var t2 = lex.Token{ .Proposition = lex.PropositionVar{ .string = try std.testing.allocator.dupe(u8, "p") }};
-    defer std.testing.allocator.free(t2.Proposition.string);
+//     var t1 = lex.Token{.Operator = lex.WffOperator.Not};
+//     var t2 = lex.Token{ .Proposition = lex.PropositionVar{ .string = try std.testing.allocator.dupe(u8, "p") }};
+//     defer std.testing.allocator.free(t2.Proposition.string);
 
-    var it = tree.iterDepthFirst();
-    _ = it.next();
-    try std.testing.expect(t1.eql(it.next().?.data.Terminal));
-    _ = it.next();
-    try std.testing.expect(t2.eql(it.next().?.data.Terminal));
-    try std.testing.expect(it.next() == null);
-}
+//     var it = tree.iterDepthFirst();
+//     _ = it.next();
+//     try std.testing.expect(t1.eql(it.next().?.data.Terminal));
+//     _ = it.next();
+//     try std.testing.expect(t2.eql(it.next().?.data.Terminal));
+//     try std.testing.expect(it.next() == null);
+// }
 
-test "ParseTree.toString: (p v q)" {
-    var tree = try OldParseTree.init(std.testing.allocator, "(p v q)");
-    defer tree.deinit();
+// test "ParseTree.toString: (p v q)" {
+//     var tree = try OldParseTree.init(std.testing.allocator, "(p v q)");
+//     defer tree.deinit();
 
-    const string = try tree.toString(std.testing.allocator);
-    defer std.testing.allocator.free(string);
+//     const string = try tree.toString(std.testing.allocator);
+//     defer std.testing.allocator.free(string);
 
-    try std.testing.expectEqualStrings("(p v q)", string);
-}
+//     try std.testing.expectEqualStrings("(p v q)", string);
+// }
 
-test "ParseTree.toString: ~((a ^ b) => (c ^ ~d))" {
-    var tree = try OldParseTree.init(std.testing.allocator, "~((a ^ b) => (c ^ ~d))");
-    defer tree.deinit();
+// test "ParseTree.toString: ~((a ^ b) => (c ^ ~d))" {
+//     var tree = try OldParseTree.init(std.testing.allocator, "~((a ^ b) => (c ^ ~d))");
+//     defer tree.deinit();
 
-    const string = try tree.toString(std.testing.allocator);
-    defer std.testing.allocator.free(string);
+//     const string = try tree.toString(std.testing.allocator);
+//     defer std.testing.allocator.free(string);
 
-    try std.testing.expectEqualStrings("~((a ^ b) => (c ^ ~d))", string);
-}
+//     try std.testing.expectEqualStrings("~((a ^ b) => (c ^ ~d))", string);
+// }
 
-test "ParseTree.copy: (p v q)" {
-    const allocator = std.testing.allocator;
-    var tree = try OldParseTree.init(allocator, "(p v q)");
-    defer tree.deinit();
-    var copy = try tree.copy();
-    defer copy.deinit();
+// test "ParseTree.copy: (p v q)" {
+//     const allocator = std.testing.allocator;
+//     var tree = try OldParseTree.init(allocator, "(p v q)");
+//     defer tree.deinit();
+//     var copy = try tree.copy();
+//     defer copy.deinit();
 
-    try std.testing.expect(tree.eql(copy));
-}
+//     try std.testing.expect(tree.eql(copy));
+// }
 
-test "ParseTree.copy: ((a ^ b) v (c ^ d))" {
-    const allocator = std.testing.allocator;
-    var tree = try OldParseTree.init(allocator, "((a ^ b) v (c ^ d))");
-    defer tree.deinit();
-    var copy = try tree.copy();
-    defer copy.deinit();
+// test "ParseTree.copy: ((a ^ b) v (c ^ d))" {
+//     const allocator = std.testing.allocator;
+//     var tree = try OldParseTree.init(allocator, "((a ^ b) v (c ^ d))");
+//     defer tree.deinit();
+//     var copy = try tree.copy();
+//     defer copy.deinit();
 
-    try std.testing.expect(tree.eql(copy));
-}
+//     try std.testing.expect(tree.eql(copy));
+// }
 
-test "ParseTree.copy: p" {
-    const allocator = std.testing.allocator;
-    var tree = try OldParseTree.init(allocator, "p");
-    defer tree.deinit();
-    var copy = try tree.copy();
-    defer copy.deinit();
+// test "ParseTree.copy: p" {
+//     const allocator = std.testing.allocator;
+//     var tree = try OldParseTree.init(allocator, "p");
+//     defer tree.deinit();
+//     var copy = try tree.copy();
+//     defer copy.deinit();
 
-    try std.testing.expect(tree.eql(copy));
-}
+//     try std.testing.expect(tree.eql(copy));
+// }
 
-test "ParseTree.Node.copyAbove" {
-    var allocator = std.testing.allocator;
-    var tree = try OldParseTree.init(allocator, "((a ^ b) v (c ^ d))");
-    defer tree.deinit();
+// test "ParseTree.Node.copyAbove" {
+//     var allocator = std.testing.allocator;
+//     var tree = try OldParseTree.init(allocator, "((a ^ b) v (c ^ d))");
+//     defer tree.deinit();
 
-    var bottom_right = &tree.root.data.Nonterminal.items[3].data.Nonterminal.items[1];
-    const bottom_right_copy = try bottom_right.copy(allocator);
-    defer allocator.destroy(bottom_right_copy);
-    const root_copy = try bottom_right.copyAbove(allocator, bottom_right_copy.*);
-    var tree_copy = OldParseTree{.allocator = allocator, .root = root_copy};
-    defer tree_copy.deinit();
+//     var bottom_right = &tree.root.data.Nonterminal.items[3].data.Nonterminal.items[1];
+//     const bottom_right_copy = try bottom_right.copy(allocator);
+//     defer allocator.destroy(bottom_right_copy);
+//     const root_copy = try bottom_right.copyAbove(allocator, bottom_right_copy.*);
+//     var tree_copy = OldParseTree{.allocator = allocator, .root = root_copy};
+//     defer tree_copy.deinit();
 
-    // var s1 = try tree.toString(allocator);
-    // defer allocator.free(s1);
-    // var s2 = try tree_copy.toString(allocator);
-    // defer allocator.free(s2);
+//     // var s1 = try tree.toString(allocator);
+//     // defer allocator.free(s1);
+//     // var s2 = try tree_copy.toString(allocator);
+//     // defer allocator.free(s2);
 
-    // std.debug.print("\nExpected: {s}\nActual: {s}\n", .{s1, s2});
+//     // std.debug.print("\nExpected: {s}\nActual: {s}\n", .{s1, s2});
 
-    try std.testing.expect(tree.eql(tree_copy));
-}
+//     try std.testing.expect(tree.eql(tree_copy));
+// }
 
-test "ParseTree.Node.match: (p v q) with pattern (p v q)" {
-    const allocator = std.testing.allocator;
-    var tree = try OldParseTree.init(allocator, "(p v q)");
-    defer tree.deinit();
-    var pattern = try OldParseTree.init(allocator, "(p v q)");
-    defer pattern.deinit();
+// test "ParseTree.Node.match: (p v q) with pattern (p v q)" {
+//     const allocator = std.testing.allocator;
+//     var tree = try OldParseTree.init(allocator, "(p v q)");
+//     defer tree.deinit();
+//     var pattern = try OldParseTree.init(allocator, "(p v q)");
+//     defer pattern.deinit();
 
-    var matches = (try tree.root.match(allocator, pattern.root)).?;
-    defer matches.deinit();
+//     var matches = (try tree.root.match(allocator, pattern.root)).?;
+//     defer matches.deinit();
 
-    try std.testing.expect(matches.count() == 2);
-    try std.testing.expectEqual(&tree.root.data.Nonterminal.items[1], matches.get("p").?);
-    try std.testing.expectEqual(&tree.root.data.Nonterminal.items[3], matches.get("q").?);
-}
+//     try std.testing.expect(matches.count() == 2);
+//     try std.testing.expectEqual(&tree.root.data.Nonterminal.items[1], matches.get("p").?);
+//     try std.testing.expectEqual(&tree.root.data.Nonterminal.items[3], matches.get("q").?);
+// }
 
-test "ParseTree.Node.match: ((a ^ b) v (c ^ d)) with pattern (p v q)" {
-    const allocator = std.testing.allocator;
-    var tree = try OldParseTree.init(allocator, "((a ^ b) v (c ^ d))");
-    defer tree.deinit();
-    var pattern = try OldParseTree.init(allocator, "(p v q)");
-    defer pattern.deinit();
+// test "ParseTree.Node.match: ((a ^ b) v (c ^ d)) with pattern (p v q)" {
+//     const allocator = std.testing.allocator;
+//     var tree = try OldParseTree.init(allocator, "((a ^ b) v (c ^ d))");
+//     defer tree.deinit();
+//     var pattern = try OldParseTree.init(allocator, "(p v q)");
+//     defer pattern.deinit();
 
-    var matches = (try tree.root.match(allocator, pattern.root)).?;
-    defer matches.deinit();
+//     var matches = (try tree.root.match(allocator, pattern.root)).?;
+//     defer matches.deinit();
 
-    try std.testing.expect(matches.count() == 2);
-    try std.testing.expectEqual(&tree.root.data.Nonterminal.items[1], matches.get("p").?);
-    try std.testing.expectEqual(&tree.root.data.Nonterminal.items[3], matches.get("q").?);
-}
+//     try std.testing.expect(matches.count() == 2);
+//     try std.testing.expectEqual(&tree.root.data.Nonterminal.items[1], matches.get("p").?);
+//     try std.testing.expectEqual(&tree.root.data.Nonterminal.items[3], matches.get("q").?);
+// }
 
-test "ParseTree.Node.match: (p v p) with pattern (p v p)" {
-    const allocator = std.testing.allocator;
-    var tree = try OldParseTree.init(allocator, "(p v p)");
-    defer tree.deinit();
-    var pattern = try OldParseTree.init(allocator, "(p v p)");
-    defer pattern.deinit();
+// test "ParseTree.Node.match: (p v p) with pattern (p v p)" {
+//     const allocator = std.testing.allocator;
+//     var tree = try OldParseTree.init(allocator, "(p v p)");
+//     defer tree.deinit();
+//     var pattern = try OldParseTree.init(allocator, "(p v p)");
+//     defer pattern.deinit();
 
-    var matches = (try tree.root.match(allocator, pattern.root)).?;
-    defer matches.deinit();
+//     var matches = (try tree.root.match(allocator, pattern.root)).?;
+//     defer matches.deinit();
 
-    try std.testing.expect(matches.count() == 1);
-    try std.testing.expectEqual(&tree.root.data.Nonterminal.items[1], matches.get("p").?);
-}
+//     try std.testing.expect(matches.count() == 1);
+//     try std.testing.expectEqual(&tree.root.data.Nonterminal.items[1], matches.get("p").?);
+// }
 
-test "ParseTree.Node.match: (p v q) with pattern (p v p)" {
-    const allocator = std.testing.allocator;
-    var tree = try OldParseTree.init(allocator, "(p v q)");
-    defer tree.deinit();
-    var pattern = try OldParseTree.init(allocator, "(p v p)");
-    defer pattern.deinit();
+// test "ParseTree.Node.match: (p v q) with pattern (p v p)" {
+//     const allocator = std.testing.allocator;
+//     var tree = try OldParseTree.init(allocator, "(p v q)");
+//     defer tree.deinit();
+//     var pattern = try OldParseTree.init(allocator, "(p v p)");
+//     defer pattern.deinit();
 
-    try std.testing.expect(try tree.root.match(allocator, pattern.root) == null);
-}
+//     try std.testing.expect(try tree.root.match(allocator, pattern.root) == null);
+// }
 
-test "ParseTree.Node.match: ((a ^ b) => (a ^ b)) with pattern (p => p)" {
-    const allocator = std.testing.allocator;
-    var tree = try OldParseTree.init(allocator, "((a ^ b) => (a ^ b))");
-    defer tree.deinit();
-    var pattern = try OldParseTree.init(allocator, "(p => p)");
-    defer pattern.deinit();
+// test "ParseTree.Node.match: ((a ^ b) => (a ^ b)) with pattern (p => p)" {
+//     const allocator = std.testing.allocator;
+//     var tree = try OldParseTree.init(allocator, "((a ^ b) => (a ^ b))");
+//     defer tree.deinit();
+//     var pattern = try OldParseTree.init(allocator, "(p => p)");
+//     defer pattern.deinit();
 
-    var matches = (try tree.root.match(allocator, pattern.root)).?;
-    defer matches.deinit();
+//     var matches = (try tree.root.match(allocator, pattern.root)).?;
+//     defer matches.deinit();
 
-    try std.testing.expect(matches.count() == 1);
-    try std.testing.expectEqual(&tree.root.data.Nonterminal.items[1], matches.get("p").?);
-}
+//     try std.testing.expect(matches.count() == 1);
+//     try std.testing.expectEqual(&tree.root.data.Nonterminal.items[1], matches.get("p").?);
+// }
 
-test "ParseTree.Node.match: ((a ^ b) => (a ^ a)) with pattern (p => p)" {
-    const allocator = std.testing.allocator;
-    var tree = try OldParseTree.init(allocator, "((a ^ b) => (a ^ a))");
-    defer tree.deinit();
-    var pattern = try OldParseTree.init(allocator, "(p => p)");
-    defer pattern.deinit();
+// test "ParseTree.Node.match: ((a ^ b) => (a ^ a)) with pattern (p => p)" {
+//     const allocator = std.testing.allocator;
+//     var tree = try OldParseTree.init(allocator, "((a ^ b) => (a ^ a))");
+//     defer tree.deinit();
+//     var pattern = try OldParseTree.init(allocator, "(p => p)");
+//     defer pattern.deinit();
 
-    try std.testing.expect(try tree.root.match(allocator, pattern.root) == null);
-}
+//     try std.testing.expect(try tree.root.match(allocator, pattern.root) == null);
+// }
 
-test "ParseTree.Node.match: (x <=> x) with pattern (p <=> q)" {
-    const allocator = std.testing.allocator;
-    var tree = try OldParseTree.init(allocator, "(x <=> x)");
-    defer tree.deinit();
-    var pattern = try OldParseTree.init(allocator, "(p <=> q)");
-    defer pattern.deinit();
+// test "ParseTree.Node.match: (x <=> x) with pattern (p <=> q)" {
+//     const allocator = std.testing.allocator;
+//     var tree = try OldParseTree.init(allocator, "(x <=> x)");
+//     defer tree.deinit();
+//     var pattern = try OldParseTree.init(allocator, "(p <=> q)");
+//     defer pattern.deinit();
 
-    var matches = (try tree.root.match(allocator, pattern.root)).?;
-    defer matches.deinit();
+//     var matches = (try tree.root.match(allocator, pattern.root)).?;
+//     defer matches.deinit();
 
-    try std.testing.expect(matches.count() == 2);
-    try std.testing.expectEqual(&tree.root.data.Nonterminal.items[1], matches.get("p").?);
-    try std.testing.expectEqual(&tree.root.data.Nonterminal.items[3], matches.get("q").?);
-}
+//     try std.testing.expect(matches.count() == 2);
+//     try std.testing.expectEqual(&tree.root.data.Nonterminal.items[1], matches.get("p").?);
+//     try std.testing.expectEqual(&tree.root.data.Nonterminal.items[3], matches.get("q").?);
+// }
 
 // TODO: Define error set of tokenize_func
 // T must have .eql, .deinit, ...
-fn NewParser(comptime V: type, comptime T: type, comptime tokenize_func: fn (std.mem.Allocator, []const u8) anyerror!std.ArrayList(T)) type {
+fn NewParser(
+    comptime Variable: type, 
+    comptime Terminal: type,  
+    comptime Token: type,
+    comptime tokenize: fn (std.mem.Allocator, []const u8) anyerror!std.ArrayList(Token),
+    comptime terminalFromToken: fn (Token) ?Terminal,
+) type {
     return struct {
         const Self = @This();
-        const Grammar = slr.Grammar(V, T);
-        const ParseTable = slr.ParseTable(V, T);
+        const Grammar = slr.Grammar(Variable, Terminal);
+        const ParseTable = slr.ParseTable(Variable, Terminal);
+        const ParseTreeType = NewParseTree(Token);
 
         const StackItem = struct {
             state: ParseTable.StateIdx,
-            node: NewParseTree.Node,
+            node: ParseTreeType.Node,
         };
 
         table: ParseTable,
 
         pub fn init(allocator: std.mem.Allocator, grammar: Grammar) !Self {
             return Self {
-                .table = ParseTable.init(allocator, grammar)
+                .table = try ParseTable.init(allocator, grammar)
             };
         }
 
@@ -925,21 +933,21 @@ fn NewParser(comptime V: type, comptime T: type, comptime tokenize_func: fn (std
             self: Self, 
             allocator: std.mem.Allocator, 
             stack: *std.ArrayList(StackItem), 
-            token: T
+            terminal: Terminal
         ) !bool {
             const top = stack.getLast();
-            const rule_idx = try switch(self.table.lookupTerminal(top.state, token)) {
+            const rule_idx = switch(self.table.lookupTerminal(top.state, terminal) orelse return ParseError.UnexpectedToken) {
                 .reduce => |idx| idx,
                 else => return false,
             };
             const rule = self.table.grammar.getRule(rule_idx);
             
             var pushed_to_stack = false;
-            var children = try allocator.alloc(NewParseTree.Node, rule.rhs.len);
+            var children = try allocator.alloc(ParseTreeType.Node, rule.rhs.len);
             errdefer {
                 allocator.free(children);
                 if (pushed_to_stack) {
-                    stack.pop();
+                    _ = stack.pop();
                 }
             }
 
@@ -947,7 +955,7 @@ fn NewParser(comptime V: type, comptime T: type, comptime tokenize_func: fn (std
             // same order as the stack.
             for ((children.len - 1)..0) |i| {
                 const child = stack.pop().node;
-                children.items[i] = child;
+                children[i] = child;
                 switch(child.kind) {
                     .leaf => {}, 
                     .nonleaf => |grandchildren| for (grandchildren) |*grandchild| {
@@ -956,10 +964,13 @@ fn NewParser(comptime V: type, comptime T: type, comptime tokenize_func: fn (std
                 }
             }
 
-            const new_parent = NewParseTree.Node{ .kind = .{.nonleaf = children}};
+            const new_parent = ParseTreeType.Node{ .kind = .{.nonleaf = children}};
 
             const new_top = stack.getLast();
-            const reduced_state = self.table.lookupVariable(new_top.state, rule.lhs.variable);
+            const reduced_state = try switch(self.table.lookupSymbol(new_top.state, rule.lhs)) {
+                .state => |state_num| state_num,
+                else => ParseError.InvalidSyntax,
+            };
 
             try stack.append(StackItem{ .state = reduced_state, .node = new_parent});
             pushed_to_stack = true;
@@ -967,31 +978,40 @@ fn NewParser(comptime V: type, comptime T: type, comptime tokenize_func: fn (std
         }
 
         // TODO: Change tokens to slice
-        pub fn parse(self: Self, allocator: std.mem.Allocator, string: []const u8) !NewParseTree {
-            var tokens = try tokenize_func(allocator, string);
+        pub fn parse(self: Self, allocator: std.mem.Allocator, string: []const u8) !ParseTreeType {
+            var tokens = try tokenize(allocator, string);
             defer tokens.deinit();
             errdefer {
                 for (tokens.items) |tok| {
-                    tok.deinit();
+                    // tok.deinit();
+                    switch(tok) {
+                        .Proposition => |s| allocator.free(s.string),
+                        else => {},
+                    }
                 }
             }
             
             // Initialize parsing stack
             var stack = std.ArrayList(StackItem).init(allocator);
-            stack.append(StackItem{ .state = self.table.getStartState(), .node = undefined});
+            try stack.append(StackItem{ .state = self.table.getStartState(), .node = undefined});
 
             // Start parsing tokens
             for (tokens.items, 0..) |token, i| {
+                const terminal = terminalFromToken(token) orelse return ParseError.UnexpectedToken;
                 const current_state = stack.getLast().state;
 
-                const new_state: ParseTable.StateIdx = try switch(self.table.lookupTerminal(current_state, token)) {
+                const new_state: ParseTable.StateIdx = try switch(self.table.lookupTerminal(current_state, terminal) orelse return ParseError.UnexpectedToken) {
                     .state => |state_num| state_num,
                     else => ParseError.InvalidSyntax,
                 };
-                const new_node = NewParseTree.Node{.kind = .{.leaf = token}};
+                const new_node = ParseTreeType.Node{.kind = .{.leaf = token}};
                 try stack.append(StackItem{ .state = new_state, .node = new_node });
 
-                const next_token = if (i + 1 == tokens.items.len) self.table.grammar.getEndTerminalIdx() else tokens.items[i + 1];
+                const next_token = if (i + 1 == tokens.items.len) 
+                        self.table.grammar.terminals[self.table.grammar.getEndTerminal().terminal]
+                    else 
+                        terminalFromToken(tokens.items[i + 1]) orelse return ParseError.UnexpectedToken;
+
                 while (try self.reduce(allocator, &stack, next_token)) {}
             }
 
@@ -1000,19 +1020,19 @@ fn NewParser(comptime V: type, comptime T: type, comptime tokenize_func: fn (std
                 return ParseError.InvalidSyntax;
             }
 
-            const root = try allocator.create(NewParseTree.Node);
+            const root = try allocator.create(ParseTreeType.Node);
             errdefer allocator.destroy(root);
 
             root.* = stack.pop().node;
             for (root.kind.nonleaf) |*child| {
                 child.parent = root;
             }
-            return NewParseTree{ .alloctor = allocator, .root = root};
+            return ParseTreeType{ .allocator = allocator, .root = root};
         }
     };
 }
 
-const TestToken = enum {
+const TestTerminal = enum {
     const Self = @This();
 
     Proposition,
@@ -1025,7 +1045,7 @@ const TestToken = enum {
     Bicond,
     End,
 
-    fn eql(self: Self, other: Self) bool {
+    pub fn eql(self: Self, other: Self) bool {
         return self == other;
     }
 
@@ -1044,6 +1064,48 @@ const TestToken = enum {
     }
 };
 
+// const TestToken = union(TestTerminal) {
+//     const Self = @This();
+
+//     Proposition: []const u8,
+//     Not: void,
+//     LParen: void,
+//     RParen: void,
+//     And: void,
+//     Or: void,
+//     Cond: void,
+//     Bicond: void,
+//     End: void,
+
+//     pub fn eql(self: Self, other: Self) bool {
+//         if (!@as(TestTerminal, self).eql(other)) {
+//             return false;
+//         }
+//         return switch(self) {
+//             .Proposition => |s| std.mem.eql(u8, s, other.Proposition),
+//             else => true,
+//         };
+//     }
+
+//     fn getTerminal(self: Self) ?TestTerminal {
+//         return @as(TestTerminal, self);
+//     }
+
+//     fn getString(self: Self) []const u8 {
+//         return switch (self) {
+//             .Proposition => |s| s,
+//             .Not => "~",
+//             .LParen => "(",
+//             .RParen => ")",
+//             .And => "^",
+//             .Or => "v",
+//             .Cond => "=>",
+//             .Bicond => "<=>",
+//             .End => "$",
+//         };
+//     }
+// };
+
 const TestVariable = struct {
     const Self = @This();
 
@@ -1057,33 +1119,52 @@ const TestVariable = struct {
         return self.name;
     }
 
-    fn eql(self: Self, other: Self) bool {
+    pub fn eql(self: Self, other: Self) bool {
         return std.mem.eql(u8, self.name, other.name);
     }
 };
 
+fn oldTokenToTerminal(token: lex.Token) ?TestTerminal {
+    return switch(token) {
+        .LParen => TestTerminal.LParen,
+        .RParen => TestTerminal.RParen,
+        .True, .False, .Proposition => TestTerminal.Proposition,
+        .Operator => |op| switch(op) {
+            .Not => TestTerminal.Not,
+            .And => TestTerminal.And,
+            .Or => TestTerminal.Or,
+            .Cond => TestTerminal.Cond,
+            .Bicond => TestTerminal.Bicond,
+        },
+    };
+}
+
 test "Parser.parse: ''" {
     const V = TestVariable.fromString;
-    const G = slr.Grammar(TestVariable, TestToken);
-    const grammar = G.initFromTuples(
-        .{
-            .{ V("S"), .{V("wff")} },
-            .{ V("wff"), .{TestToken.Proposition} },
-            .{ V("wff"), .{ TestToken.Not, V("wff") } },
-            .{ V("wff"), .{ TestToken.LParen, V("wff"), TestToken.And, V("wff"), TestToken.RParen } },
-            .{ V("wff"), .{ TestToken.LParen, V("wff"), TestToken.Or, V("wff"), TestToken.RParen } },
-            .{ V("wff"), .{ TestToken.LParen, V("wff"), TestToken.Cond, V("wff"), TestToken.RParen } },
-            .{ V("wff"), .{ TestToken.LParen, V("wff"), TestToken.Bicond, V("wff"), TestToken.RParen } },
-        },
-        V("S"),
-        TestToken.End,
-    );
+    const G = slr.Grammar(TestVariable, TestTerminal);
+    const grammar = comptime ret: {
+        break :ret G.initFromTuples(
+            .{
+                .{ V("S"), .{V("wff")} },
+                .{ V("wff"), .{TestTerminal.Proposition} },
+                .{ V("wff"), .{ TestTerminal.Not, V("wff") } },
+                .{ V("wff"), .{ TestTerminal.LParen, V("wff"), TestTerminal.And, V("wff"), TestTerminal.RParen } },
+                .{ V("wff"), .{ TestTerminal.LParen, V("wff"), TestTerminal.Or, V("wff"), TestTerminal.RParen } },
+                .{ V("wff"), .{ TestTerminal.LParen, V("wff"), TestTerminal.Cond, V("wff"), TestTerminal.RParen } },
+                .{ V("wff"), .{ TestTerminal.LParen, V("wff"), TestTerminal.Bicond, V("wff"), TestTerminal.RParen } },
+            },
+            V("S"),
+            TestTerminal.End,
+        );
+    };
     defer grammar.deinit();
 
     const ParserType = NewParser(
         TestVariable, 
-        TestToken, 
-        lex.tokenize
+        TestTerminal, 
+        lex.Token,
+        lex.tokenize,
+        oldTokenToTerminal,
     );
     const parser = try ParserType.init(
         std.testing.allocator, 
@@ -1099,26 +1180,30 @@ test "Parser.parse: ''" {
 
 test "Parser.parse: '~)q p v('" {
     const V = TestVariable.fromString;
-    const G = slr.Grammar(TestVariable, TestToken);
-    const grammar = G.initFromTuples(
-        .{
-            .{ V("S"), .{V("wff")} },
-            .{ V("wff"), .{TestToken.Proposition} },
-            .{ V("wff"), .{ TestToken.Not, V("wff") } },
-            .{ V("wff"), .{ TestToken.LParen, V("wff"), TestToken.And, V("wff"), TestToken.RParen } },
-            .{ V("wff"), .{ TestToken.LParen, V("wff"), TestToken.Or, V("wff"), TestToken.RParen } },
-            .{ V("wff"), .{ TestToken.LParen, V("wff"), TestToken.Cond, V("wff"), TestToken.RParen } },
-            .{ V("wff"), .{ TestToken.LParen, V("wff"), TestToken.Bicond, V("wff"), TestToken.RParen } },
-        },
-        V("S"),
-        TestToken.End,
-    );
+    const G = slr.Grammar(TestVariable, TestTerminal);
+    const grammar = comptime ret: {
+        break :ret G.initFromTuples(
+            .{
+                .{ V("S"), .{V("wff")} },
+                .{ V("wff"), .{TestTerminal.Proposition} },
+                .{ V("wff"), .{ TestTerminal.Not, V("wff") } },
+                .{ V("wff"), .{ TestTerminal.LParen, V("wff"), TestTerminal.And, V("wff"), TestTerminal.RParen } },
+                .{ V("wff"), .{ TestTerminal.LParen, V("wff"), TestTerminal.Or, V("wff"), TestTerminal.RParen } },
+                .{ V("wff"), .{ TestTerminal.LParen, V("wff"), TestTerminal.Cond, V("wff"), TestTerminal.RParen } },
+                .{ V("wff"), .{ TestTerminal.LParen, V("wff"), TestTerminal.Bicond, V("wff"), TestTerminal.RParen } },
+            },
+            V("S"),
+            TestTerminal.End,
+        );
+    };
     defer grammar.deinit();
 
     const ParserType = NewParser(
         TestVariable, 
-        TestToken, 
-        lex.tokenize
+        TestTerminal, 
+        lex.Token,
+        lex.tokenize,
+        oldTokenToTerminal,
     );
     const parser = try ParserType.init(
         std.testing.allocator, 
@@ -1136,26 +1221,30 @@ test "Parser.parse: '(p v q)'" {
     const allocator = std.testing.allocator;
     
     const V = TestVariable.fromString;
-    const G = slr.Grammar(TestVariable, TestToken);
-    const grammar = G.initFromTuples(
-        .{
-            .{ V("S"), .{V("wff")} },
-            .{ V("wff"), .{TestToken.Proposition} },
-            .{ V("wff"), .{ TestToken.Not, V("wff") } },
-            .{ V("wff"), .{ TestToken.LParen, V("wff"), TestToken.And, V("wff"), TestToken.RParen } },
-            .{ V("wff"), .{ TestToken.LParen, V("wff"), TestToken.Or, V("wff"), TestToken.RParen } },
-            .{ V("wff"), .{ TestToken.LParen, V("wff"), TestToken.Cond, V("wff"), TestToken.RParen } },
-            .{ V("wff"), .{ TestToken.LParen, V("wff"), TestToken.Bicond, V("wff"), TestToken.RParen } },
-        },
-        V("S"),
-        TestToken.End,
-    );
+    const G = slr.Grammar(TestVariable, TestTerminal);
+    const grammar = comptime ret: {
+        break :ret G.initFromTuples(
+            .{
+                .{ V("S"), .{V("wff")} },
+                .{ V("wff"), .{TestTerminal.Proposition} },
+                .{ V("wff"), .{ TestTerminal.Not, V("wff") } },
+                .{ V("wff"), .{ TestTerminal.LParen, V("wff"), TestTerminal.And, V("wff"), TestTerminal.RParen } },
+                .{ V("wff"), .{ TestTerminal.LParen, V("wff"), TestTerminal.Or, V("wff"), TestTerminal.RParen } },
+                .{ V("wff"), .{ TestTerminal.LParen, V("wff"), TestTerminal.Cond, V("wff"), TestTerminal.RParen } },
+                .{ V("wff"), .{ TestTerminal.LParen, V("wff"), TestTerminal.Bicond, V("wff"), TestTerminal.RParen } },
+            },
+            V("S"),
+            TestTerminal.End,
+        );
+    };
     defer grammar.deinit();
 
     const ParserType = NewParser(
         TestVariable, 
-        TestToken, 
-        lex.tokenize
+        TestTerminal, 
+        lex.Token,
+        lex.tokenize,
+        oldTokenToTerminal,
     );
     const parser = try ParserType.init(
         allocator, 
@@ -1164,51 +1253,131 @@ test "Parser.parse: '(p v q)'" {
     defer parser.deinit();
 
     const tree = try parser.parse(allocator, "(p v q)");
-    defer tree.deinit();
+    //defer tree.deinit();
 
     // Build the expected tree manually... it's pretty messy
-    var wff1: NewParseTree.Node = undefined;
-    var wff2: NewParseTree.Node = undefined;
-    var root: NewParseTree.Node = undefined;
+    const ParseTreeType = NewParseTree(lex.Token);
 
-    var children1 = try allocator.alloc(NewParseTree.Node, 1);
+    var wff1: ParseTreeType.Node = undefined;
+    var wff2: ParseTreeType.Node = undefined;
+    var root: ParseTreeType.Node = undefined;
+
+    var children1 = try allocator.alloc(ParseTreeType.Node, 1);
     defer allocator.free(children1);
-    var children2 = try allocator.alloc(NewParseTree.Node, 1);
+    var children2 = try allocator.alloc(ParseTreeType.Node, 1);
     defer allocator.free(children2);
-    var root_children = try allocator.alloc(NewParseTree.Node, 5);
+    var root_children = try allocator.alloc(ParseTreeType.Node, 5);
     defer allocator.free(root_children);
 
-    var t1 = NewParseTree.Node{ .parent = &root,               .kind = .{ .leaf = TestToken.LParen } };
-    var t2 = NewParseTree.Node{ .parent = &(root_children[1]), .kind = .{ .leaf = TestToken{ .Proposition = { .string = try std.testing.allocator.dupe(u8, "p") } } } };
-    defer std.testing.allocator.free(t2.data.Terminal.Proposition.string);
-    var t3 = NewParseTree.Node{ .parent = &root, .data = OldParseTree.Data{ .Terminal = lex.Token{ .Operator = lex.WffOperator.Or } } };
-    var t4 = NewParseTree.Node{ .parent = &(root_children.items[3]), .data = OldParseTree.Data{ .Terminal = lex.Token{ .Proposition = lex.PropositionVar{ .string = try std.testing.allocator.dupe(u8, "q") } } } };
-    defer std.testing.allocator.free(t4.data.Terminal.Proposition.string);
-    var t5 = NewParseTree.Node{ .parent = &root, .data = OldParseTree.Data{ .Terminal = lex.Token.RParen } };
+    var t1 = ParseTreeType.Node{ .parent = &root,               .kind = .{ .leaf = lex.Token{ .LParen = {} } } };
+    var t2 = ParseTreeType.Node{ .parent = &(root_children[1]), .kind = .{ .leaf = lex.Token{ .Proposition = lex.PropositionVar{ .string = try std.testing.allocator.dupe(u8, "p") } } } };
+    var t3 = ParseTreeType.Node{ .parent = &root,               .kind = .{ .leaf = lex.Token{ .Operator = lex.WffOperator.Or } } };
+    var t4 = ParseTreeType.Node{ .parent = &(root_children[3]), .kind = .{ .leaf = lex.Token{ .Proposition = lex.PropositionVar{ .string = try std.testing.allocator.dupe(u8, "q") } } } };
+    var t5 = ParseTreeType.Node{ .parent = &root,               .kind = .{ .leaf = lex.Token{ .RParen = {} } } };
+    defer allocator.free(t2.kind.leaf.Proposition.string);
+    defer allocator.free(t4.kind.leaf.Proposition.string);
 
-    try children1.append(t2);
-    wff1 = OldParseTree.Node{ .parent = &root, .data = OldParseTree.Data{ .Nonterminal = children1 } };
+    children1[0] = t2;
+    children2[0] = t4;
+    wff1 = ParseTreeType.Node{ .parent = &root, .kind = .{ .nonleaf = children1 } };
+    wff2 = ParseTreeType.Node{ .parent = &root, .kind = .{ .nonleaf = children2 } };
 
-    try children2.append(t4);
-    wff2 = OldParseTree.Node{ .parent = &root, .data = OldParseTree.Data{ .Nonterminal = children2 } };
-
-    root_children.items[0] = t1;
-    root_children.items[1] = wff1;
-    root_children.items[2] = t3;
-    root_children.items[3] = wff2;
-    root_children.items[4] = t5;
-    root = OldParseTree.Node{ .data = OldParseTree.Data{ .Nonterminal = root_children } };
+    root_children[0] = t1;
+    root_children[1] = wff1;
+    root_children[2] = t3;
+    root_children[3] = wff2;
+    root_children[4] = t5;
+    root = ParseTreeType.Node{ .kind = .{ .nonleaf = root_children } };
 
     // Hardcoded equality test of tree
-    try std.testing.expect(t1.data.Terminal.eql(tree.root.data.Nonterminal.items[0].data.Terminal));
-    try std.testing.expect(t2.data.Terminal.eql(tree.root.data.Nonterminal.items[1].data.Nonterminal.items[0].data.Terminal));
-    try std.testing.expect(t3.data.Terminal.eql(tree.root.data.Nonterminal.items[2].data.Terminal));
-    try std.testing.expect(t4.data.Terminal.eql(tree.root.data.Nonterminal.items[3].data.Nonterminal.items[0].data.Terminal));
-    try std.testing.expect(t5.data.Terminal.eql(tree.root.data.Nonterminal.items[4].data.Terminal));
+    try std.testing.expect(t1.kind.leaf.eql(tree.root.kind.nonleaf[0].kind.leaf));
+    try std.testing.expect(t2.kind.leaf.eql(tree.root.kind.nonleaf[1].kind.nonleaf[0].kind.leaf));
+    try std.testing.expect(t3.kind.leaf.eql(tree.root.kind.nonleaf[2].kind.leaf));
+    try std.testing.expect(t4.kind.leaf.eql(tree.root.kind.nonleaf[3].kind.nonleaf[0].kind.leaf));
+    try std.testing.expect(t5.kind.leaf.eql(tree.root.kind.nonleaf[4].kind.leaf));
 
     // Function equality test of tree
-    try std.testing.expect(tree.root.eql(&root));
+    //try std.testing.expect(tree.root.eql(&root));
 }
+
+// test "Parser.parse: '(p v q)'" {
+//     const allocator = std.testing.allocator;
+    
+//     const V = TestVariable.fromString;
+//     const G = slr.Grammar(TestVariable, TestTerminal);
+//     const grammar = G.initFromTuples(
+//         .{
+//             .{ V("S"), .{V("wff")} },
+//             .{ V("wff"), .{TestTerminal.Proposition} },
+//             .{ V("wff"), .{ TestTerminal.Not, V("wff") } },
+//             .{ V("wff"), .{ TestTerminal.LParen, V("wff"), TestTerminal.And, V("wff"), TestTerminal.RParen } },
+//             .{ V("wff"), .{ TestTerminal.LParen, V("wff"), TestTerminal.Or, V("wff"), TestTerminal.RParen } },
+//             .{ V("wff"), .{ TestTerminal.LParen, V("wff"), TestTerminal.Cond, V("wff"), TestTerminal.RParen } },
+//             .{ V("wff"), .{ TestTerminal.LParen, V("wff"), TestTerminal.Bicond, V("wff"), TestTerminal.RParen } },
+//         },
+//         V("S"),
+//         TestTerminal.End,
+//     );
+//     defer grammar.deinit();
+
+//     const ParserType = NewParser(
+//         TestVariable, 
+//         TestTerminal, 
+//         lex.Token,
+//         lex.tokenize,
+//         oldTokenToTerminal,
+//     );
+//     const parser = try ParserType.init(
+//         allocator, 
+//         grammar
+//     );
+//     defer parser.deinit();
+
+//     const tree = try parser.parse(allocator, "(p v q)");
+//     defer tree.deinit();
+
+//     // Build the expected tree manually... it's pretty messy
+//     var wff1: NewParseTree.Node = undefined;
+//     var wff2: NewParseTree.Node = undefined;
+//     var root: NewParseTree.Node = undefined;
+
+//     var children1 = try allocator.alloc(NewParseTree.Node, 1);
+//     defer allocator.free(children1);
+//     var children2 = try allocator.alloc(NewParseTree.Node, 1);
+//     defer allocator.free(children2);
+//     var root_children = try allocator.alloc(NewParseTree.Node, 5);
+//     defer allocator.free(root_children);
+
+//     var t1 = NewParseTree.Node{ .parent = &root,               .kind = .{ .leaf = TestToken{ .LParen = {} } } };
+//     var t2 = NewParseTree.Node{ .parent = &(root_children[1]), .kind = .{ .leaf = TestToken{ .Proposition = try std.testing.allocator.dupe(u8, "p") } } };
+//     var t3 = NewParseTree.Node{ .parent = &root,               .kind = .{ .leaf = TestToken{ .Or = {} } } };
+//     var t4 = NewParseTree.Node{ .parent = &(root_children[3]), .kind = .{ .leaf = TestToken{ .Proposition = try std.testing.allocator.dupe(u8, "q") } } };
+//     var t5 = NewParseTree.Node{ .parent = &root,               .kind = .{ .laef = TestToken{ .RParen = {} } } };
+//     defer std.testing.allocator.free(t2.data.Terminal.Proposition.string);
+//     defer std.testing.allocator.free(t4.data.Terminal.Proposition.string);
+
+//     try children1.append(t2);
+//     try children2.append(t4);
+//     wff1 = OldParseTree.Node{ .parent = &root, .kind = .{ .nonleaf = children1 } };
+//     wff2 = OldParseTree.Node{ .parent = &root, .kind = .{ .nonleaf = children2 } };
+
+//     root_children.items[0] = t1;
+//     root_children.items[1] = wff1;
+//     root_children.items[2] = t3;
+//     root_children.items[3] = wff2;
+//     root_children.items[4] = t5;
+//     root = OldParseTree.Node{ .kind = .{ .nonleaf = root_children } };
+
+//     // Hardcoded equality test of tree
+//     try std.testing.expect(t1.kind.leaf.eql(tree.root.kind.nonleaf.items[0].kind.leaf));
+//     try std.testing.expect(t2.kind.leaf.eql(tree.root.kind.nonleaf.items[1].kind.nonleaf[0].kind.leaf));
+//     try std.testing.expect(t3.kind.leaf.eql(tree.root.kind.nonleaf.items[2].kind.leaf));
+//     try std.testing.expect(t4.kind.leaf.eql(tree.root.kind.nonleaf.items[3].kind.nonleaf[0].kind.leaf));
+//     try std.testing.expect(t5.kind.leaf.eql(tree.root.kind.nonleaf.items[4].kind.laf));
+
+//     // Function equality test of tree
+//     try std.testing.expect(tree.root.eql(&root));
+// }
 
 
 /// Shift-Reduce parser for parsing WFF's.

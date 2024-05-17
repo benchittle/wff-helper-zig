@@ -22,7 +22,7 @@ pub const Match = struct {
 
     /// Lookup a match in the hashmap and build a new Wff for it if it exists
     pub fn getBuildWff(self: Self, allocator: std.mem.Allocator, key: []const u8) !?Wff {
-        var node = self.matches.get(key) orelse return null;
+        const node = self.matches.get(key) orelse return null;
         return try Wff.initFromNode(allocator, node);
     }
 
@@ -36,7 +36,7 @@ pub const Match = struct {
                 .Proposition => |prop| {
                     if (self.matches.get(prop.string)) |wff_node| {
                         defer result.allocator.free(prop.string);
-                        var match_copy = try wff_node.copy(result.allocator);
+                        const match_copy = try wff_node.copy(result.allocator);
                         defer result.allocator.destroy(match_copy);
                         var old_data = node.parent.?.data.Nonterminal;
                         defer old_data.deinit();
@@ -53,7 +53,7 @@ pub const Match = struct {
         };
         
         // Then we copy the rest of the parse tree.
-        var new_root = try self.parent.copyAbove(result.allocator, result.root.*);
+        const new_root = try self.parent.copyAbove(result.allocator, result.root.*);
         result.allocator.destroy(result.root);
         errdefer {
             // TODO: Clean up using node.deinit()

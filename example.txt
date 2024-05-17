@@ -65,6 +65,18 @@ R5: wff -> LParen wff Or     wff RParen
 R6: wff -> LParen wff Cond   wff RParen
 R7: wff -> LParen wff Bicond wff RParen
 
+const V_S = 0;
+    const V_WFF = 1;
+    const T_PROPOSITION = 2;
+    const T_NOT = 3;
+    const T_LPAREN = 4;
+    const T_AND = 5;
+    const T_RPAREN = 6;
+    const T_OR = 7;
+    const T_COND = 8;
+    const T_BICOND = 9;
+    // $ = 10
+
 
 Grammar 2.0:
 
@@ -260,4 +272,7 @@ For v in grammar.variables:
                     add rule.lhs to stack 
 
             
-TODO: Comptime everything????
+TODO: document and refactor to make code easier to follow
+TODO: make parstable comptime-able
+
+TODO: investigate whether a loop in some spot is starting from grammar.getVariableCount().. instead of 0.. for terminal stuff

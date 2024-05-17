@@ -42,15 +42,15 @@ const Symbol = union(enum) {
     terminal: u16,
 
     fn eql(self: Self, other: Self) bool {
-        return switch(self) {
-            .variable => |idx1| switch(other) {
+        return switch (self) {
+            .variable => |idx1| switch (other) {
                 .variable => |idx2| idx1 == idx2,
                 .terminal => false,
             },
-            .terminal => |idx1| switch(other) {
+            .terminal => |idx1| switch (other) {
                 .variable => false,
                 .terminal => |idx2| idx1 == idx2,
-            }
+            },
         };
     }
 };
@@ -103,7 +103,7 @@ const ProductionInstance = struct {
 
 /// Verify that a type has an eql method so that it can be used in Grammar
 /// generation.
-/// (Copied and slightly modified from the standard libary's 
+/// (Copied and slightly modified from the standard libary's
 /// hash_map.zig::verifyContext function)
 fn verifyGrammarSymbolType(comptime X: type) void {
     var allow_const_ptr = false;
@@ -136,7 +136,7 @@ fn verifyGrammarSymbolType(comptime X: type) void {
     const lazy = struct {
         const prefix = "\n  ";
         const deep_prefix = prefix ++ "  ";
-        const eql_signature = "fn (" ++ @typeName(X) ++ ", " ++
+        const eql_signature = "pub fn (" ++ @typeName(X) ++ ", " ++
             @typeName(X) ++ ") bool";
         const err_invalid_eql_signature = prefix ++ @typeName(X) ++ ".eql must be " ++ eql_signature ++
             deep_prefix ++ "but is actually " ++ @typeName(@TypeOf(X.eql));
@@ -196,7 +196,7 @@ fn verifyGrammarSymbolType(comptime X: type) void {
                         }
                     }
                 }
-                
+
                 if (func.return_type.? != bool) {
                     if (!emitted_signature) {
                         errors = errors ++ lazy.err_invalid_eql_signature;
@@ -212,7 +212,7 @@ fn verifyGrammarSymbolType(comptime X: type) void {
             errors = errors ++ lazy.err_invalid_eql_signature;
         }
     } else {
-        errors = errors ++ lazy.prefix ++ @typeName(X) ++ " must declare a eql function with signature " ++ lazy.eql_signature;
+        errors = errors ++ lazy.prefix ++ @typeName(X) ++ " must declare an eql function with signature " ++ lazy.eql_signature ++ "\n(Note: The function must be public if in a different file)";
     }
 
     if (errors.len != 0) {
@@ -221,95 +221,90 @@ fn verifyGrammarSymbolType(comptime X: type) void {
     }
 }
 
-
 // NOTE: variables ids MUST START AT 0 and MUST BE SMALLER THAN ALL TERMINAL IDS and MUST BE ORDERED
 // NOTE: comparison of symbols is not always done using .eql in below functions, should try to make this consistent
 // NOTE: FOLLOW and FIRST sets generation code is way too nested, should ideally
 //       be broken down into smaller functions
-pub fn Grammar(comptime V: type, comptime T: type) type {
+pub fn Grammar(comptime Variable: type, comptime Terminal: type) type {
     // Verify both V and T have correct .eql methods
-    verifyGrammarSymbolType(V);
-    verifyGrammarSymbolType(T);
+    verifyGrammarSymbolType(Variable);
+    verifyGrammarSymbolType(Terminal);
 
     return struct {
         const Self = @This();
-        
+
         allocator: ?std.mem.Allocator, // TODO: Make this optional, remove initialized_at_comptime
         rules: []const Production,
-        variables: []const V,
-        terminals: []const T,
+        variables: []const Variable,
+        terminals: []const Terminal,
 
-        pub fn initFromTuples(
-            comptime rule_tuples: anytype,
-            comptime start_variable: V,
-            comptime end_token: T
-        ) Self {
+        pub fn initFromTuples(comptime rule_tuples: anytype, comptime start_variable: Variable, comptime end_token: Terminal) Self {
             comptime {
                 // Initialize a grammar struct to populate.
-                var grammar = Self {
+                var grammar = Self{
                     .allocator = null,
-                    .rules = &[_] Production {},
-                    .variables = &[_] V {start_variable},
-                    .terminals = &[_] T {},
+                    .rules = &[_]Production{},
+                    .variables = &[_]Variable{start_variable},
+                    .terminals = &[_]Terminal{},
                 };
-                
-                // Throws a compiler error if the structure or types of the 
-                // given tuples are invalid. 
+
+                // Throws a compiler error if the structure or types of the
+                // given tuples are invalid.
                 verifyTuples(rule_tuples);
-                
+
                 // Iterate over each rule tuple and populate our grammar rules.
                 for (rule_tuples) |rule_tuple| {
                     // Initialize a rule struct to populate.
-                    var rule = Production {
+                    var rule = Production{
                         .lhs = undefined,
-                        .rhs = &[_]Symbol {},
+                        .rhs = &[_]Symbol{},
                     };
 
-                    // Unpack the left hand side of the rule. We have already 
+                    // Unpack the left hand side of the rule. We have already
                     // checked that it is of type V.
                     const lhs = rule_tuple.@"0";
-                    if (grammar.getVariableSymbol(lhs)) |id| {
+                    if (grammar.getSymbolFromVariable(lhs)) |id| {
                         rule.lhs = id;
                     } else {
-                        // If we haven't seen this variable yet, append it to 
+                        // If we haven't seen this variable yet, append it to
                         // the variables list.
                         rule.lhs = grammar.getVariableCount();
-                        grammar.variables = grammar.variables ++ &[_]V {lhs};
+                        grammar.variables = grammar.variables ++ &[_]Variable{lhs};
                     }
 
-                    // Iterate over the symbols on the right hand side of the 
+                    // Iterate over the symbols on the right hand side of the
                     // rule tuple and unpack each into the grammar rule.
                     const rhs = rule_tuple.@"1";
                     for (std.meta.fieldNames(@TypeOf(rhs))) |rhs_tuple_field_name| {
                         const var_or_token = @field(rhs, rhs_tuple_field_name);
-                        if (@TypeOf(var_or_token) == V) {
-                            if (grammar.getVariableSymbol(var_or_token)) |symbol| {
-                                rule.rhs = rule.rhs ++ &[_]Symbol {symbol};
+                        if (@TypeOf(var_or_token) == Variable) {
+                            if (grammar.getSymbolFromVariable(var_or_token)) |symbol| {
+                                rule.rhs = rule.rhs ++ &[_]Symbol{symbol};
                             } else {
                                 // If we haven't seen this variable yet, append
                                 // it to the variables list.
-                                rule.rhs = rule.rhs ++ &[_]Symbol {Symbol{.variable=grammar.getVariableCount()}};
-                                grammar.variables = grammar.variables ++ &[_]V {var_or_token};
+                                rule.rhs = rule.rhs ++ &[_]Symbol{Symbol{ .variable = grammar.getVariableCount() }};
+                                grammar.variables = grammar.variables ++ &[_]Variable{var_or_token};
                             }
                         } else {
-                            if (grammar.getTerminalSymbol(var_or_token)) |symbol| {
-                                rule.rhs = rule.rhs ++ &[_]Symbol {symbol};
+                            if (grammar.getSymbolFromTerminal(var_or_token)) |symbol| {
+                                rule.rhs = rule.rhs ++ &[_]Symbol{symbol};
                             } else {
-                                // If we haven't seen this terminal yet, append 
+                                // If we haven't seen this terminal yet, append
                                 // it to the terminals list.
-                                rule.rhs = rule.rhs ++ &[_]Symbol {Symbol{.terminal=grammar.getTerminalCount()}};
-                                grammar.terminals = grammar.terminals ++ &[_]T {var_or_token};
+                                rule.rhs = rule.rhs ++ &[_]Symbol{Symbol{ .terminal = grammar.getTerminalCount() }};
+                                grammar.terminals = grammar.terminals ++ &[_]Terminal{var_or_token};
                             }
                         }
                     }
                     // Append the populated rule.
-                    grammar.rules = grammar.rules ++ &[_]Production {rule};
+                    grammar.rules = grammar.rules ++ &[_]Production{rule};
                 }
-                grammar.terminals = grammar.terminals ++ &[_]T {end_token};
+                grammar.terminals = grammar.terminals ++ &[_]Terminal{end_token};
                 return grammar;
             }
         }
-        
+
         pub fn deinit(self: Self) void {
             if (self.allocator) |allocator| {
                 allocator.free(self.rules);
@@ -318,7 +313,7 @@ pub fn Grammar(comptime V: type, comptime T: type) type {
             }
         }
 
-        /// Verify the structure and types of the given tuples. Return void 
+        /// Verify the structure and types of the given tuples. Return void
         /// since this will be done at comptime and all errors will be compiler
         /// errors.
         fn verifyTuples(comptime rule_tuples: anytype) void {
@@ -331,7 +326,7 @@ pub fn Grammar(comptime V: type, comptime T: type) type {
             }
             // Verify rule_tuples is not empty
             if (std.meta.fields(RuleTuplesType).len == 0) {
-                @compileError( "rule_tuples cannot be empty");
+                @compileError("rule_tuples cannot be empty");
             }
 
             // Verify each field in rule_tuples is a valid grammar rule
@@ -346,16 +341,16 @@ pub fn Grammar(comptime V: type, comptime T: type) type {
                 }
                 // Each rule should have exactly 2 fields
                 if (std.meta.fields(RuleType).len != 2) {
-                    @compileError(std.fmt.comptimePrint("Each rule must have exactly 2 fields, found {d} fields (rule {d})", .{rule_type_info.fields.len, i}));
+                    @compileError(std.fmt.comptimePrint("Each rule must have exactly 2 fields, found {d} fields (rule {d})", .{ rule_type_info.fields.len, i }));
                 }
 
                 // The first field of each rule should be of type V
                 const lhs = rule.@"0";
-                if (@TypeOf(lhs) != V) {
-                    @compileError(std.fmt.comptimePrint("The first field in each rule tuple must be of type '" ++ @typeName(V) ++ "', found '" ++ @typeName(@TypeOf(rule.@"0")) ++ "' (rule {d})", .{i}));
+                if (@TypeOf(lhs) != Variable) {
+                    @compileError(std.fmt.comptimePrint("The first field in each rule tuple must be of type '" ++ @typeName(Variable) ++ "', found '" ++ @typeName(@TypeOf(rule.@"0")) ++ "' (rule {d})", .{i}));
                 }
 
-                // The second field of each rule should be a tuple with fields 
+                // The second field of each rule should be a tuple with fields
                 // of type V or T (the right hand side of a production).
                 const rhs = rule.@"1";
                 const RhsType = @TypeOf(rhs);
@@ -367,21 +362,21 @@ pub fn Grammar(comptime V: type, comptime T: type) type {
                 }
                 // Verify rhs is not empty
                 if (std.meta.fields(RuleTuplesType).len == 0) {
-                    @compileError( std.fmt.comptimePrint("The second field (a tuple) in each rule tuple cannot be empty (rule {d})", .{i}));
+                    @compileError(std.fmt.comptimePrint("The second field (a tuple) in each rule tuple cannot be empty (rule {d})", .{i}));
                 }
 
                 // Verify each symbol in rhs is of type T or V
                 inline for (std.meta.fieldNames(RhsType), 0..) |rhs_field_name, j| {
                     const rhs_symbol = @field(rhs, rhs_field_name);
                     const RhsSymbolType = @TypeOf(rhs_symbol);
-                    if (RhsSymbolType != V and RhsSymbolType != T) {
-                        @compileError(std.fmt.comptimePrint("Expected field of type '" ++ @typeName(V) ++ "' or '" ++ @typeName(T) ++ "', found '" ++ @typeName(RhsSymbolType) ++ "' (rule {d}, RHS symbol {d})", .{i, j}));
+                    if (RhsSymbolType != Variable and RhsSymbolType != Terminal) {
+                        @compileError(std.fmt.comptimePrint("Expected field of type '" ++ @typeName(Variable) ++ "' or '" ++ @typeName(Terminal) ++ "', found '" ++ @typeName(RhsSymbolType) ++ "' (rule {d}, RHS symbol {d})", .{ i, j }));
                     }
                 }
             }
         }
 
-        fn getRuleIdx(self: Self, rule: Production) ?usize {
+        pub fn getRuleIdx(self: Self, rule: Production) ?usize {
             for (self.rules, 0..) |known_rule, i| {
                 if (known_rule.eql(rule)) {
                     return i;
@@ -390,31 +385,31 @@ pub fn Grammar(comptime V: type, comptime T: type) type {
             return null;
         }
 
-        fn getVariableCount(self: Self) usize {
+        pub fn getVariableCount(self: Self) usize {
             return self.variables.len;
         }
 
-        fn getTerminalCount(self: Self) usize {
+        pub fn getTerminalCount(self: Self) usize {
             return self.terminals.len;
         }
 
-        fn getSymbolCount(self: Self) usize {
+        pub fn getSymbolCount(self: Self) usize {
             return self.getVariableCount() + self.getTerminalCount();
         }
 
-        fn getVariableSymbol(self: Self, variable: V) ?Symbol {
+        pub fn getSymbolFromVariable(self: Self, variable: Variable) ?Symbol {
             for (self.variables, 0..) |v, variable_idx| {
                 if (variable.eql(v)) {
-                    return Symbol{.variable=variable_idx};
+                    return Symbol{ .variable = @intCast(variable_idx) };
                 }
             }
             return null;
         }
 
-        fn getTerminalSymbol(self: Self, terminal: T) ?Symbol {
+        pub fn getSymbolFromTerminal(self: Self, terminal: Terminal) ?Symbol {
             for (self.terminals, 0..) |t, terminal_idx| {
                 if (terminal.eql(t)) {
-                    return Symbol{.terminal=terminal_idx};
+                    return Symbol{ .terminal = @intCast(terminal_idx) };
                 }
             }
             return null;
@@ -424,23 +419,27 @@ pub fn Grammar(comptime V: type, comptime T: type) type {
         //     return self.getVariableCount() + idx;
         // }
 
-        fn getStartVariableIdx(_: Self) std.meta.TagPayload(Symbol, Symbol.variable) {
+        pub fn getStartVariable(_: Self) Symbol {
+            return Symbol{ .variable = 0};
+        }
+
+        pub fn getEndTerminal(self: Self) Symbol {
+            return Symbol{ .terminal = @intCast(self.getTerminalCount() - 1)};
+        }
+
+        pub fn getStartRuleIdx(_: Self) usize {
             return 0;
         }
 
-        fn getEndTerminalIdx(self: Self) std.meta.TagPayload(Symbol, Symbol.terminal) {
-            return @intCast(self.getTerminalCount() - 1);
+        pub fn getRule(self: Self, rule_idx: usize) Production {
+            return self.rules[rule_idx];
         }
 
-        fn getStartRuleIdx(_: Self) usize {
-            return 0;
-        }
-    
         // NOTE: $ (END character) can never be first
         // TODO: Make a Set struct so that we can abstract away the operations
         // and use different internal representations with the same interface
         // (in case I want to change the representation in the future)
-        fn getFirstSet(self: Self, allocator: std.mem.Allocator) ![][]bool {
+        pub fn getFirstSet(self: Self, allocator: std.mem.Allocator) ![][]bool {
             var firsts = try allocator.alloc([]bool, self.getVariableCount());
             errdefer allocator.free(firsts);
             var num_firsts_allocated: usize = 0;
@@ -466,7 +465,7 @@ pub fn Grammar(comptime V: type, comptime T: type) type {
 
                 var stack = try std.ArrayList(Symbol).initCapacity(allocator, self.getVariableCount());
                 defer stack.deinit();
-                stack.appendAssumeCapacity(Symbol{.variable=@intCast(v_idx)});
+                stack.appendAssumeCapacity(Symbol{ .variable = @intCast(v_idx) });
 
                 while (stack.popOrNull()) |top_symbol| {
                     for (self.rules) |rule| {
@@ -474,7 +473,7 @@ pub fn Grammar(comptime V: type, comptime T: type) type {
                             continue;
                         }
                         const first_rule_symbol = rule.rhs[0];
-                        switch(first_rule_symbol) {
+                        switch (first_rule_symbol) {
                             .terminal => |idx| firsts[v_idx][idx] = true,
                             .variable => |idx| {
                                 if (seen[idx]) {
@@ -491,7 +490,7 @@ pub fn Grammar(comptime V: type, comptime T: type) type {
                                     stack.appendAssumeCapacity(first_rule_symbol);
                                 }
                                 seen[idx] = true;
-                            }
+                            },
                         }
                     }
                 }
@@ -500,29 +499,27 @@ pub fn Grammar(comptime V: type, comptime T: type) type {
         }
 
         // NOTE: $ (END character) can never be first
-        fn getFirstSetComptime(comptime self: Self) []const []const bool {
+        pub fn getFirstSetComptime(comptime self: Self) []const []const bool {
             return comptime ret: {
-                var firsts = [_][self.getTerminalCount()]bool {
-                    [_]bool {false} ** self.getTerminalCount()
-                } ** self.getVariableCount();
-                
+                var firsts = [_][self.getTerminalCount()]bool{[_]bool{false} ** self.getTerminalCount()} ** self.getVariableCount();
+
                 // Iterate over all variable ID's
                 for (0..self.getVariableCount()) |v_idx| {
-                    var seen = [_]bool {false} ** self.getVariableCount();
+                    var seen = [_]bool{false} ** self.getVariableCount();
                     seen[v_idx] = true;
 
-                    var stack: []const Symbol = &[_]Symbol {Symbol{.variable=@intCast(v_idx)}};
+                    var stack: []const Symbol = &[_]Symbol{Symbol{ .variable = @intCast(v_idx) }};
 
                     while (stack.len > 0) {
                         const top_symbol = stack[stack.len - 1];
-                        stack = stack[0..stack.len - 1];
+                        stack = stack[0 .. stack.len - 1];
 
                         for (self.rules) |rule| {
                             if (!rule.lhs.eql(top_symbol)) {
                                 continue;
                             }
                             const first_rule_symbol = rule.rhs[0];
-                            switch(first_rule_symbol) {
+                            switch (first_rule_symbol) {
                                 .terminal => |idx| firsts[v_idx][idx] = true,
                                 .variable => |idx| {
                                     if (seen[idx]) {
@@ -536,16 +533,16 @@ pub fn Grammar(comptime V: type, comptime T: type) type {
                                             }
                                         }
                                     } else {
-                                        stack = stack ++ &[_]Symbol {first_rule_symbol};
+                                        stack = stack ++ &[_]Symbol{first_rule_symbol};
                                     }
                                     seen[idx] = true;
-                                }
+                                },
                             }
                         }
                     }
                 }
                 const firsts_const = firsts;
-                var firsts_as_slices = [_][]const bool {undefined} ** firsts_const.len;
+                var firsts_as_slices = [_][]const bool{undefined} ** firsts_const.len;
                 for (0..firsts_const.len) |i| {
                     firsts_as_slices[i] = &firsts_const[i];
                 }
@@ -557,7 +554,7 @@ pub fn Grammar(comptime V: type, comptime T: type) type {
         // NOTE: Assumes $ is last terminal symbol ID and S' is the first symbol ID
         //       (0). FOLLOW(S') will be initialized to {$}, which will then be
         //       propogated as needed
-        fn getFollowSet(self: Self, allocator: std.mem.Allocator) ![][]const bool {
+        pub fn getFollowSet(self: Self, allocator: std.mem.Allocator) ![][]const bool {
             const first_set = try self.getFirstSet(allocator);
             defer {
                 for (first_set) |row| allocator.free(row);
@@ -590,23 +587,23 @@ pub fn Grammar(comptime V: type, comptime T: type) type {
 
                 var stack = try std.ArrayList(Symbol).initCapacity(allocator, self.getVariableCount());
                 defer stack.deinit();
-                stack.appendAssumeCapacity(Symbol{.variable=@intCast(v_idx)});
+                stack.appendAssumeCapacity(Symbol{ .variable = @intCast(v_idx) });
 
                 while (stack.popOrNull()) |top_symbol| {
                     for (self.rules) |rule| {
-                        for (rule.rhs[0..rule.rhs.len - 1], 0..) |rhs_symbol, i| {
+                        for (rule.rhs[0 .. rule.rhs.len - 1], 0..) |rhs_symbol, i| {
                             if (!rhs_symbol.eql(top_symbol)) {
                                 continue;
                             }
-                                
-                            switch(rule.rhs[i + 1]) {
+
+                            switch (rule.rhs[i + 1]) {
                                 .terminal => |idx| follow_set[v_idx][idx] = true,
                                 // TODO: Make union function?
                                 .variable => |idx| for (first_set[idx], 0..) |isFirst, terminal_idx| {
                                     if (isFirst) {
                                         follow_set[v_idx][terminal_idx] = true;
                                     }
-                                }
+                                },
                             }
                         }
 
@@ -618,7 +615,7 @@ pub fn Grammar(comptime V: type, comptime T: type) type {
                         }
                         // Check if we already have the Follow set for this variable
                         // TODO: Make this more explicit?
-                        if (rule.lhs.variable < v_idx) { 
+                        if (rule.lhs.variable < v_idx) {
                             for (follow_set[rule.lhs.variable], 0..) |isFollow, terminal_idx| {
                                 if (isFollow) {
                                     follow_set[v_idx][terminal_idx] = true;
@@ -634,41 +631,39 @@ pub fn Grammar(comptime V: type, comptime T: type) type {
             return follow_set;
         }
 
-        fn getFollowSetComptime(comptime self: Self) []const []const bool {
-            return comptime ret: { 
+        pub fn getFollowSetComptime(comptime self: Self) []const []const bool {
+            return comptime ret: {
                 const first_set = self.getFirstSetComptime();
 
-                var follow_set = [_][self.getTerminalCount()]bool {
-                    [_]bool {false} ** self.getTerminalCount()
-                } ** self.getVariableCount();
-                
+                var follow_set = [_][self.getTerminalCount()]bool{[_]bool{false} ** self.getTerminalCount()} ** self.getVariableCount();
+
                 // Initialize FOLLOW(startsymbol) to include end of input symbol.
                 follow_set[0][self.getTerminalCount() - 1] = true;
 
                 for (0..self.getVariableCount()) |v_idx| {
-                    var seen = [_]bool {false} ** self.getVariableCount();
+                    var seen = [_]bool{false} ** self.getVariableCount();
                     seen[v_idx] = true; // redundant?
 
-                    var stack: []const Symbol = &[_]Symbol {Symbol{.variable=@intCast(v_idx)}};
+                    var stack: []const Symbol = &[_]Symbol{Symbol{ .variable = @intCast(v_idx) }};
 
                     while (stack.len > 0) {
                         const top_symbol = stack[stack.len - 1];
-                        stack = stack[0..stack.len - 1];
+                        stack = stack[0 .. stack.len - 1];
 
                         for (self.rules) |rule| {
-                            for (rule.rhs[0..rule.rhs.len - 1], 0..) |rhs_symbol, i| {
+                            for (rule.rhs[0 .. rule.rhs.len - 1], 0..) |rhs_symbol, i| {
                                 if (!rhs_symbol.eql(top_symbol)) {
                                     continue;
                                 }
-                                    
-                                switch(rule.rhs[i + 1]) {
+
+                                switch (rule.rhs[i + 1]) {
                                     .terminal => |idx| follow_set[v_idx][idx] = true,
                                     // TODO: Make union function?
                                     .variable => |idx| for (first_set[idx], 0..) |isFirst, terminal_idx| {
                                         if (isFirst) {
                                             follow_set[v_idx][terminal_idx] = true;
                                         }
-                                    }
+                                    },
                                 }
                             }
 
@@ -680,21 +675,21 @@ pub fn Grammar(comptime V: type, comptime T: type) type {
                             }
                             // Check if we already have the Follow set for this variable
                             // TODO: Make this more explicit?
-                            if (rule.lhs.variable < v_idx) { 
+                            if (rule.lhs.variable < v_idx) {
                                 for (follow_set[rule.lhs.variable], 0..) |isFollow, terminal_idx| {
                                     if (isFollow) {
                                         follow_set[v_idx][terminal_idx] = true;
                                     }
                                 }
                             } else {
-                                stack = stack ++ &[_]Symbol {rule.lhs};
+                                stack = stack ++ &[_]Symbol{rule.lhs};
                             }
                             seen[rule.lhs.variable] = true;
                         }
                     }
                 }
                 const follow_set_const = follow_set;
-                var follow_set_as_slices = [_][]const bool {undefined} ** follow_set_const.len;
+                var follow_set_as_slices = [_][]const bool{undefined} ** follow_set_const.len;
                 for (0..follow_set_const.len) |i| {
                     follow_set_as_slices[i] = &follow_set_const[i];
                 }
@@ -707,14 +702,14 @@ pub fn Grammar(comptime V: type, comptime T: type) type {
             debug.print("({d})", .{prod.production.lhs.variable});
             debug.print(" ->", .{});
             for (prod.production.rhs[0..prod.cursor]) |sym| {
-                switch(sym) {
+                switch (sym) {
                     .variable => |idx| debug.print(" ({d})", .{idx}),
                     .terminal => |idx| debug.print(" {d}", .{idx}),
                 }
             }
             debug.print(" *", .{});
             for (prod.production.rhs[prod.cursor..]) |sym| {
-                switch(sym) {
+                switch (sym) {
                     .variable => |idx| debug.print(" ({d})", .{idx}),
                     .terminal => |idx| debug.print(" {d}", .{idx}),
                 }
@@ -724,7 +719,7 @@ pub fn Grammar(comptime V: type, comptime T: type) type {
     };
 }
 
-const TestToken = enum {
+const TestTerminal = enum {
     const Self = @This();
 
     Proposition,
@@ -742,18 +737,18 @@ const TestToken = enum {
     }
 
     fn getString(self: Self) []const u8 {
-       return switch (self) {
+        return switch (self) {
             .Proposition => "PROP",
             .Not => "~",
             .LParen => "(",
             .RParen => ")",
             .And => "^",
-            .Or => "v", 
+            .Or => "v",
             .Cond => "=>",
             .Bicond => "<=>",
             .End => "$",
         };
-    } 
+    }
 };
 
 const TestVariable = struct {
@@ -762,7 +757,7 @@ const TestVariable = struct {
     name: []const u8,
 
     fn fromString(string: []const u8) Self {
-        return TestVariable{.name = string};
+        return TestVariable{ .name = string };
     }
 
     fn getString(self: Self) []const u8 {
@@ -796,35 +791,35 @@ test "Grammar.initFromTuples-grammar1_0" {
     // $ = 10
 
     const V = TestVariable.fromString;
-    const G = Grammar(TestVariable, TestToken);
+    const G = Grammar(TestVariable, TestTerminal);
     comptime var actual_grammar = G.initFromTuples(
         .{
-            .{V("S"), .{V("wff")}},
-            .{V("wff"), .{TestToken.Proposition}},
-            .{V("wff"), .{TestToken.Not, V("wff")}},
-            .{V("wff"), .{TestToken.LParen, V("wff"), TestToken.And, V("wff"), TestToken.RParen}},
-            .{V("wff"), .{TestToken.LParen, V("wff"), TestToken.Or, V("wff"), TestToken.RParen}},
-            .{V("wff"), .{TestToken.LParen, V("wff"), TestToken.Cond, V("wff"), TestToken.RParen}},
-            .{V("wff"), .{TestToken.LParen, V("wff"), TestToken.Bicond, V("wff"), TestToken.RParen}},
+            .{ V("S"), .{V("wff")} },
+            .{ V("wff"), .{ TestTerminal.Proposition} },
+            .{ V("wff"), .{ TestTerminal.Not, V("wff") } },
+            .{ V("wff"), .{ TestTerminal.LParen, V("wff"), TestTerminal.And, V("wff"), TestTerminal.RParen } },
+            .{ V("wff"), .{ TestTerminal.LParen, V("wff"), TestTerminal.Or, V("wff"), TestTerminal.RParen } },
+            .{ V("wff"), .{ TestTerminal.LParen, V("wff"), TestTerminal.Cond, V("wff"), TestTerminal.RParen } },
+            .{ V("wff"), .{ TestTerminal.LParen, V("wff"), TestTerminal.Bicond, V("wff"), TestTerminal.RParen } },
         },
         V("S"),
-        TestToken.End,
+        TestTerminal.End,
     );
     defer actual_grammar.deinit();
 
-    const r0 = Production{.lhs = .{.variable=V_S},   .rhs = &[_]Symbol {.{.variable=V_WFF}}};
-    const r1 = Production{.lhs = .{.variable=V_WFF}, .rhs = &[_]Symbol {.{.terminal=T_PROPOSITION}}};
-    const r2 = Production{.lhs = .{.variable=V_WFF}, .rhs = &[_]Symbol {.{.terminal=T_NOT},    .{.variable=V_WFF}}};
-    const r3 = Production{.lhs = .{.variable=V_WFF}, .rhs = &[_]Symbol {.{.terminal=T_LPAREN}, .{.variable=V_WFF}, .{.terminal=T_AND},    .{.variable=V_WFF}, .{.terminal=T_RPAREN}}};
-    const r4 = Production{.lhs = .{.variable=V_WFF}, .rhs = &[_]Symbol {.{.terminal=T_LPAREN}, .{.variable=V_WFF}, .{.terminal=T_OR},     .{.variable=V_WFF}, .{.terminal=T_RPAREN}}};
-    const r5 = Production{.lhs = .{.variable=V_WFF}, .rhs = &[_]Symbol {.{.terminal=T_LPAREN}, .{.variable=V_WFF}, .{.terminal=T_COND},   .{.variable=V_WFF}, .{.terminal=T_RPAREN}}};
-    const r6 = Production{.lhs = .{.variable=V_WFF}, .rhs = &[_]Symbol {.{.terminal=T_LPAREN}, .{.variable=V_WFF}, .{.terminal=T_BICOND}, .{.variable=V_WFF}, .{.terminal=T_RPAREN}}};
+    const r0 = Production{ .lhs = .{ .variable = V_S }, .rhs = &[_]Symbol{.{ .variable = V_WFF }} };
+    const r1 = Production{ .lhs = .{ .variable = V_WFF }, .rhs = &[_]Symbol{.{ .terminal = T_PROPOSITION }} };
+    const r2 = Production{ .lhs = .{ .variable = V_WFF }, .rhs = &[_]Symbol{ .{ .terminal = T_NOT }, .{ .variable = V_WFF } } };
+    const r3 = Production{ .lhs = .{ .variable = V_WFF }, .rhs = &[_]Symbol{ .{ .terminal = T_LPAREN }, .{ .variable = V_WFF }, .{ .terminal = T_AND }, .{ .variable = V_WFF }, .{ .terminal = T_RPAREN } } };
+    const r4 = Production{ .lhs = .{ .variable = V_WFF }, .rhs = &[_]Symbol{ .{ .terminal = T_LPAREN }, .{ .variable = V_WFF }, .{ .terminal = T_OR }, .{ .variable = V_WFF }, .{ .terminal = T_RPAREN } } };
+    const r5 = Production{ .lhs = .{ .variable = V_WFF }, .rhs = &[_]Symbol{ .{ .terminal = T_LPAREN }, .{ .variable = V_WFF }, .{ .terminal = T_COND }, .{ .variable = V_WFF }, .{ .terminal = T_RPAREN } } };
+    const r6 = Production{ .lhs = .{ .variable = V_WFF }, .rhs = &[_]Symbol{ .{ .terminal = T_LPAREN }, .{ .variable = V_WFF }, .{ .terminal = T_BICOND }, .{ .variable = V_WFF }, .{ .terminal = T_RPAREN } } };
 
-    var expected_grammar = G {
+    var expected_grammar = G{
         .allocator = null,
         .rules = &[_]Production{ r0, r1, r2, r3, r4, r5, r6 },
-        .variables = &[_]TestVariable {V("S"), V("wff")},
-        .terminals = &[_]TestToken {TestToken.Proposition, TestToken.Not, TestToken.LParen, TestToken.And, TestToken.RParen, TestToken.Or, TestToken.Cond, TestToken.Bicond, TestToken.End},
+        .variables = &[_]TestVariable{ V("S"), V("wff") },
+        .terminals = &[_]TestTerminal{ TestTerminal.Proposition, TestTerminal.Not, TestTerminal.LParen, TestTerminal.And, TestTerminal.RParen, TestTerminal.Or, TestTerminal.Cond, TestTerminal.Bicond, TestTerminal.End },
     };
     defer expected_grammar.deinit();
 
@@ -833,29 +828,29 @@ test "Grammar.initFromTuples-grammar1_0" {
     try std.testing.expectEqualDeep(expected_grammar.terminals, actual_grammar.terminals);
 }
 
-test "Grammar.initFromTuples-grammar2_2" {    
-    const V_S       = 0;
-    const V_WFF1    = 1;
-    const V_WFF2    = 2;
-    const V_WFF3    = 3;
-    const V_WFF4    = 4;
-    const V_PROP    = 5;
-    const T_BICOND  = 0;
-    const T_COND    = 1;
-    const T_OR      = 2;
-    const T_AND     = 3;
-    const T_NOT     = 4;
-    const T_LPAREN  = 5;
-    const T_RPAREN  = 6;
+test "Grammar.initFromTuples-grammar2_2" {
+    const V_S = 0;
+    const V_WFF1 = 1;
+    const V_WFF2 = 2;
+    const V_WFF3 = 3;
+    const V_WFF4 = 4;
+    const V_PROP = 5;
+    const T_BICOND = 0;
+    const T_COND = 1;
+    const T_OR = 2;
+    const T_AND = 3;
+    const T_NOT = 4;
+    const T_LPAREN = 5;
+    const T_RPAREN = 6;
     const T_PROPTOK = 7;
 
     // R0:  S -> wff1
     // R1:  wff1 -> wff2
     // R2:  wff1 -> wff1 <=> wff2
-    // R3:  wff2 -> wff3 
+    // R3:  wff2 -> wff3
     // R4:  wff2 -> wff2 => wff3
-    // R5:  wff3 -> wff4 
-    // R6:  wff3 -> wff3 v wff4 
+    // R5:  wff3 -> wff4
+    // R6:  wff3 -> wff3 v wff4
     // R7:  wff3 -> wff3 ^ wff4
     // R8:  wff4 -> prop
     // R9:  wff4 -> ~ wff4
@@ -863,51 +858,51 @@ test "Grammar.initFromTuples-grammar2_2" {
     // R11: prop -> PROPTOK
 
     const V = TestVariable.fromString;
-    const G = Grammar(TestVariable, TestToken);
+    const G = Grammar(TestVariable, TestTerminal);
 
     comptime var actual_grammar = G.initFromTuples(
         .{
-            .{V("S"), .{V("wff1")}},
+            .{ V("S"), .{V("wff1")} },
 
-            .{V("wff1"), .{V("wff2")}},
-            .{V("wff1"), .{V("wff1"), TestToken.Bicond, V("wff2")}},
+            .{ V("wff1"), .{V("wff2")} },
+            .{ V("wff1"), .{ V("wff1"), TestTerminal.Bicond, V("wff2") } },
 
-            .{V("wff2"), .{V("wff3")}},
-            .{V("wff2"), .{V("wff2"), TestToken.Cond, V("wff3")}},
-            
-            .{V("wff3"), .{V("wff4")}},
-            .{V("wff3"), .{V("wff3"), TestToken.Or, V("wff4")}},
-            .{V("wff3"), .{V("wff3"), TestToken.And, V("wff4")}},
+            .{ V("wff2"), .{V("wff3")} },
+            .{ V("wff2"), .{ V("wff2"), TestTerminal.Cond, V("wff3") } },
 
-            .{V("wff4"), .{V("prop")}},
-            .{V("wff4"), .{TestToken.Not, V("wff4")}},
+            .{ V("wff3"), .{V("wff4")} },
+            .{ V("wff3"), .{ V("wff3"), TestTerminal.Or, V("wff4") } },
+            .{ V("wff3"), .{ V("wff3"), TestTerminal.And, V("wff4") } },
 
-            .{V("prop"), .{TestToken.LParen, V("wff1"), TestToken.RParen}},
-            .{V("prop"), .{TestToken.Proposition}},
+            .{ V("wff4"), .{V("prop")} },
+            .{ V("wff4"), .{ TestTerminal.Not, V("wff4") } },
+
+            .{ V("prop"), .{ TestTerminal.LParen, V("wff1"), TestTerminal.RParen } },
+            .{ V("prop"), .{TestTerminal.Proposition} },
         },
         V("S"),
-        TestToken.End,
+        TestTerminal.End,
     );
     defer actual_grammar.deinit();
 
-    const r0  = Production{ .lhs = .{.variable=V_S},    .rhs = &[_]Symbol {.{.variable=V_WFF1}} };
-    const r1  = Production{ .lhs = .{.variable=V_WFF1}, .rhs = &[_]Symbol {.{.variable=V_WFF2}} };
-    const r2  = Production{ .lhs = .{.variable=V_WFF1}, .rhs = &[_]Symbol {.{.variable=V_WFF1},   .{.terminal=T_BICOND}, .{.variable=V_WFF2}}};
-    const r3  = Production{ .lhs = .{.variable=V_WFF2}, .rhs = &[_]Symbol {.{.variable=V_WFF3}} };
-    const r4  = Production{ .lhs = .{.variable=V_WFF2}, .rhs = &[_]Symbol {.{.variable=V_WFF2},   .{.terminal=T_COND},   .{.variable=V_WFF3}}};
-    const r5  = Production{ .lhs = .{.variable=V_WFF3}, .rhs = &[_]Symbol {.{.variable=V_WFF4}} };
-    const r6  = Production{ .lhs = .{.variable=V_WFF3}, .rhs = &[_]Symbol {.{.variable=V_WFF3},   .{.terminal=T_OR},     .{.variable=V_WFF4}}};
-    const r7  = Production{ .lhs = .{.variable=V_WFF3}, .rhs = &[_]Symbol {.{.variable=V_WFF3},   .{.terminal=T_AND},    .{.variable=V_WFF4}}};
-    const r8  = Production{ .lhs = .{.variable=V_WFF4}, .rhs = &[_]Symbol {.{.variable=V_PROP}} };
-    const r9  = Production{ .lhs = .{.variable=V_WFF4}, .rhs = &[_]Symbol {.{.terminal=T_NOT},    .{.variable=V_WFF4}}};
-    const r10 = Production{ .lhs = .{.variable=V_PROP}, .rhs = &[_]Symbol {.{.terminal=T_LPAREN}, .{.variable=V_WFF1},   .{.terminal=T_RPAREN}}};
-    const r11 = Production{ .lhs = .{.variable=V_PROP}, .rhs = &[_]Symbol {.{.terminal=T_PROPTOK}}};
+    const r0 = Production{ .lhs = .{ .variable = V_S }, .rhs = &[_]Symbol{.{ .variable = V_WFF1 }} };
+    const r1 = Production{ .lhs = .{ .variable = V_WFF1 }, .rhs = &[_]Symbol{.{ .variable = V_WFF2 }} };
+    const r2 = Production{ .lhs = .{ .variable = V_WFF1 }, .rhs = &[_]Symbol{ .{ .variable = V_WFF1 }, .{ .terminal = T_BICOND }, .{ .variable = V_WFF2 } } };
+    const r3 = Production{ .lhs = .{ .variable = V_WFF2 }, .rhs = &[_]Symbol{.{ .variable = V_WFF3 }} };
+    const r4 = Production{ .lhs = .{ .variable = V_WFF2 }, .rhs = &[_]Symbol{ .{ .variable = V_WFF2 }, .{ .terminal = T_COND }, .{ .variable = V_WFF3 } } };
+    const r5 = Production{ .lhs = .{ .variable = V_WFF3 }, .rhs = &[_]Symbol{.{ .variable = V_WFF4 }} };
+    const r6 = Production{ .lhs = .{ .variable = V_WFF3 }, .rhs = &[_]Symbol{ .{ .variable = V_WFF3 }, .{ .terminal = T_OR }, .{ .variable = V_WFF4 } } };
+    const r7 = Production{ .lhs = .{ .variable = V_WFF3 }, .rhs = &[_]Symbol{ .{ .variable = V_WFF3 }, .{ .terminal = T_AND }, .{ .variable = V_WFF4 } } };
+    const r8 = Production{ .lhs = .{ .variable = V_WFF4 }, .rhs = &[_]Symbol{.{ .variable = V_PROP }} };
+    const r9 = Production{ .lhs = .{ .variable = V_WFF4 }, .rhs = &[_]Symbol{ .{ .terminal = T_NOT }, .{ .variable = V_WFF4 } } };
+    const r10 = Production{ .lhs = .{ .variable = V_PROP }, .rhs = &[_]Symbol{ .{ .terminal = T_LPAREN }, .{ .variable = V_WFF1 }, .{ .terminal = T_RPAREN } } };
+    const r11 = Production{ .lhs = .{ .variable = V_PROP }, .rhs = &[_]Symbol{.{ .terminal = T_PROPTOK }} };
 
     var expected_grammar = G{
         .allocator = null,
         .rules = &[_]Production{ r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11 },
-        .variables = &[_]TestVariable {V("S"), V("wff1"), V("wff2"), V("wff3"), V("wff4"), V("prop")},
-        .terminals = &[_]TestToken {.Bicond, .Cond, .Or, .And, .Not, .LParen, .RParen, .Proposition, .End},
+        .variables = &[_]TestVariable{ V("S"), V("wff1"), V("wff2"), V("wff3"), V("wff4"), V("prop") },
+        .terminals = &[_]TestTerminal{ .Bicond, .Cond, .Or, .And, .Not, .LParen, .RParen, .Proposition, .End },
     };
     defer expected_grammar.deinit();
 
@@ -918,19 +913,15 @@ test "Grammar.initFromTuples-grammar2_2" {
 
 test "firsts_and_follows-grammar1_0" {
     const V = TestVariable.fromString;
-    comptime var grammar = Grammar(TestVariable, TestToken).initFromTuples(
-        .{
-            .{V("S"), .{V("wff")}},
-            .{V("wff"), .{TestToken.Proposition}},
-            .{V("wff"), .{TestToken.Not, V("wff")}},
-            .{V("wff"), .{TestToken.LParen, V("wff"), TestToken.And, V("wff"), TestToken.RParen}},
-            .{V("wff"), .{TestToken.LParen, V("wff"), TestToken.Or, V("wff"), TestToken.RParen}},
-            .{V("wff"), .{TestToken.LParen, V("wff"), TestToken.Cond, V("wff"), TestToken.RParen}},
-            .{V("wff"), .{TestToken.LParen, V("wff"), TestToken.Bicond, V("wff"), TestToken.RParen}},
-        },
-        V("S"),
-        TestToken.End
-    );
+    comptime var grammar = Grammar(TestVariable, TestTerminal).initFromTuples(.{
+        .{ V("S"), .{V("wff")} },
+        .{ V("wff"), .{TestTerminal.Proposition} },
+        .{ V("wff"), .{ TestTerminal.Not, V("wff") } },
+        .{ V("wff"), .{ TestTerminal.LParen, V("wff"), TestTerminal.And, V("wff"), TestTerminal.RParen } },
+        .{ V("wff"), .{ TestTerminal.LParen, V("wff"), TestTerminal.Or, V("wff"), TestTerminal.RParen } },
+        .{ V("wff"), .{ TestTerminal.LParen, V("wff"), TestTerminal.Cond, V("wff"), TestTerminal.RParen } },
+        .{ V("wff"), .{ TestTerminal.LParen, V("wff"), TestTerminal.Bicond, V("wff"), TestTerminal.RParen } },
+    }, V("S"), TestTerminal.End);
     defer grammar.deinit();
 
     var allocator = std.testing.allocator;
@@ -993,10 +984,10 @@ test "firsts_and_follows-grammar2_2" {
     // R0:  S -> wff1
     // R1:  wff1 -> wff2
     // R2:  wff1 -> wff1 <=> wff2
-    // R3:  wff2 -> wff3 
+    // R3:  wff2 -> wff3
     // R4:  wff2 -> wff2 => wff3
-    // R5:  wff3 -> wff4 
-    // R6:  wff3 -> wff3 v wff4 
+    // R5:  wff3 -> wff4
+    // R6:  wff3 -> wff3 v wff4
     // R7:  wff3 -> wff3 ^ wff4
     // R8:  wff4 -> prop
     // R9:  wff4 -> ~ wff4
@@ -1004,30 +995,30 @@ test "firsts_and_follows-grammar2_2" {
     // R11: prop -> PROPTOK
 
     const V = TestVariable.fromString;
-    const G = Grammar(TestVariable, TestToken);
+    const G = Grammar(TestVariable, TestTerminal);
 
     comptime var grammar = G.initFromTuples(
         .{
-            .{V("S"), .{V("wff1")}},
+            .{ V("S"), .{V("wff1")} },
 
-            .{V("wff1"), .{V("wff2")}},
-            .{V("wff1"), .{V("wff1"), TestToken.Bicond, V("wff2")}},
+            .{ V("wff1"), .{V("wff2")} },
+            .{ V("wff1"), .{ V("wff1"), TestTerminal.Bicond, V("wff2") } },
 
-            .{V("wff2"), .{V("wff3")}},
-            .{V("wff2"), .{V("wff2"), TestToken.Cond, V("wff3")}},
-            
-            .{V("wff3"), .{V("wff4")}},
-            .{V("wff3"), .{V("wff3"), TestToken.Or, V("wff4")}},
-            .{V("wff3"), .{V("wff3"), TestToken.And, V("wff4")}},
+            .{ V("wff2"), .{V("wff3")} },
+            .{ V("wff2"), .{ V("wff2"), TestTerminal.Cond, V("wff3") } },
 
-            .{V("wff4"), .{V("prop")}},
-            .{V("wff4"), .{TestToken.Not, V("wff4")}},
+            .{ V("wff3"), .{V("wff4")} },
+            .{ V("wff3"), .{ V("wff3"), TestTerminal.Or, V("wff4") } },
+            .{ V("wff3"), .{ V("wff3"), TestTerminal.And, V("wff4") } },
 
-            .{V("prop"), .{TestToken.LParen, V("wff1"), TestToken.RParen}},
-            .{V("prop"), .{TestToken.Proposition}},
+            .{ V("wff4"), .{V("prop")} },
+            .{ V("wff4"), .{ TestTerminal.Not, V("wff4") } },
+
+            .{ V("prop"), .{ TestTerminal.LParen, V("wff1"), TestTerminal.RParen } },
+            .{ V("prop"), .{TestTerminal.Proposition} },
         },
         V("S"),
-        TestToken.End,
+        TestTerminal.End,
     );
     defer grammar.deinit();
 
@@ -1094,23 +1085,25 @@ test "firsts_and_follows-grammar2_2" {
     // }
 }
 
-fn ParseTable(comptime V: type, comptime T: type) type {
+pub fn ParseTable(comptime Variable: type, comptime Terminal: type) type {
     return struct {
         const Self = @This();
-        const GrammarType = Grammar(V, T);
+        const GrammarType = Grammar(Variable, Terminal);
         const Action = union(enum) {
-            state: usize,
+            state: StateIdx,
             reduce: usize, // index of grammar.rules
             invalid,
             accept,
         };
+
+        pub const StateIdx = usize;
 
         allocator: std.mem.Allocator,
         grammar: GrammarType,
         goto_table: [][]Action,
         action_table: [][]Action,
 
-        fn init(allocator: std.mem.Allocator, grammar: GrammarType) !Self {
+        pub fn init(allocator: std.mem.Allocator, grammar: GrammarType) !Self {
             const goto_table, const action_table = try generateTables(allocator, grammar);
 
             return Self{
@@ -1122,7 +1115,7 @@ fn ParseTable(comptime V: type, comptime T: type) type {
         }
 
         /// Note: Does NOT free the memory associated with the grammar
-        fn deinit(self: Self) void {
+        pub fn deinit(self: Self) void {
             for (self.goto_table, self.action_table) |goto_row, action_row| {
                 self.allocator.free(goto_row);
                 self.allocator.free(action_row);
@@ -1130,7 +1123,33 @@ fn ParseTable(comptime V: type, comptime T: type) type {
             self.allocator.free(self.goto_table);
             self.allocator.free(self.action_table);
         }
-        
+
+        pub fn getStartState(_: Self) StateIdx {
+            return 0;
+        }
+
+        // pub fn lookupTerminal(self: Self, state: StateIdx, terminal: Terminal) Action {
+        //     const terminal_idx = self.grammar.getSymbolFromTerminal(terminal).?.terminal;
+        //     return self.action_table[state][terminal_idx];
+        // }
+
+        pub fn lookupSymbol(self: Self, state: StateIdx, symbol: Symbol) Action {
+            return switch(symbol) {
+                .terminal => |t_idx| self.action_table[state][t_idx],
+                .variable => |v_idx| self.goto_table[state][v_idx]
+            };
+        }
+
+        pub fn lookupVariable(self: Self, state: StateIdx, variable: Variable) ?Action {
+            const symbol = self.grammar.getSymbolFromVariable(variable) orelse return null;
+            return self.lookupSymbol(state, symbol);
+        }
+
+        pub fn lookupTerminal(self: Self, state: StateIdx, terminal: Terminal) ?Action {
+            const symbol = self.grammar.getSymbolFromTerminal(terminal) orelse return null;
+            return self.lookupSymbol(state, symbol);
+        }
+
         fn printDebugTable(self: Self) void {
             const COL_SPACE = "4";
             debug.print("\n{s: ^" ++ COL_SPACE ++ "} ||", .{""});
@@ -1142,7 +1161,7 @@ fn ParseTable(comptime V: type, comptime T: type) type {
                 debug.print(" {s: ^" ++ COL_SPACE ++ "} |", .{v.getString()});
             }
             debug.print("|", .{});
-            
+
             for (self.action_table, self.goto_table, 0..) |action_row, goto_row, s| {
                 debug.print("\n{d: >" ++ COL_SPACE ++ "} ||", .{s});
                 for (action_row) |entry| switch (entry) {
@@ -1163,11 +1182,7 @@ fn ParseTable(comptime V: type, comptime T: type) type {
             debug.print("\n", .{});
         }
 
-        fn expandProductions(
-            allocator: std.mem.Allocator, 
-            grammar: GrammarType,
-            productions: []const ProductionInstance
-        ) !struct{[]std.ArrayList(ProductionInstance), []std.ArrayList(ProductionInstance)} {
+        fn expandProductions(allocator: std.mem.Allocator, grammar: GrammarType, productions: []const ProductionInstance) !struct { []std.ArrayList(ProductionInstance), []std.ArrayList(ProductionInstance) } {
             // const?
             var variable_branches = try allocator.alloc(std.ArrayList(ProductionInstance), grammar.getVariableCount());
             errdefer allocator.free(variable_branches);
@@ -1204,7 +1219,7 @@ fn ParseTable(comptime V: type, comptime T: type) type {
             // currently being read.
             while (stack.popOrNull()) |prod| {
                 if (prod.readCursor()) |sym| {
-                    switch(sym) {
+                    switch (sym) {
                         .variable => |idx| {
                             // If the variable has not been encountered yet,
                             // expand it by pushing any productions from it onto
@@ -1224,7 +1239,7 @@ fn ParseTable(comptime V: type, comptime T: type) type {
                 }
             }
 
-            return .{variable_branches, terminal_branches};
+            return .{ variable_branches, terminal_branches };
         }
 
         fn checkStateAlreadyExists(starting_productions_table: std.ArrayList([]ProductionInstance), productions: std.ArrayList(ProductionInstance)) ?usize {
@@ -1243,7 +1258,7 @@ fn ParseTable(comptime V: type, comptime T: type) type {
             return null;
         }
 
-        fn generateTables(allocator: std.mem.Allocator, grammar: GrammarType) !struct{[][]Action, [][]Action} {
+        fn generateTables(allocator: std.mem.Allocator, grammar: GrammarType) !struct { [][]Action, [][]Action } {
             var goto_table = std.ArrayList([]Action).init(allocator);
             defer goto_table.deinit();
             errdefer for (goto_table.items) |row| {
@@ -1280,15 +1295,14 @@ fn ParseTable(comptime V: type, comptime T: type) type {
                     allocator.free(variable_branches);
                     allocator.free(terminal_branches);
                 }
-                
 
                 for (variable_branches, 0..) |*prod_list, v_idx| {
-                    // If there are no transitions from this variable, mark 
+                    // If there are no transitions from this variable, mark
                     // this cell as invalid.
                     if (prod_list.items.len == 0) {
                         goto_table.items[state][v_idx] = Action.invalid;
-                    // If expanding these productions would result in a state 
-                    // that already exists, 
+                        // If expanding these productions would result in a state
+                        // that already exists,
                     } else if (checkStateAlreadyExists(primary_productions_table, prod_list.*)) |existing_state| {
                         goto_table.items[state][v_idx] = try switch (goto_table.items[state][v_idx]) {
                             .invalid => Action{ .state = existing_state },
@@ -1304,12 +1318,12 @@ fn ParseTable(comptime V: type, comptime T: type) type {
                     }
                 }
                 for (terminal_branches, 0..) |*prod_list, t_idx| {
-                    // If there are no transitions from this variable, mark 
+                    // If there are no transitions from this variable, mark
                     // this cell as invalid.
                     if (prod_list.items.len == 0) {
                         action_table.items[state][t_idx] = Action.invalid;
-                    // If expanding these productions would result in a state 
-                    // that already exists, 
+                        // If expanding these productions would result in a state
+                        // that already exists,
                     } else if (checkStateAlreadyExists(primary_productions_table, prod_list.*)) |existing_state| {
                         action_table.items[state][t_idx] = try switch (action_table.items[state][t_idx]) {
                             .invalid => Action{ .state = existing_state },
@@ -1353,47 +1367,42 @@ fn ParseTable(comptime V: type, comptime T: type) type {
                     }
 
                     // TODO: hardcoded 0 kinda yucky
-                    if (instance.production.lhs.variable == grammar.getStartVariableIdx()) {
-                        switch (action_table.items[state_num][grammar.getEndTerminalIdx()]) {
+                    if (instance.production.lhs.variable == grammar.getStartVariable().variable) {
+                        switch (action_table.items[state_num][grammar.getEndTerminal().terminal]) {
                             .invalid => return TableGeneratorError.acceptError,
                             .state => return TableGeneratorError.shiftAcceptError,
                             .reduce => |reduction_rule_idx| {
                                 if (reduction_rule_idx == grammar.getStartRuleIdx()) {
-                                    action_table.items[state_num][grammar.getEndTerminalIdx()] = Action.accept;
+                                    action_table.items[state_num][grammar.getEndTerminal().terminal] = Action.accept;
                                 } else {
                                     return TableGeneratorError.acceptError;
                                 }
                             },
-                            .accept => {}
-                            
+                            .accept => {},
                         }
                     }
                 }
             }
-            return .{try goto_table.toOwnedSlice(), try action_table.toOwnedSlice()};
+            return .{ try goto_table.toOwnedSlice(), try action_table.toOwnedSlice() };
         }
     };
-} 
+}
 
 test "ParseTable.expandProductions-grammar1_0" {
     const V = TestVariable.fromString;
-    const G = Grammar(TestVariable, TestToken);
-    comptime var grammar = G.initFromTuples(
-        .{
-            .{V("S"), .{V("wff")}},
-            .{V("wff"), .{TestToken.Proposition}},
-            .{V("wff"), .{TestToken.Not,    V("wff")}},
-            .{V("wff"), .{TestToken.LParen, V("wff"), TestToken.And,    V("wff"), TestToken.RParen}},
-            .{V("wff"), .{TestToken.LParen, V("wff"), TestToken.Or,     V("wff"), TestToken.RParen}},
-            .{V("wff"), .{TestToken.LParen, V("wff"), TestToken.Cond,   V("wff"), TestToken.RParen}},
-            .{V("wff"), .{TestToken.LParen, V("wff"), TestToken.Bicond, V("wff"), TestToken.RParen}},
-        },
-        V("S"),
-        TestToken.End
-    );
+    const G = Grammar(TestVariable, TestTerminal);
+    comptime var grammar = G.initFromTuples(.{
+        .{ V("S"), .{V("wff")} },
+        .{ V("wff"), .{TestTerminal.Proposition} },
+        .{ V("wff"), .{ TestTerminal.Not, V("wff") } },
+        .{ V("wff"), .{ TestTerminal.LParen, V("wff"), TestTerminal.And, V("wff"), TestTerminal.RParen } },
+        .{ V("wff"), .{ TestTerminal.LParen, V("wff"), TestTerminal.Or, V("wff"), TestTerminal.RParen } },
+        .{ V("wff"), .{ TestTerminal.LParen, V("wff"), TestTerminal.Cond, V("wff"), TestTerminal.RParen } },
+        .{ V("wff"), .{ TestTerminal.LParen, V("wff"), TestTerminal.Bicond, V("wff"), TestTerminal.RParen } },
+    }, V("S"), TestTerminal.End);
     defer grammar.deinit();
 
-    const P = ParseTable(TestVariable, TestToken);
+    const P = ParseTable(TestVariable, TestTerminal);
 
     const start_productions = [_]ProductionInstance{ProductionInstance.fromProduction(grammar.rules[0])};
     const variable_branches, const terminal_branches = try P.expandProductions(std.testing.allocator, grammar, &start_productions);
@@ -1426,26 +1435,22 @@ test "ParseTable.expandProductions-grammar1_0" {
 
 test "create_parse_table-grammar1_0" {
     const V = TestVariable.fromString;
-    const G = Grammar(TestVariable, TestToken);
-    comptime var grammar = G.initFromTuples(
-        .{
-            .{V("S"), .{V("wff")}},
-            .{V("wff"), .{TestToken.Proposition}},
-            .{V("wff"), .{TestToken.Not,    V("wff")}},
-            .{V("wff"), .{TestToken.LParen, V("wff"), TestToken.And,    V("wff"), TestToken.RParen}},
-            .{V("wff"), .{TestToken.LParen, V("wff"), TestToken.Or,     V("wff"), TestToken.RParen}},
-            .{V("wff"), .{TestToken.LParen, V("wff"), TestToken.Cond,   V("wff"), TestToken.RParen}},
-            .{V("wff"), .{TestToken.LParen, V("wff"), TestToken.Bicond, V("wff"), TestToken.RParen}},
-        },
-        V("S"),
-        TestToken.End
-    );
+    const G = Grammar(TestVariable, TestTerminal);
+    comptime var grammar = G.initFromTuples(.{
+        .{ V("S"), .{V("wff")} },
+        .{ V("wff"), .{TestTerminal.Proposition} },
+        .{ V("wff"), .{ TestTerminal.Not, V("wff") } },
+        .{ V("wff"), .{ TestTerminal.LParen, V("wff"), TestTerminal.And, V("wff"), TestTerminal.RParen } },
+        .{ V("wff"), .{ TestTerminal.LParen, V("wff"), TestTerminal.Or, V("wff"), TestTerminal.RParen } },
+        .{ V("wff"), .{ TestTerminal.LParen, V("wff"), TestTerminal.Cond, V("wff"), TestTerminal.RParen } },
+        .{ V("wff"), .{ TestTerminal.LParen, V("wff"), TestTerminal.Bicond, V("wff"), TestTerminal.RParen } },
+    }, V("S"), TestTerminal.End);
     defer grammar.deinit();
 
-    const P = ParseTable(TestVariable, TestToken);
+    const P = ParseTable(TestVariable, TestTerminal);
 
     const table = try P.init(std.testing.allocator, grammar);
     defer table.deinit();
-    
+
     table.printDebugTable();
 }
