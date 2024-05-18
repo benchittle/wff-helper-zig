@@ -9,6 +9,24 @@ pub const ParseError = error{
     UnexpectedToken,
 };
 
+const test_grammar_1 = ret: {
+    const _V = TestVariable.fromString;
+    const G = slr.Grammar(TestVariable, TestTerminal);
+    break :ret G.initFromTuples(
+        .{
+            .{ _V("S"), .{_V("wff")} },
+            .{ _V("wff"), .{TestTerminal.Proposition} },
+            .{ _V("wff"), .{ TestTerminal.Not, _V("wff") } },
+            .{ _V("wff"), .{ TestTerminal.LParen, _V("wff"), TestTerminal.And, _V("wff"), TestTerminal.RParen } },
+            .{ _V("wff"), .{ TestTerminal.LParen, _V("wff"), TestTerminal.Or, _V("wff"), TestTerminal.RParen } },
+            .{ _V("wff"), .{ TestTerminal.LParen, _V("wff"), TestTerminal.Cond, _V("wff"), TestTerminal.RParen } },
+            .{ _V("wff"), .{ TestTerminal.LParen, _V("wff"), TestTerminal.Bicond, _V("wff"), TestTerminal.RParen } },
+        },
+        _V("S"),
+        TestTerminal.End,
+    );
+};
+
 const ParseTree = OldParseTree;
 
 pub const MatchHashMap = std.StringHashMap(*OldParseTree.Node);
@@ -166,7 +184,7 @@ pub fn ParseTreePostOrderIterator(comptime Token: type) type {
 }
 
 // test "ParseTreePostOrderIterator" {
-//     var tree = try OldParseTree.init(std.testing.allocator, "(p v q)");
+//     var tree = try NewParseTree.init(std.testing.allocator, "(p v q)");
 //     defer tree.deinit();
 
 //     var it = tree.root.iterPostOrder();
@@ -1191,25 +1209,6 @@ fn oldTokenToTerminal(token: lex.Token) ?TestTerminal {
 }
 
 test "Parser.parse: ''" {
-    const V = TestVariable.fromString;
-    const G = slr.Grammar(TestVariable, TestTerminal);
-    const grammar = comptime ret: {
-        break :ret G.initFromTuples(
-            .{
-                .{ V("S"), .{V("wff")} },
-                .{ V("wff"), .{TestTerminal.Proposition} },
-                .{ V("wff"), .{ TestTerminal.Not, V("wff") } },
-                .{ V("wff"), .{ TestTerminal.LParen, V("wff"), TestTerminal.And, V("wff"), TestTerminal.RParen } },
-                .{ V("wff"), .{ TestTerminal.LParen, V("wff"), TestTerminal.Or, V("wff"), TestTerminal.RParen } },
-                .{ V("wff"), .{ TestTerminal.LParen, V("wff"), TestTerminal.Cond, V("wff"), TestTerminal.RParen } },
-                .{ V("wff"), .{ TestTerminal.LParen, V("wff"), TestTerminal.Bicond, V("wff"), TestTerminal.RParen } },
-            },
-            V("S"),
-            TestTerminal.End,
-        );
-    };
-    defer grammar.deinit();
-
     const ParserType = NewParser(
         TestVariable, 
         TestTerminal, 
@@ -1219,7 +1218,7 @@ test "Parser.parse: ''" {
     );
     const parser = try ParserType.init(
         std.testing.allocator, 
-        grammar
+        test_grammar_1
     );
     defer parser.deinit();
     
@@ -1230,25 +1229,6 @@ test "Parser.parse: ''" {
 }
 
 test "Parser.parse: '~)q p v('" {
-    const V = TestVariable.fromString;
-    const G = slr.Grammar(TestVariable, TestTerminal);
-    const grammar = comptime ret: {
-        break :ret G.initFromTuples(
-            .{
-                .{ V("S"), .{V("wff")} },
-                .{ V("wff"), .{TestTerminal.Proposition} },
-                .{ V("wff"), .{ TestTerminal.Not, V("wff") } },
-                .{ V("wff"), .{ TestTerminal.LParen, V("wff"), TestTerminal.And, V("wff"), TestTerminal.RParen } },
-                .{ V("wff"), .{ TestTerminal.LParen, V("wff"), TestTerminal.Or, V("wff"), TestTerminal.RParen } },
-                .{ V("wff"), .{ TestTerminal.LParen, V("wff"), TestTerminal.Cond, V("wff"), TestTerminal.RParen } },
-                .{ V("wff"), .{ TestTerminal.LParen, V("wff"), TestTerminal.Bicond, V("wff"), TestTerminal.RParen } },
-            },
-            V("S"),
-            TestTerminal.End,
-        );
-    };
-    defer grammar.deinit();
-
     const ParserType = NewParser(
         TestVariable, 
         TestTerminal, 
@@ -1258,7 +1238,7 @@ test "Parser.parse: '~)q p v('" {
     );
     const parser = try ParserType.init(
         std.testing.allocator, 
-        grammar
+        test_grammar_1
     );
     defer parser.deinit();
 
@@ -1269,26 +1249,7 @@ test "Parser.parse: '~)q p v('" {
 }
 
 test "Parser.parse: '(p v q)'" {
-    const allocator = std.testing.allocator;
-    
-    const V = TestVariable.fromString;
-    const G = slr.Grammar(TestVariable, TestTerminal);
-    const grammar = comptime ret: {
-        break :ret G.initFromTuples(
-            .{
-                .{ V("S"), .{V("wff")} },
-                .{ V("wff"), .{TestTerminal.Proposition} },
-                .{ V("wff"), .{ TestTerminal.Not, V("wff") } },
-                .{ V("wff"), .{ TestTerminal.LParen, V("wff"), TestTerminal.And, V("wff"), TestTerminal.RParen } },
-                .{ V("wff"), .{ TestTerminal.LParen, V("wff"), TestTerminal.Or, V("wff"), TestTerminal.RParen } },
-                .{ V("wff"), .{ TestTerminal.LParen, V("wff"), TestTerminal.Cond, V("wff"), TestTerminal.RParen } },
-                .{ V("wff"), .{ TestTerminal.LParen, V("wff"), TestTerminal.Bicond, V("wff"), TestTerminal.RParen } },
-            },
-            V("S"),
-            TestTerminal.End,
-        );
-    };
-    defer grammar.deinit();
+    const allocator = std.testing.allocator;  
 
     const ParserType = NewParser(
         TestVariable, 
@@ -1299,7 +1260,7 @@ test "Parser.parse: '(p v q)'" {
     );
     const parser = try ParserType.init(
         allocator, 
-        grammar
+        test_grammar_1
     );
     defer parser.deinit();
 
