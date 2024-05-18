@@ -27,98 +27,118 @@ const test_grammar_1 = ret: {
     );
 };
 
+const TestParserType = NewParser(
+        TestVariable, 
+        TestTerminal, 
+        lex.Token,
+        lex.tokenize,
+        oldTokenToTerminal,
+    );
+
 const ParseTree = OldParseTree;
 
 pub const MatchHashMap = std.StringHashMap(*OldParseTree.Node);
 
-pub const ParseTreeDepthFirstIterator = struct {
-    const Self = @This();
+pub fn ParseTreeDepthFirstIterator(comptime Token: type) type {
+    return struct {
+        const Self = @This();
+        const ParseTreeType = NewParseTree(Token);
 
-    start: *const OldParseTree.Node,
-    current: ?[*]OldParseTree.Node,
+        start: *const ParseTreeType.Node,
+        current: ?[*]ParseTreeType.Node,
 
-    fn backtrack(self: Self) ?[*]OldParseTree.Node {
-        var next_node = self.current.?;
-        while (next_node[0].parent) |parent| {
-            if (@as(@TypeOf(self.start), @ptrCast(next_node)) == self.start) return null;
-            const siblings = parent.data.Nonterminal.items;
-            if (&(next_node[0]) == &(siblings[siblings.len - 1])) {
-                next_node = @ptrCast(parent);
-            } else {
-                return next_node + 1;
+        fn backtrack(self: Self) ?[*]ParseTreeType.Node {
+            var next_node = self.current.?;
+            while (next_node[0].parent) |parent| {
+                if (@as(@TypeOf(self.start), @ptrCast(next_node)) == self.start) return null;
+                const siblings = parent.kind.nonleaf;
+                if (&(next_node[0]) == &(siblings[siblings.len - 1])) {
+                    next_node = @ptrCast(parent);
+                } else {
+                    return next_node + 1;
+                }
             }
-        }
-        return null;
-    }
-
-    pub fn next(self: *Self) ?*OldParseTree.Node {
-        const current_node = &(self.current orelse return null)[0];
-
-        self.current = switch (current_node.data) {
-            .Terminal => self.backtrack(),
-            .Nonterminal => |children| @ptrCast(&children.items[0]),
-        };
-
-        return current_node;
-    }
-
-    pub fn nextUnchecked(self: *Self) *OldParseTree.Node {
-        std.debug.assert(self.hasNext());
-        return self.next().?;
-    }
-
-    pub fn peek(self: Self) ?*OldParseTree.Node {
-        if (self.current) |node| {
-            return &node[0];
-        } else {
             return null;
         }
-    }
 
-    pub fn hasNext(self: Self) bool {
-        return self.peek() != null;
-    }
+        pub fn next(self: *Self) ?*ParseTreeType.Node {
+            const current_node = &(self.current orelse return null)[0];
 
-    // This means we won't visit this node, its child nodes, nor their grandchildren etc.
-    pub fn skipChildren(self: *Self) void {
-        const current = &(self.current orelse return)[0];
-        if (current.parent) |parent| {
-            self.current = @ptrCast(parent);
-            self.current = self.backtrack();
-        } else {
-            self.current = null;
+            self.current = switch (current_node.kind) {
+                .leaf => self.backtrack(),
+                .nonleaf => |children| @ptrCast(&children[0]),
+            };
+
+            return current_node;
         }
-    }
-};
 
-// test "ParseTreeDepthFirstIterator" {
-//     var tree = try OldParseTree.init(std.testing.allocator, "(p v q)");
-//     defer tree.deinit();
+        pub fn nextUnchecked(self: *Self) *ParseTreeType.Node {
+            std.debug.assert(self.hasNext());
+            return self.next().?;
+        }
 
-//     try std.testing.expectEqual(tree.root, tree.root.data.Nonterminal.items[0].parent.?);
-//     const c: *OldParseTree.Node = tree.root.data.Nonterminal.items[1].parent.?;
-//     try std.testing.expectEqual(c, c.data.Nonterminal.items[0].parent.?);
+        pub fn peek(self: Self) ?*ParseTreeType.Node {
+            if (self.current) |node| {
+                return &node[0];
+            } else {
+                return null;
+            }
+        }
 
-//     var it = tree.root.iterDepthFirst();
+        pub fn hasNext(self: Self) bool {
+            return self.peek() != null;
+        }
 
-//     var t1 = OldParseTree.Data{ .Terminal = lex.Token.LParen };
-//     var t2 = OldParseTree.Data{ .Terminal = lex.Token{ .Proposition = lex.PropositionVar{ .string = try std.testing.allocator.dupe(u8, "p") } } };
-//     defer std.testing.allocator.free(t2.Terminal.Proposition.string);
-//     var t3 = OldParseTree.Data{ .Terminal = lex.Token{ .Operator = lex.WffOperator.Or } };
-//     var t4 = OldParseTree.Data{ .Terminal = lex.Token{ .Proposition = lex.PropositionVar{ .string = try std.testing.allocator.dupe(u8, "q") } } };
-//     defer std.testing.allocator.free(t4.Terminal.Proposition.string);
-//     var t5 = OldParseTree.Data{ .Terminal = lex.Token.RParen };
+        // This means we won't visit this node, its child nodes, nor their grandchildren etc.
+        pub fn skipChildren(self: *Self) void {
+            const current = &(self.current orelse return)[0];
+            if (current.parent) |parent| {
+                self.current = @ptrCast(parent);
+                self.current = self.backtrack();
+            } else {
+                self.current = null;
+            }
+        }
+    };
+}
 
-//     _ = it.next();
-//     try std.testing.expect(t1.Terminal.eql(it.next().?.data.Terminal));
-//     _ = it.next();
-//     try std.testing.expect(t2.Terminal.eql(it.next().?.data.Terminal));
-//     try std.testing.expect(t3.Terminal.eql(it.next().?.data.Terminal));
-//     _ = it.next();
-//     try std.testing.expect(t4.Terminal.eql(it.next().?.data.Terminal));
-//     try std.testing.expect(t5.Terminal.eql(it.next().?.data.Terminal));
-//     try std.testing.expect((it.next()) == null);
-// }
+test "ParseTreeDepthFirstIterator" {
+    const ParseTreeType = TestParserType.ParseTreeType;
+    const allocator = std.testing.allocator;
+
+    const parser = try TestParserType.init(
+        allocator,
+        test_grammar_1
+    );
+    defer parser.deinit();
+
+    const tree = try parser.parse(allocator, "(p v q)");
+    defer tree.deinit();
+
+    try std.testing.expectEqual(tree.root, tree.root.kind.nonleaf[0].parent.?);
+    const c: *ParseTreeType.Node = tree.root.kind.nonleaf[1].parent.?;
+    try std.testing.expectEqual(c, c.kind.nonleaf[0].parent.?);
+
+    var it = tree.root.iterDepthFirst();
+
+    var t1 = ParseTreeType.Kind{ .leaf = lex.Token.LParen };
+    var t2 = ParseTreeType.Kind{ .leaf = lex.Token{ .Proposition = lex.PropositionVar{ .string = try std.testing.allocator.dupe(u8, "p") } } };
+    defer std.testing.allocator.free(t2.leaf.Proposition.string);
+    var t3 = ParseTreeType.Kind{ .leaf = lex.Token{ .Operator = lex.WffOperator.Or } };
+    var t4 = ParseTreeType.Kind{ .leaf = lex.Token{ .Proposition = lex.PropositionVar{ .string = try std.testing.allocator.dupe(u8, "q") } } };
+    defer std.testing.allocator.free(t4.leaf.Proposition.string);
+    var t5 = ParseTreeType.Kind{ .leaf = lex.Token.RParen };
+
+    _ = it.next();
+    try std.testing.expect(t1.leaf.eql(it.next().?.kind.leaf));
+    _ = it.next();
+    try std.testing.expect(t2.leaf.eql(it.next().?.kind.leaf));
+    try std.testing.expect(t3.leaf.eql(it.next().?.kind.leaf));
+    _ = it.next();
+    try std.testing.expect(t4.leaf.eql(it.next().?.kind.leaf));
+    try std.testing.expect(t5.leaf.eql(it.next().?.kind.leaf));
+    try std.testing.expect((it.next()) == null);
+}
 
 // TODO: Include this in scope of ParseTree so we don't need Token arg
 pub fn ParseTreePostOrderIterator(comptime Token: type) type {
@@ -183,30 +203,38 @@ pub fn ParseTreePostOrderIterator(comptime Token: type) type {
     };
 }
 
-// test "ParseTreePostOrderIterator" {
-//     var tree = try NewParseTree.init(std.testing.allocator, "(p v q)");
-//     defer tree.deinit();
+test "ParseTreePostOrderIterator" {
+    const allocator = std.testing.allocator;
 
-//     var it = tree.root.iterPostOrder();
+    const parser = try TestParserType.init(
+        allocator,
+        test_grammar_1
+    );
+    defer parser.deinit();
 
-//     var t1 = OldParseTree.Data{ .Terminal = lex.Token.LParen };
-//     var t2 = OldParseTree.Data{ .Terminal = lex.Token{ .Proposition = lex.PropositionVar{ .string = try std.testing.allocator.dupe(u8, "p") } } };
-//     defer std.testing.allocator.free(t2.Terminal.Proposition.string);
-//     var t3 = OldParseTree.Data{ .Terminal = lex.Token{ .Operator = lex.WffOperator.Or } };
-//     var t4 = OldParseTree.Data{ .Terminal = lex.Token{ .Proposition = lex.PropositionVar{ .string = try std.testing.allocator.dupe(u8, "q") } } };
-//     defer std.testing.allocator.free(t4.Terminal.Proposition.string);
-//     var t5 = OldParseTree.Data{ .Terminal = lex.Token.RParen };
+    const tree = try parser.parse(allocator, "(p v q)");
+    defer tree.deinit();
 
-//     try std.testing.expect(t1.Terminal.eql(it.nextUnchecked().data.Terminal));
-//     try std.testing.expect(t2.Terminal.eql(it.nextUnchecked().data.Terminal));
-//     _ = it.next();
-//     try std.testing.expect(t3.Terminal.eql(it.nextUnchecked().data.Terminal));
-//     try std.testing.expect(t4.Terminal.eql(it.nextUnchecked().data.Terminal));
-//     _ = it.next();
-//     try std.testing.expect(t5.Terminal.eql(it.nextUnchecked().data.Terminal));
-//     _ = it.next();
-//     try std.testing.expect(it.next() == null);
-// }
+    var it = tree.root.iterPostOrder();
+
+    var t1 = OldParseTree.Data{ .Terminal = lex.Token.LParen };
+    var t2 = OldParseTree.Data{ .Terminal = lex.Token{ .Proposition = lex.PropositionVar{ .string = try std.testing.allocator.dupe(u8, "p") } } };
+    defer std.testing.allocator.free(t2.Terminal.Proposition.string);
+    var t3 = OldParseTree.Data{ .Terminal = lex.Token{ .Operator = lex.WffOperator.Or } };
+    var t4 = OldParseTree.Data{ .Terminal = lex.Token{ .Proposition = lex.PropositionVar{ .string = try std.testing.allocator.dupe(u8, "q") } } };
+    defer std.testing.allocator.free(t4.Terminal.Proposition.string);
+    var t5 = OldParseTree.Data{ .Terminal = lex.Token.RParen };
+
+    try std.testing.expect(t1.Terminal.eql(it.nextUnchecked().kind.leaf));
+    try std.testing.expect(t2.Terminal.eql(it.nextUnchecked().kind.leaf));
+    _ = it.next();
+    try std.testing.expect(t3.Terminal.eql(it.nextUnchecked().kind.leaf));
+    try std.testing.expect(t4.Terminal.eql(it.nextUnchecked().kind.leaf));
+    _ = it.next();
+    try std.testing.expect(t5.Terminal.eql(it.nextUnchecked().kind.leaf));
+    _ = it.next();
+    try std.testing.expect(it.next() == null);
+}
 
 pub const OldParseTree = struct {
     const Self = @This();
@@ -565,9 +593,9 @@ pub fn NewParseTree(comptime Token: type) type {
             //     return copy_root;
             // }
 
-            // pub fn iterDepthFirst(self: *Node) ParseTreeDepthFirstIterator {
-            //     return ParseTreeDepthFirstIterator{ .start = self, .current = @ptrCast(self) };
-            // }
+            pub fn iterDepthFirst(self: *Node) ParseTreeDepthFirstIterator(Token) {
+                return ParseTreeDepthFirstIterator(Token) { .start = self, .current = @ptrCast(self) };
+            }
 
             pub fn iterPostOrder(self: *Node) ParseTreePostOrderIterator(Token) {
                 var start_node = self;
@@ -1039,8 +1067,6 @@ fn NewParser(
             var node_stack = std.ArrayList(ParseTreeType.Node).init(allocator);
             defer node_stack.deinit();
 
-            debug.print("\n", .{});
-            debugPrintStacks(state_stack, node_stack);
             // Start parsing tokens
             for (tokens.items) |token| {
                 // const next_token = if (i + 1 == tokens.items.len) 
@@ -1051,7 +1077,6 @@ fn NewParser(
                 const terminal = terminalFromToken(token) orelse return ParseError.UnexpectedToken;
                 
                 while (try self.reduce(allocator, &state_stack, &node_stack, terminal)) {
-                    debugPrintStacks(state_stack, node_stack);
                 }
 
                 // Current state may have changed during reduction.
@@ -1065,14 +1090,11 @@ fn NewParser(
 
                 const new_node = ParseTreeType.Node{.kind = .{.leaf = token}};
                 try node_stack.append(new_node);
-
-                debugPrintStacks(state_stack, node_stack);   
             }
 
             // Perform any reductions possible once there are no more tokens.
             const end_terminal = self.table.grammar.terminals[self.table.grammar.getEndSymbol().terminal];
             while (try self.reduce(allocator, &state_stack, &node_stack, end_terminal)) {
-                debugPrintStacks(state_stack, node_stack);
             }
 
             // Verify that the final resulting state is accepting.
@@ -1209,14 +1231,7 @@ fn oldTokenToTerminal(token: lex.Token) ?TestTerminal {
 }
 
 test "Parser.parse: ''" {
-    const ParserType = NewParser(
-        TestVariable, 
-        TestTerminal, 
-        lex.Token,
-        lex.tokenize,
-        oldTokenToTerminal,
-    );
-    const parser = try ParserType.init(
+    const parser = try TestParserType.init(
         std.testing.allocator, 
         test_grammar_1
     );
@@ -1229,14 +1244,7 @@ test "Parser.parse: ''" {
 }
 
 test "Parser.parse: '~)q p v('" {
-    const ParserType = NewParser(
-        TestVariable, 
-        TestTerminal, 
-        lex.Token,
-        lex.tokenize,
-        oldTokenToTerminal,
-    );
-    const parser = try ParserType.init(
+    const parser = try TestParserType.init(
         std.testing.allocator, 
         test_grammar_1
     );
@@ -1251,14 +1259,7 @@ test "Parser.parse: '~)q p v('" {
 test "Parser.parse: '(p v q)'" {
     const allocator = std.testing.allocator;  
 
-    const ParserType = NewParser(
-        TestVariable, 
-        TestTerminal, 
-        lex.Token,
-        lex.tokenize,
-        oldTokenToTerminal,
-    );
-    const parser = try ParserType.init(
+    const parser = try TestParserType.init(
         allocator, 
         test_grammar_1
     );
