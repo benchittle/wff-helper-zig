@@ -332,16 +332,22 @@ const ue = union(enum) {
     plus,
 };
 
-test "union enum stuff" {
-    //@compileLog(@TypeOf(ue.prop));
-    const t = ue {.prop = "hi"};
-    const t2 = ue{.plus = {}};
+// test "union enum stuff" {
+//     //@compileLog(@TypeOf(ue.prop));
+//     const t = ue {.prop = "hi"};
+//     const t2 = ue{.plus = {}};
 
-    @compileLog(@TypeOf(t) == ue);
-    @compileLog(@TypeOf(t2) == ue);
-    @compileLog(@intFromEnum(t));
-    // try switch(t) {
-    //     .plus => stdout.print("plus\n", .{}),
-    //     .prop => stdout.print("prop\n", .{}),
-    // };
+//     @compileLog(@TypeOf(t) == ue);
+//     @compileLog(@TypeOf(t2) == ue);
+//     @compileLog(@intFromEnum(t));
+//     // try switch(t) {
+//     //     .plus => stdout.print("plus\n", .{}),
+//     //     .prop => stdout.print("prop\n", .{}),
+//     // };
+// }
+
+test "for iteration" {
+    for(5..0) |i| {
+        stdout.print("{d}\n", .{i});
+    }
 }

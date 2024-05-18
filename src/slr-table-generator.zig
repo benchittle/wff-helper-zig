@@ -419,11 +419,11 @@ pub fn Grammar(comptime Variable: type, comptime Terminal: type) type {
         //     return self.getVariableCount() + idx;
         // }
 
-        pub fn getStartVariable(_: Self) Symbol {
+        pub fn getStartSymbol(_: Self) Symbol {
             return Symbol{ .variable = 0};
         }
 
-        pub fn getEndTerminal(self: Self) Symbol {
+        pub fn getEndSymbol(self: Self) Symbol {
             return Symbol{ .terminal = @intCast(self.getTerminalCount() - 1)};
         }
 
@@ -1367,13 +1367,13 @@ pub fn ParseTable(comptime Variable: type, comptime Terminal: type) type {
                     }
 
                     // TODO: hardcoded 0 kinda yucky
-                    if (instance.production.lhs.variable == grammar.getStartVariable().variable) {
-                        switch (action_table.items[state_num][grammar.getEndTerminal().terminal]) {
+                    if (instance.production.lhs.variable == grammar.getStartSymbol().variable) {
+                        switch (action_table.items[state_num][grammar.getEndSymbol().terminal]) {
                             .invalid => return TableGeneratorError.acceptError,
                             .state => return TableGeneratorError.shiftAcceptError,
                             .reduce => |reduction_rule_idx| {
                                 if (reduction_rule_idx == grammar.getStartRuleIdx()) {
-                                    action_table.items[state_num][grammar.getEndTerminal().terminal] = Action.accept;
+                                    action_table.items[state_num][grammar.getEndSymbol().terminal] = Action.accept;
                                 } else {
                                     return TableGeneratorError.acceptError;
                                 }

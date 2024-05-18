@@ -451,7 +451,7 @@ pub const OldParseTree = struct {
    
 };
 
-pub fn NewParseTree(comptime T: type) type {
+pub fn NewParseTree(comptime Token: type) type {
     return struct {
         const Self = @This();
 
@@ -459,7 +459,7 @@ pub fn NewParseTree(comptime T: type) type {
         root: *Node,
 
         pub const Kind = union(enum) {
-            leaf: T,
+            leaf: Token,
             nonleaf: []Node,
         };
 
@@ -469,6 +469,13 @@ pub fn NewParseTree(comptime T: type) type {
         pub const Node = struct {
             parent: ?*Node = null,
             kind: Kind,
+
+            pub fn asString(self: Node) []const u8 {
+                return switch(self.kind) {
+                    .leaf => |t| t.getString(),
+                    .nonleaf => "wff",
+                };
+            }
 
             // pub fn copy(self: *Node, allocator: std.mem.Allocator) !*Node {            
             //     var copy_root = try allocator.create(Node);
@@ -932,29 +939,37 @@ fn NewParser(
         fn reduce(
             self: Self, 
             allocator: std.mem.Allocator, 
-            stack: *std.ArrayList(StackItem), 
+            state_stack: *std.ArrayList(ParseTable.StateIdx), 
+            node_stack: *std.ArrayList(ParseTreeType.Node),
             terminal: Terminal
         ) !bool {
-            const top = stack.getLast();
-            const rule_idx = switch(self.table.lookupTerminal(top.state, terminal) orelse return ParseError.UnexpectedToken) {
+            const top_state = state_stack.getLast();
+            const rule_idx = switch(self.table.lookupTerminal(top_state, terminal) orelse return ParseError.UnexpectedToken) {
                 .reduce => |idx| idx,
                 else => return false,
             };
             const rule = self.table.grammar.getRule(rule_idx);
             
-            var pushed_to_stack = false;
+            var pushed_to_state_stack = false;
+            var pushed_to_node_stack = false;
             var children = try allocator.alloc(ParseTreeType.Node, rule.rhs.len);
             errdefer {
                 allocator.free(children);
-                if (pushed_to_stack) {
-                    _ = stack.pop();
+                if (pushed_to_state_stack) {
+                    _ = state_stack.pop();
+                }
+                if (pushed_to_node_stack) {
+                    _ = node_stack.pop();
                 }
             }
 
             // Insert nodes into children from right to left to maintain the 
             // same order as the stack.
-            for ((children.len - 1)..0) |i| {
-                const child = stack.pop().node;
+            var i: usize = children.len;
+            while (i > 0) {
+                i -= 1;
+                const child = node_stack.pop();
+                _ = state_stack.pop();
                 children[i] = child;
                 switch(child.kind) {
                     .leaf => {}, 
@@ -966,14 +981,17 @@ fn NewParser(
 
             const new_parent = ParseTreeType.Node{ .kind = .{.nonleaf = children}};
 
-            const new_top = stack.getLast();
-            const reduced_state = try switch(self.table.lookupSymbol(new_top.state, rule.lhs)) {
+            const new_top_state = state_stack.getLast();
+            const reduced_state = try switch(self.table.lookupSymbol(new_top_state, rule.lhs)) {
                 .state => |state_num| state_num,
                 else => ParseError.InvalidSyntax,
             };
 
-            try stack.append(StackItem{ .state = reduced_state, .node = new_parent});
-            pushed_to_stack = true;
+            try state_stack.append(reduced_state);
+            pushed_to_state_stack = true;
+            try node_stack.append(new_parent);
+            pushed_to_node_stack = true;
+
             return true;
         }
 
@@ -991,43 +1009,72 @@ fn NewParser(
                 }
             }
             
-            // Initialize parsing stack
-            var stack = std.ArrayList(StackItem).init(allocator);
-            try stack.append(StackItem{ .state = self.table.getStartState(), .node = undefined});
+            // Initialize parsing stacks
+            var state_stack = std.ArrayList(ParseTable.StateIdx).init(allocator);
+            defer state_stack.deinit();
+            try state_stack.append(self.table.getStartState());
 
+            var node_stack = std.ArrayList(ParseTreeType.Node).init(allocator);
+            defer node_stack.deinit();
+
+            debug.print("\n", .{});
+            debugPrintStacks(state_stack, node_stack);
             // Start parsing tokens
-            for (tokens.items, 0..) |token, i| {
+            for (tokens.items) |token| {
+                // const next_token = if (i + 1 == tokens.items.len) 
+                //         self.table.grammar.terminals[self.table.grammar.getEndTerminal().terminal]
+                //     else 
+                //         terminalFromToken(tokens.items[i + 1]) orelse return ParseError.UnexpectedToken;
+                var current_state = state_stack.getLast();
                 const terminal = terminalFromToken(token) orelse return ParseError.UnexpectedToken;
-                const current_state = stack.getLast().state;
+                
+                while (try self.reduce(allocator, &state_stack, &node_stack, terminal)) {
+                    debugPrintStacks(state_stack, node_stack);
+                }
+
+                // Current state may have changed during reduction.
+                current_state = state_stack.getLast();
 
                 const new_state: ParseTable.StateIdx = try switch(self.table.lookupTerminal(current_state, terminal) orelse return ParseError.UnexpectedToken) {
                     .state => |state_num| state_num,
                     else => ParseError.InvalidSyntax,
                 };
+                try state_stack.append(new_state);
+
                 const new_node = ParseTreeType.Node{.kind = .{.leaf = token}};
-                try stack.append(StackItem{ .state = new_state, .node = new_node });
+                try node_stack.append(new_node);
 
-                const next_token = if (i + 1 == tokens.items.len) 
-                        self.table.grammar.terminals[self.table.grammar.getEndTerminal().terminal]
-                    else 
-                        terminalFromToken(tokens.items[i + 1]) orelse return ParseError.UnexpectedToken;
-
-                while (try self.reduce(allocator, &stack, next_token)) {}
+                debugPrintStacks(state_stack, node_stack);   
             }
 
-            // The stack should only have a single item by the end of parsing.
-            if (stack.items.len != 1) {
-                return ParseError.InvalidSyntax;
+            // Perform any reductions possible once there are no more tokens.
+            const end_terminal = self.table.grammar.terminals[self.table.grammar.getEndSymbol().terminal];
+            while (try self.reduce(allocator, &state_stack, &node_stack, end_terminal)) {
+                debugPrintStacks(state_stack, node_stack);
+            }
+
+            // Verify that the final resulting state is accepting.
+            switch(self.table.lookupTerminal(state_stack.getLast(), end_terminal).?) {
+                .accept => {},
+                else => return ParseError.InvalidSyntax,
             }
 
             const root = try allocator.create(ParseTreeType.Node);
             errdefer allocator.destroy(root);
 
-            root.* = stack.pop().node;
+            root.* = node_stack.pop();
             for (root.kind.nonleaf) |*child| {
                 child.parent = root;
             }
             return ParseTreeType{ .allocator = allocator, .root = root};
+        }
+
+        fn debugPrintStacks(state_stack: std.ArrayList(ParseTable.StateIdx), node_stack: std.ArrayList(ParseTreeType.Node)) void {
+            debug.print("S{d}", .{state_stack.items[0]});
+            for (state_stack.items[1..], node_stack.items) |state, node| {
+                debug.print("<{s}> S{d}", .{node.asString(), state});
+            }
+            debug.print("\n", .{});
         }
     };
 }
