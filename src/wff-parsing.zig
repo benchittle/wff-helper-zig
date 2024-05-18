@@ -102,64 +102,68 @@ pub const ParseTreeDepthFirstIterator = struct {
 //     try std.testing.expect((it.next()) == null);
 // }
 
-pub const ParseTreePostOrderIterator = struct {
-    const Self = @This();
+// TODO: Include this in scope of ParseTree so we don't need Token arg
+pub fn ParseTreePostOrderIterator(comptime Token: type) type {
+    return struct {
+        const Self = @This();
+        const ParseTreeType = NewParseTree(Token);
 
-    root: *const OldParseTree.Node,
-    current: ?[*]OldParseTree.Node,
+        root: *const ParseTreeType.Node,
+        current: ?[*]ParseTreeType.Node,
 
-    // if terminal, go to parent
-    //      if came from last child, set next=parent
-    //      else, set next to next deepest sibling
-    // else, get parent
-    //      if parent is null, set next=null
-    //      else if came from last child, set next=parent
-    //      else, set next to next deepest sibling
-    pub fn next(self: *Self) ?*OldParseTree.Node {
-        const current_node = &(self.current orelse return null)[0];
-        const parent = current_node.parent orelse {
-            self.current = null;
-            return current_node;
-        };
-        const siblings = parent.data.Nonterminal.items;
+        // if terminal, go to parent
+        //      if came from last child, set next=parent
+        //      else, set next to next deepest sibling
+        // else, get parent
+        //      if parent is null, set next=null
+        //      else if came from last child, set next=parent
+        //      else, set next to next deepest sibling
+        pub fn next(self: *Self) ?*ParseTreeType.Node {
+            const current_node = &(self.current orelse return null)[0];
+            const parent = current_node.parent orelse {
+                self.current = null;
+                return current_node;
+            };
+            const siblings = parent.kind.nonleaf;
 
-        if (current_node == self.root) {
-            self.current = null;
-            return current_node;
-        } else if (current_node == &siblings[siblings.len - 1]) {
-            self.current = @ptrCast(parent);
+            if (current_node == self.root) {
+                self.current = null;
+                return current_node;
+            } else if (current_node == &siblings[siblings.len - 1]) {
+                self.current = @ptrCast(parent);
+                return current_node;
+            }
+
+            var next_node = &(self.current.?[1]); // get sibling node
+            while (true) {
+                switch (next_node.kind) {
+                    .leaf => break,
+                    .nonleaf => |children| next_node = &children[0],
+                }
+            }
+            self.current = @ptrCast(next_node);
+
             return current_node;
         }
 
-        var next_node = &(self.current.?[1]); // get sibling node
-        while (true) {
-            switch (next_node.data) {
-                .Terminal => break,
-                .Nonterminal => |children| next_node = &children.items[0],
+        pub fn nextUnchecked(self: *Self) *ParseTreeType.Node {
+            std.debug.assert(self.hasNext());
+            return self.next().?;
+        }
+
+        pub fn peek(self: Self) ?*ParseTreeType.Node {
+            if (self.current) |node| {
+                return &node[0];
+            } else {
+                return null;
             }
         }
-        self.current = @ptrCast(next_node);
 
-        return current_node;
-    }
-
-    pub fn nextUnchecked(self: *Self) *OldParseTree.Node {
-        std.debug.assert(self.hasNext());
-        return self.next().?;
-    }
-
-    pub fn peek(self: Self) ?*OldParseTree.Node {
-        if (self.current) |node| {
-            return &node[0];
-        } else {
-            return null;
+        pub fn hasNext(self: Self) bool {
+            return self.peek() != null;
         }
-    }
-
-    pub fn hasNext(self: Self) bool {
-        return self.peek() != null;
-    }
-};
+    };
+}
 
 // test "ParseTreePostOrderIterator" {
 //     var tree = try OldParseTree.init(std.testing.allocator, "(p v q)");
@@ -547,41 +551,41 @@ pub fn NewParseTree(comptime Token: type) type {
             //     return ParseTreeDepthFirstIterator{ .start = self, .current = @ptrCast(self) };
             // }
 
-            // pub fn iterPostOrder(self: *Node) ParseTreePostOrderIterator {
-            //     var start_node = self;
-            //     while (true) {
-            //         switch (start_node.kind) {
-            //             .leaf => break,
-            //             .nonleaf => |children| start_node = &children[0],
-            //         }
-            //     }
-            //     return ParseTreePostOrderIterator{ .root = self, .current = @ptrCast(start_node) };
-            // }
+            pub fn iterPostOrder(self: *Node) ParseTreePostOrderIterator(Token) {
+                var start_node = self;
+                while (true) {
+                    switch (start_node.kind) {
+                        .leaf => break,
+                        .nonleaf => |children| start_node = &children[0],
+                    }
+                }
+                return ParseTreePostOrderIterator(Token) { .root = self, .current = @ptrCast(start_node) };
+            }
 
             // TODO: Specify *const here and in other places
             // We would need to differentiate between mutable and immutable
             // iteration to make this possible.
-            // pub fn eql(self: *Node, other: *Node) bool {
-            //     var it = self.iterPostOrder();
-            //     var other_it = other.iterPostOrder();
+            pub fn eql(self: *Node, other: *Node) bool {
+                var it = self.iterPostOrder();
+                var other_it = other.iterPostOrder();
 
-            //     while (it.hasNext() and other_it.hasNext()) {
-            //         const node = it.nextUnchecked();
-            //         const other_node = other_it.nextUnchecked();
+                while (it.hasNext() and other_it.hasNext()) {
+                    const node = it.nextUnchecked();
+                    const other_node = other_it.nextUnchecked();
 
-            //         switch (node.data) {
-            //             .leaf => |tok| switch (other_node.data) {
-            //                 .leaf => |other_tok| if (!tok.eql(other_tok)) return false,
-            //                 .nonleaf => return false,
-            //             },
-            //             .nonleaf => switch (other_node.data) {
-            //                 .leaf => return false,
-            //                 .nonleaf => continue,
-            //             },
-            //         }
-            //     }
-            //     return true;
-            // }
+                    switch (node.kind) {
+                        .leaf => |tok| switch (other_node.kind) {
+                            .leaf => |other_tok| if (!tok.eql(other_tok)) return false,
+                            .nonleaf => return false,
+                        },
+                        .nonleaf => switch (other_node.kind) {
+                            .leaf => return false,
+                            .nonleaf => continue,
+                        },
+                    }
+                }
+                return true;
+            }
 
             // /// Allocator will be used to create the hashmap for storing matches
             // pub fn match(self: *Node, allocator: std.mem.Allocator, pattern: *Node) !?MatchHashMap {
@@ -645,20 +649,20 @@ pub fn NewParseTree(comptime Token: type) type {
             return Self{.allocator = allocator, .root = root};
         }
 
-        // pub fn deinit(self: Self) void {
-        //     var it = self.iterPostOrder();
-        //     while (it.next()) |node| {
-        //         const n = node;
-        //         switch (n.data) {
-        //             .leaf => |tok| switch (tok) {
-        //                 .Proposition => |prop| self.allocator.free(prop.string),
-        //                 else => {},
-        //             },
-        //             .nonleaf => |children| children.deinit(),
-        //         }
-        //     }
-        //     self.allocator.destroy(self.root);
-        // }
+        pub fn deinit(self: Self) void {
+            var it = self.iterPostOrder();
+            while (it.next()) |node| {
+                const n = node;
+                switch (n.kind) {
+                    .leaf => |tok| switch (tok) {
+                        .Proposition => |prop| self.allocator.free(prop.string),
+                        else => {},
+                    },
+                    .nonleaf => |children| self.allocator.free(children),
+                }
+            }
+            self.allocator.destroy(self.root);
+        }
 
         // pub fn copy(self: Self) !OldParseTree {
         //     return OldParseTree{ .root = try self.root.copy(self.allocator), .allocator = self.allocator };
@@ -676,9 +680,9 @@ pub fn NewParseTree(comptime Token: type) type {
         //     return self.root.iterDepthFirst();
         // }
 
-        // pub fn iterPostOrder(self: Self) ParseTreePostOrderIterator {
-        //     return self.root.iterPostOrder();
-        // }
+        pub fn iterPostOrder(self: Self) ParseTreePostOrderIterator(Token) {
+            return self.root.iterPostOrder();
+        }
 
         // pub fn toString(self: Self, allocator: std.mem.Allocator) ![]u8 {
         //     var string_buf = std.ArrayList(u8).init(allocator);
@@ -1300,7 +1304,7 @@ test "Parser.parse: '(p v q)'" {
     defer parser.deinit();
 
     const tree = try parser.parse(allocator, "(p v q)");
-    //defer tree.deinit();
+    defer tree.deinit();
 
     // Build the expected tree manually... it's pretty messy
     const ParseTreeType = NewParseTree(lex.Token);
@@ -1344,7 +1348,7 @@ test "Parser.parse: '(p v q)'" {
     try std.testing.expect(t5.kind.leaf.eql(tree.root.kind.nonleaf[4].kind.leaf));
 
     // Function equality test of tree
-    //try std.testing.expect(tree.root.eql(&root));
+    try std.testing.expect(tree.root.eql(&root));
 }
 
 // test "Parser.parse: '(p v q)'" {
