@@ -9,7 +9,7 @@ pub const ParseError = error{
     UnexpectedToken,
 };
 
-const test_grammar_1 = ret: {
+pub const test_grammar_1 = ret: {
     const _V = TestVariable.fromString;
     const G = slr.Grammar(TestVariable, TestTerminal);
     break :ret G.initFromTuples(
@@ -27,25 +27,25 @@ const test_grammar_1 = ret: {
     );
 };
 
-const TestParserType = NewParser(
-        TestVariable, 
-        TestTerminal, 
-        lex.Token,
-        lex.tokenize,
-        oldTokenToTerminal,
-    );
+pub const TestParserType = Parser(
+    TestVariable,
+    TestTerminal,
+    lex.Token,
+    lex.tokenize,
+    oldTokenToTerminal,
+);
 
-const ParseTree = NewParseTree;
+pub const TestToken = lex.Token;
 
 pub fn MatchHashMap(comptime Token: type) type {
-    const ParseTreeType = NewParseTree(Token);
+    const ParseTreeType = ParseTree(Token);
     return std.StringHashMap(*ParseTreeType.Node);
 }
 
 pub fn ParseTreeDepthFirstIterator(comptime Token: type) type {
     return struct {
         const Self = @This();
-        const ParseTreeType = NewParseTree(Token);
+        const ParseTreeType = ParseTree(Token);
 
         start: *const ParseTreeType.Node,
         current: ?[*]ParseTreeType.Node,
@@ -109,10 +109,7 @@ test "ParseTreeDepthFirstIterator" {
     const ParseTreeType = TestParserType.ParseTreeType;
     const allocator = std.testing.allocator;
 
-    const parser = try TestParserType.init(
-        allocator,
-        test_grammar_1
-    );
+    const parser = try TestParserType.init(allocator, test_grammar_1);
     defer parser.deinit();
 
     const tree = try parser.parse(allocator, "(p v q)");
@@ -147,7 +144,7 @@ test "ParseTreeDepthFirstIterator" {
 pub fn ParseTreePostOrderIterator(comptime Token: type) type {
     return struct {
         const Self = @This();
-        const ParseTreeType = NewParseTree(Token);
+        const ParseTreeType = ParseTree(Token);
 
         root: *const ParseTreeType.Node,
         current: ?[*]ParseTreeType.Node,
@@ -207,13 +204,10 @@ pub fn ParseTreePostOrderIterator(comptime Token: type) type {
 }
 
 test "ParseTreePostOrderIterator" {
-    const ParseTreeType = NewParseTree(lex.Token);
+    const ParseTreeType = ParseTree(lex.Token);
     const allocator = std.testing.allocator;
 
-    const parser = try TestParserType.init(
-        allocator,
-        test_grammar_1
-    );
+    const parser = try TestParserType.init(allocator, test_grammar_1);
     defer parser.deinit();
 
     const tree = try parser.parse(allocator, "(p v q)");
@@ -240,7 +234,7 @@ test "ParseTreePostOrderIterator" {
     try std.testing.expect(it.next() == null);
 }
 
-pub fn NewParseTree(comptime Token: type) type {
+pub fn ParseTree(comptime Token: type) type {
     return struct {
         const Self = @This();
 
@@ -260,13 +254,13 @@ pub fn NewParseTree(comptime Token: type) type {
             kind: Kind,
 
             pub fn asString(self: Node) []const u8 {
-                return switch(self.kind) {
+                return switch (self.kind) {
                     .leaf => |t| t.getString(),
                     .nonleaf => "wff",
                 };
             }
 
-            pub fn copy(self: *Node, allocator: std.mem.Allocator) !*Node {            
+            pub fn copy(self: *Node, allocator: std.mem.Allocator) !*Node {
                 var copy_root = try allocator.create(Node);
                 copy_root.parent = null;
 
@@ -299,8 +293,12 @@ pub fn NewParseTree(comptime Token: type) type {
                 while (node.parent) |parent| {
                     var copy_children = try std.ArrayList(Node).initCapacity(allocator, parent.kind.nonleaf.len);
 
-                    for (parent.kind.nonleaf, ) |*child,| {
-                        const copy_child = ret: { 
+                    for (
+                        parent.kind.nonleaf,
+                    ) |
+                        *child,
+                    | {
+                        const copy_child = ret: {
                             if (child == node) {
                                 break :ret copy_node;
                             } else {
@@ -311,16 +309,16 @@ pub fn NewParseTree(comptime Token: type) type {
                         };
 
                         copy_children.appendAssumeCapacity(copy_child);
-                        
-                        switch(copy_child.kind) {
+
+                        switch (copy_child.kind) {
                             .leaf => {},
                             .nonleaf => |grandchildren| for (grandchildren) |*grandchild| {
                                 grandchild.parent = &copy_children.items[copy_children.items.len - 1];
-                            }
+                            },
                         }
                     }
                     node = parent;
-                    copy_node = Node{.kind = .{.nonleaf = try copy_children.toOwnedSlice()}};
+                    copy_node = Node{ .kind = .{ .nonleaf = try copy_children.toOwnedSlice() } };
                 }
 
                 const copy_root = try allocator.create(Node);
@@ -334,7 +332,7 @@ pub fn NewParseTree(comptime Token: type) type {
             }
 
             pub fn iterDepthFirst(self: *Node) ParseTreeDepthFirstIterator(Token) {
-                return ParseTreeDepthFirstIterator(Token) { .start = self, .current = @ptrCast(self) };
+                return ParseTreeDepthFirstIterator(Token){ .start = self, .current = @ptrCast(self) };
             }
 
             pub fn iterPostOrder(self: *Node) ParseTreePostOrderIterator(Token) {
@@ -345,7 +343,7 @@ pub fn NewParseTree(comptime Token: type) type {
                         .nonleaf => |children| start_node = &children[0],
                     }
                 }
-                return ParseTreePostOrderIterator(Token) { .root = self, .current = @ptrCast(start_node) };
+                return ParseTreePostOrderIterator(Token){ .root = self, .current = @ptrCast(start_node) };
             }
 
             // TODO: Specify *const here and in other places
@@ -384,7 +382,6 @@ pub fn NewParseTree(comptime Token: type) type {
                 while (it.hasNext() and pattern_it.hasNext()) {
                     const node = it.nextUnchecked();
                     const pattern_node = pattern_it.nextUnchecked();
-
 
                     const is_match = switch (node.kind) {
                         .leaf => |tok| switch (pattern_node.kind) {
@@ -433,7 +430,7 @@ pub fn NewParseTree(comptime Token: type) type {
         };
 
         pub fn init(allocator: std.mem.Allocator, root: *Node) !Self {
-            return Self{.allocator = allocator, .root = root};
+            return Self{ .allocator = allocator, .root = root };
         }
 
         pub fn deinit(self: Self) void {
@@ -504,19 +501,16 @@ pub fn NewParseTree(comptime Token: type) type {
             }
             _ = string_buf.pop(); // remove trailing space
             return string_buf.toOwnedSlice();
-        }   
+        }
     };
 }
 
 // TODO: fn to build trees more easily for testing larger expressions
 
 test "ParseTree.toString: (p v q)" {
-    const allocator = std.testing.allocator;  
+    const allocator = std.testing.allocator;
 
-    const parser = try TestParserType.init(
-        allocator, 
-        test_grammar_1
-    );
+    const parser = try TestParserType.init(allocator, test_grammar_1);
     defer parser.deinit();
 
     const tree = try parser.parse(allocator, "(p v q)");
@@ -529,12 +523,9 @@ test "ParseTree.toString: (p v q)" {
 }
 
 test "ParseTree.toString: ~((a ^ b) => (c ^ ~d))" {
-    const allocator = std.testing.allocator;  
+    const allocator = std.testing.allocator;
 
-    const parser = try TestParserType.init(
-        allocator, 
-        test_grammar_1
-    );
+    const parser = try TestParserType.init(allocator, test_grammar_1);
     defer parser.deinit();
 
     const tree = try parser.parse(allocator, "~((a ^ b) => (c ^ ~d))");
@@ -549,15 +540,12 @@ test "ParseTree.toString: ~((a ^ b) => (c ^ ~d))" {
 test "ParseTree.copy: (p v q)" {
     const allocator = std.testing.allocator;
 
-    const parser = try TestParserType.init(
-        allocator, 
-        test_grammar_1
-    );
+    const parser = try TestParserType.init(allocator, test_grammar_1);
     defer parser.deinit();
 
     const tree = try parser.parse(allocator, "(p v q)");
     defer tree.deinit();
-    
+
     var copy = try tree.copy();
     defer copy.deinit();
 
@@ -565,12 +553,9 @@ test "ParseTree.copy: (p v q)" {
 }
 
 test "ParseTree.copy: ((a ^ b) v (c ^ d))" {
-    const allocator = std.testing.allocator;  
+    const allocator = std.testing.allocator;
 
-    const parser = try TestParserType.init(
-        allocator, 
-        test_grammar_1
-    );
+    const parser = try TestParserType.init(allocator, test_grammar_1);
     defer parser.deinit();
 
     const tree = try parser.parse(allocator, "((a ^ b) v (c ^ d))");
@@ -583,12 +568,9 @@ test "ParseTree.copy: ((a ^ b) v (c ^ d))" {
 }
 
 test "ParseTree.copy: p" {
-    const allocator = std.testing.allocator;  
+    const allocator = std.testing.allocator;
 
-    const parser = try TestParserType.init(
-        allocator, 
-        test_grammar_1
-    );
+    const parser = try TestParserType.init(allocator, test_grammar_1);
     defer parser.deinit();
 
     const tree = try parser.parse(allocator, "p");
@@ -601,13 +583,10 @@ test "ParseTree.copy: p" {
 }
 
 test "ParseTree.Node.copyAbove" {
-    const ParseTreeType = NewParseTree(lex.Token);
-    const allocator = std.testing.allocator;  
+    const ParseTreeType = ParseTree(lex.Token);
+    const allocator = std.testing.allocator;
 
-    const parser = try TestParserType.init(
-        allocator, 
-        test_grammar_1
-    );
+    const parser = try TestParserType.init(allocator, test_grammar_1);
     defer parser.deinit();
 
     const tree = try parser.parse(allocator, "((a ^ b) v (c ^ d))");
@@ -616,9 +595,9 @@ test "ParseTree.Node.copyAbove" {
     var bottom_right = &tree.root.kind.nonleaf[3].kind.nonleaf[1];
     const bottom_right_copy = try bottom_right.copy(allocator);
     defer allocator.destroy(bottom_right_copy);
-    
+
     const root_copy = try bottom_right.copyAbove(allocator, bottom_right_copy.*);
-    var tree_copy = ParseTreeType{.allocator = allocator, .root = root_copy};
+    var tree_copy = ParseTreeType{ .allocator = allocator, .root = root_copy };
     defer tree_copy.deinit();
 
     // var s1 = try tree.toString(allocator);
@@ -634,10 +613,7 @@ test "ParseTree.Node.copyAbove" {
 test "ParseTree.Node.match: (p v q) with pattern (p v q)" {
     const allocator = std.testing.allocator;
 
-    const parser = try TestParserType.init(
-        allocator, 
-        test_grammar_1
-    );
+    const parser = try TestParserType.init(allocator, test_grammar_1);
     defer parser.deinit();
 
     const tree = try parser.parse(allocator, "(p v q)");
@@ -656,10 +632,7 @@ test "ParseTree.Node.match: (p v q) with pattern (p v q)" {
 test "ParseTree.Node.match: ((a ^ b) v (c ^ d)) with pattern (p v q)" {
     const allocator = std.testing.allocator;
 
-    const parser = try TestParserType.init(
-        allocator, 
-        test_grammar_1
-    );
+    const parser = try TestParserType.init(allocator, test_grammar_1);
     defer parser.deinit();
 
     const tree = try parser.parse(allocator, "((a ^ b) v (c ^ d))");
@@ -678,10 +651,7 @@ test "ParseTree.Node.match: ((a ^ b) v (c ^ d)) with pattern (p v q)" {
 test "ParseTree.Node.match: (p v p) with pattern (p v p)" {
     const allocator = std.testing.allocator;
 
-    const parser = try TestParserType.init(
-        allocator, 
-        test_grammar_1
-    );
+    const parser = try TestParserType.init(allocator, test_grammar_1);
     defer parser.deinit();
 
     const tree = try parser.parse(allocator, "(p v p)");
@@ -699,10 +669,7 @@ test "ParseTree.Node.match: (p v p) with pattern (p v p)" {
 test "ParseTree.Node.match: (p v q) with pattern (p v p)" {
     const allocator = std.testing.allocator;
 
-    const parser = try TestParserType.init(
-        allocator, 
-        test_grammar_1
-    );
+    const parser = try TestParserType.init(allocator, test_grammar_1);
     defer parser.deinit();
 
     const tree = try parser.parse(allocator, "(p v q)");
@@ -716,10 +683,7 @@ test "ParseTree.Node.match: (p v q) with pattern (p v p)" {
 test "ParseTree.Node.match: ((a ^ b) => (a ^ b)) with pattern (p => p)" {
     const allocator = std.testing.allocator;
 
-    const parser = try TestParserType.init(
-        allocator, 
-        test_grammar_1
-    );
+    const parser = try TestParserType.init(allocator, test_grammar_1);
     defer parser.deinit();
 
     const tree = try parser.parse(allocator, "((a ^ b) => (a ^ b))");
@@ -737,10 +701,7 @@ test "ParseTree.Node.match: ((a ^ b) => (a ^ b)) with pattern (p => p)" {
 test "ParseTree.Node.match: ((a ^ b) => (a ^ a)) with pattern (p => p)" {
     const allocator = std.testing.allocator;
 
-    const parser = try TestParserType.init(
-        allocator, 
-        test_grammar_1
-    );
+    const parser = try TestParserType.init(allocator, test_grammar_1);
     defer parser.deinit();
 
     const tree = try parser.parse(allocator, "((a ^ b) => (a ^ a))");
@@ -754,10 +715,7 @@ test "ParseTree.Node.match: ((a ^ b) => (a ^ a)) with pattern (p => p)" {
 test "ParseTree.Node.match: (x <=> x) with pattern (p <=> q)" {
     const allocator = std.testing.allocator;
 
-    const parser = try TestParserType.init(
-        allocator, 
-        test_grammar_1
-    );
+    const parser = try TestParserType.init(allocator, test_grammar_1);
     defer parser.deinit();
 
     const tree = try parser.parse(allocator, "(x <=> x)");
@@ -775,9 +733,9 @@ test "ParseTree.Node.match: (x <=> x) with pattern (p <=> q)" {
 
 // TODO: Define error set of tokenize_func
 // T must have .eql, .deinit, ...
-fn NewParser(
-    comptime Variable: type, 
-    comptime Terminal: type,  
+pub fn Parser(
+    comptime Variable: type,
+    comptime Terminal: type,
     comptime Token: type,
     comptime tokenize: fn (std.mem.Allocator, []const u8) anyerror!std.ArrayList(Token),
     comptime terminalFromToken: fn (Token) ?Terminal,
@@ -786,7 +744,7 @@ fn NewParser(
         const Self = @This();
         const Grammar = slr.Grammar(Variable, Terminal);
         const ParseTable = slr.ParseTable(Variable, Terminal);
-        const ParseTreeType = NewParseTree(Token);
+        const ParseTreeType = ParseTree(Token);
 
         const StackItem = struct {
             state: ParseTable.StateIdx,
@@ -796,9 +754,7 @@ fn NewParser(
         table: ParseTable,
 
         pub fn init(allocator: std.mem.Allocator, grammar: Grammar) !Self {
-            return Self {
-                .table = try ParseTable.init(allocator, grammar)
-            };
+            return Self{ .table = try ParseTable.init(allocator, grammar) };
         }
 
         /// Note: Does NOT free the memory associated with the grammar it was
@@ -809,20 +765,14 @@ fn NewParser(
 
         /// Performs a reduction (modifies the stack) and returns true
         /// Returns false if no reduction is possible.
-        fn reduce(
-            self: Self, 
-            allocator: std.mem.Allocator, 
-            state_stack: *std.ArrayList(ParseTable.StateIdx), 
-            node_stack: *std.ArrayList(ParseTreeType.Node),
-            terminal: Terminal
-        ) !bool {
+        fn reduce(self: Self, allocator: std.mem.Allocator, state_stack: *std.ArrayList(ParseTable.StateIdx), node_stack: *std.ArrayList(ParseTreeType.Node), terminal: Terminal) !bool {
             const top_state = state_stack.getLast();
-            const rule_idx = switch(self.table.lookupTerminal(top_state, terminal) orelse return ParseError.UnexpectedToken) {
+            const rule_idx = switch (self.table.lookupTerminal(top_state, terminal) orelse return ParseError.UnexpectedToken) {
                 .reduce => |idx| idx,
                 else => return false,
             };
             const rule = self.table.grammar.getRule(rule_idx);
-            
+
             var pushed_to_state_stack = false;
             var pushed_to_node_stack = false;
             var children = try allocator.alloc(ParseTreeType.Node, rule.rhs.len);
@@ -836,7 +786,7 @@ fn NewParser(
                 }
             }
 
-            // Insert nodes into children from right to left to maintain the 
+            // Insert nodes into children from right to left to maintain the
             // same order as the stack.
             var i: usize = children.len;
             while (i > 0) {
@@ -844,18 +794,18 @@ fn NewParser(
                 const child = node_stack.pop();
                 _ = state_stack.pop();
                 children[i] = child;
-                switch(child.kind) {
-                    .leaf => {}, 
+                switch (child.kind) {
+                    .leaf => {},
                     .nonleaf => |grandchildren| for (grandchildren) |*grandchild| {
                         grandchild.parent = &children[i];
                     },
                 }
             }
 
-            const new_parent = ParseTreeType.Node{ .kind = .{.nonleaf = children}};
+            const new_parent = ParseTreeType.Node{ .kind = .{ .nonleaf = children } };
 
             const new_top_state = state_stack.getLast();
-            const reduced_state = try switch(self.table.lookupSymbol(new_top_state, rule.lhs)) {
+            const reduced_state = try switch (self.table.lookupSymbol(new_top_state, rule.lhs)) {
                 .state => |state_num| state_num,
                 else => ParseError.InvalidSyntax,
             };
@@ -875,13 +825,13 @@ fn NewParser(
             errdefer {
                 for (tokens.items) |tok| {
                     // tok.deinit();
-                    switch(tok) {
+                    switch (tok) {
                         .Proposition => |s| allocator.free(s.string),
                         else => {},
                     }
                 }
             }
-            
+
             // Initialize parsing stacks
             var state_stack = std.ArrayList(ParseTable.StateIdx).init(allocator);
             defer state_stack.deinit();
@@ -892,36 +842,34 @@ fn NewParser(
 
             // Start parsing tokens
             for (tokens.items) |token| {
-                // const next_token = if (i + 1 == tokens.items.len) 
+                // const next_token = if (i + 1 == tokens.items.len)
                 //         self.table.grammar.terminals[self.table.grammar.getEndTerminal().terminal]
-                //     else 
+                //     else
                 //         terminalFromToken(tokens.items[i + 1]) orelse return ParseError.UnexpectedToken;
                 var current_state = state_stack.getLast();
                 const terminal = terminalFromToken(token) orelse return ParseError.UnexpectedToken;
-                
-                while (try self.reduce(allocator, &state_stack, &node_stack, terminal)) {
-                }
+
+                while (try self.reduce(allocator, &state_stack, &node_stack, terminal)) {}
 
                 // Current state may have changed during reduction.
                 current_state = state_stack.getLast();
 
-                const new_state: ParseTable.StateIdx = try switch(self.table.lookupTerminal(current_state, terminal) orelse return ParseError.UnexpectedToken) {
+                const new_state: ParseTable.StateIdx = try switch (self.table.lookupTerminal(current_state, terminal) orelse return ParseError.UnexpectedToken) {
                     .state => |state_num| state_num,
                     else => ParseError.InvalidSyntax,
                 };
                 try state_stack.append(new_state);
 
-                const new_node = ParseTreeType.Node{.kind = .{.leaf = token}};
+                const new_node = ParseTreeType.Node{ .kind = .{ .leaf = token } };
                 try node_stack.append(new_node);
             }
 
             // Perform any reductions possible once there are no more tokens.
             const end_terminal = self.table.grammar.terminals[self.table.grammar.getEndSymbol().terminal];
-            while (try self.reduce(allocator, &state_stack, &node_stack, end_terminal)) {
-            }
+            while (try self.reduce(allocator, &state_stack, &node_stack, end_terminal)) {}
 
             // Verify that the final resulting state is accepting.
-            switch(self.table.lookupTerminal(state_stack.getLast(), end_terminal).?) {
+            switch (self.table.lookupTerminal(state_stack.getLast(), end_terminal).?) {
                 .accept => {},
                 else => return ParseError.InvalidSyntax,
             }
@@ -933,13 +881,13 @@ fn NewParser(
             for (root.kind.nonleaf) |*child| {
                 child.parent = root;
             }
-            return ParseTreeType{ .allocator = allocator, .root = root};
+            return ParseTreeType{ .allocator = allocator, .root = root };
         }
 
         fn debugPrintStacks(state_stack: std.ArrayList(ParseTable.StateIdx), node_stack: std.ArrayList(ParseTreeType.Node)) void {
             debug.print("S{d}", .{state_stack.items[0]});
             for (state_stack.items[1..], node_stack.items) |state, node| {
-                debug.print("<{s}> S{d}", .{node.asString(), state});
+                debug.print("<{s}> S{d}", .{ node.asString(), state });
             }
             debug.print("\n", .{});
         }
@@ -1039,11 +987,11 @@ const TestVariable = struct {
 };
 
 fn oldTokenToTerminal(token: lex.Token) ?TestTerminal {
-    return switch(token) {
+    return switch (token) {
         .LParen => TestTerminal.LParen,
         .RParen => TestTerminal.RParen,
         .True, .False, .Proposition => TestTerminal.Proposition,
-        .Operator => |op| switch(op) {
+        .Operator => |op| switch (op) {
             .Not => TestTerminal.Not,
             .And => TestTerminal.And,
             .Or => TestTerminal.Or,
@@ -1054,45 +1002,30 @@ fn oldTokenToTerminal(token: lex.Token) ?TestTerminal {
 }
 
 test "Parser.parse: ''" {
-    const parser = try TestParserType.init(
-        std.testing.allocator, 
-        test_grammar_1
-    );
+    const parser = try TestParserType.init(std.testing.allocator, test_grammar_1);
     defer parser.deinit();
-    
-    try std.testing.expectError(
-        lex.LexError.NoTokensFound, 
-        parser.parse(std.testing.allocator, "")
-    );
+
+    try std.testing.expectError(lex.LexError.NoTokensFound, parser.parse(std.testing.allocator, ""));
 }
 
 test "Parser.parse: '~)q p v('" {
-    const parser = try TestParserType.init(
-        std.testing.allocator, 
-        test_grammar_1
-    );
+    const parser = try TestParserType.init(std.testing.allocator, test_grammar_1);
     defer parser.deinit();
 
-    try std.testing.expectError(
-        ParseError.InvalidSyntax, 
-        parser.parse(std.testing.allocator, "~)q p v (")
-    );
+    try std.testing.expectError(ParseError.InvalidSyntax, parser.parse(std.testing.allocator, "~)q p v ("));
 }
 
 test "Parser.parse: '(p v q)'" {
-    const allocator = std.testing.allocator;  
+    const allocator = std.testing.allocator;
 
-    const parser = try TestParserType.init(
-        allocator, 
-        test_grammar_1
-    );
+    const parser = try TestParserType.init(allocator, test_grammar_1);
     defer parser.deinit();
 
     const tree = try parser.parse(allocator, "(p v q)");
     defer tree.deinit();
 
     // Build the expected tree manually... it's pretty messy
-    const ParseTreeType = NewParseTree(lex.Token);
+    const ParseTreeType = ParseTree(lex.Token);
 
     var wff1: ParseTreeType.Node = undefined;
     var wff2: ParseTreeType.Node = undefined;
@@ -1105,11 +1038,11 @@ test "Parser.parse: '(p v q)'" {
     var root_children = try allocator.alloc(ParseTreeType.Node, 5);
     defer allocator.free(root_children);
 
-    var t1 = ParseTreeType.Node{ .parent = &root,               .kind = .{ .leaf = lex.Token{ .LParen = {} } } };
+    var t1 = ParseTreeType.Node{ .parent = &root, .kind = .{ .leaf = lex.Token{ .LParen = {} } } };
     var t2 = ParseTreeType.Node{ .parent = &(root_children[1]), .kind = .{ .leaf = lex.Token{ .Proposition = lex.PropositionVar{ .string = try std.testing.allocator.dupe(u8, "p") } } } };
-    var t3 = ParseTreeType.Node{ .parent = &root,               .kind = .{ .leaf = lex.Token{ .Operator = lex.WffOperator.Or } } };
+    var t3 = ParseTreeType.Node{ .parent = &root, .kind = .{ .leaf = lex.Token{ .Operator = lex.WffOperator.Or } } };
     var t4 = ParseTreeType.Node{ .parent = &(root_children[3]), .kind = .{ .leaf = lex.Token{ .Proposition = lex.PropositionVar{ .string = try std.testing.allocator.dupe(u8, "q") } } } };
-    var t5 = ParseTreeType.Node{ .parent = &root,               .kind = .{ .leaf = lex.Token{ .RParen = {} } } };
+    var t5 = ParseTreeType.Node{ .parent = &root, .kind = .{ .leaf = lex.Token{ .RParen = {} } } };
     defer allocator.free(t2.kind.leaf.Proposition.string);
     defer allocator.free(t4.kind.leaf.Proposition.string);
 
@@ -1137,17 +1070,14 @@ test "Parser.parse: '(p v q)'" {
 }
 
 test "ParseTree: ~p" {
-    const allocator = std.testing.allocator;  
+    const allocator = std.testing.allocator;
 
-    const parser = try TestParserType.init(
-        allocator, 
-        test_grammar_1
-    );
+    const parser = try TestParserType.init(allocator, test_grammar_1);
     defer parser.deinit();
 
     const tree = try parser.parse(allocator, "~p");
     defer tree.deinit();
-    
+
     var t1 = lex.Token{ .Operator = lex.WffOperator.Not };
     var t2 = lex.Token{ .Proposition = lex.PropositionVar{ .string = try std.testing.allocator.dupe(u8, "p") } };
     defer std.testing.allocator.free(t2.Proposition.string);

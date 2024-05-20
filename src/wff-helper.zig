@@ -1,5 +1,6 @@
 const std = @import("std");
-const wffs = @import("wff.zig");
+const parsing = @import("wff-parsing.zig");
+const wfflib = @import("wff.zig");
 const proofs = @import("proof.zig");
 const step_parse = @import("step-parsing.zig");
 
@@ -7,6 +8,10 @@ const stdout = std.io.getStdOut().writer();
 const stdin = std.io.getStdIn().reader();
 
 var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+
+const Token = parsing.TestToken;
+const Wff = wfflib.Wff(Token);
+const Proof = proofs.Proof(Token);
 
 /// Prompt the user for a number. Invalid input will be ignored and the user will
 /// be prompted again.
@@ -36,7 +41,7 @@ fn getNumber(comptime T: type) !?T {
     }
 }
 
-pub fn getWff(allocator: std.mem.Allocator) !?wffs.Wff {
+pub fn getWff(allocator: std.mem.Allocator) !?Wff {
     //try resetPrompt();
 
     var buf: [1024]u8 = undefined;
@@ -50,7 +55,7 @@ pub fn getWff(allocator: std.mem.Allocator) !?wffs.Wff {
             else => return err,
         } orelse return null;
 
-        var wff = wffs.Wff.init(allocator, buf_read) catch |err| switch (err) {
+        const wff = Wff.init(allocator, buf_read) catch |err| switch (err) {
             error.OutOfMemory => return err,
             else => {
                 try printErrResetPrompt("Error: Invalid wff", .{});
@@ -61,7 +66,7 @@ pub fn getWff(allocator: std.mem.Allocator) !?wffs.Wff {
     }
 }
 
-pub fn getStep(allocator: std.mem.Allocator, proof: proofs.Proof) !?proofs.Proof.Step {
+pub fn getStep(allocator: std.mem.Allocator, proof: Proof) !?Proof.Step {
     var buf: [1024]u8 = undefined;
 
     while (true) {
@@ -74,7 +79,7 @@ pub fn getStep(allocator: std.mem.Allocator, proof: proofs.Proof) !?proofs.Proof
             else => return err,
         } orelse return null;
 
-        var step = step_parse.parseStep(allocator, buf_read, proof) catch |err| switch (err) {
+        const step = step_parse.parseStep(allocator, buf_read, proof) catch |err| switch (err) {
             error.OutOfMemory => return err,
             else => {
                 try printErrResetPrompt("Error: Invalid input.", .{});
@@ -153,26 +158,26 @@ pub fn main() !void {
     try moveCursorTopLeft();
     try stdout.print("Welcome to wff-helper!\n\n", .{});
 
-    var equivalence_rules = proofs.initEquivalenceRules(allocator);
-    var inference_rules = proofs.initInferenceRules(allocator);
+    var equivalence_rules = proofs.initEquivalenceRules(Token, allocator);
+    var inference_rules = proofs.initInferenceRules(Token, allocator);
 
     try stdout.print("Start by entering a wff to prove", .{});
     try resetPromptClearError();
     var wff = try getWff(allocator) orelse return;
     defer wff.deinit();
 
-    var proof_methods: [4]proofs.Proof.Method = undefined;
-    var available_methods: []proofs.Proof.Method = undefined;
+    var proof_methods: [4]Proof.Method = undefined;
+    var available_methods: []Proof.Method = undefined;
     {
-        var implication_form = try wffs.Wff.init(allocator, "(p => q)");
+        var implication_form = try Wff.init(allocator, "(p => q)");
         defer implication_form.deinit();
         if (try wff.match(implication_form)) |match| {
             var m = match;
             m.deinit();
-            proof_methods = .{ proofs.Proof.Method.None, proofs.Proof.Method.Direct, proofs.Proof.Method.Indirect, proofs.Proof.Method.Contradiction };
+            proof_methods = .{ Proof.Method.None, Proof.Method.Direct, Proof.Method.Indirect, Proof.Method.Contradiction };
             available_methods = proof_methods[0..4];
         } else {
-            proof_methods = .{ proofs.Proof.Method.None, proofs.Proof.Method.Contradiction, undefined, undefined };
+            proof_methods = .{ Proof.Method.None, Proof.Method.Contradiction, undefined, undefined };
             available_methods = proof_methods[0..2];
         }
     }
@@ -192,7 +197,7 @@ pub fn main() !void {
         choice = try getNumber(u32) orelse return;
     }
 
-    var proof = try proofs.Proof.init(
+    var proof = try Proof.init(
         allocator,
         &wff,
         available_methods[choice - 1],
@@ -204,7 +209,7 @@ pub fn main() !void {
     try clearScreen();
     while (!(try proof.verify())) {
         try moveCursorTopLeft();
-        var proof_str = try proof.toString(allocator);
+        const proof_str = try proof.toString(allocator);
         defer allocator.free(proof_str);
         try stdout.print("{s}", .{proof_str});
 

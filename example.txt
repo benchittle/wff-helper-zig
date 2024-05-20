@@ -275,4 +275,6 @@ For v in grammar.variables:
 TODO: document and refactor to make code easier to follow
 TODO: make parstable comptime-able
 
-TODO: investigate whether a loop in some spot is starting from grammar.getVariableCount().. instead of 0.. for terminal stuff
+TODO: add "semantics tree" in different file and refactor Wff.init (wffs should be produced by some other object)
+    - change wff.parse_tree to wff.structure
+TODO: add allocator args to more stuff eg ParseTree.copy or Node.copy

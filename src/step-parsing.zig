@@ -78,7 +78,7 @@ pub fn tokenizeStep(allocator: std.mem.Allocator, step_string: []const u8) !std.
     errdefer tokens.deinit();
     
     var it = std.mem.split(u8, step_string, ",");
-    var wff_string = it.next().?;
+    const wff_string = it.next().?;
     var wff = wffs.Wff.init(allocator, wff_string) catch |err| switch(err) {
         error.OutOfMemory => return err,
         else => return StepParsingError.InvalidWff,
@@ -98,7 +98,7 @@ pub fn tokenizeStep(allocator: std.mem.Allocator, step_string: []const u8) !std.
                 return StepParsingError.InvalidStepNumber;
             },
             error.InvalidCharacter => {
-                var justification = try tokenizeJustification(stripped);
+                const justification = try tokenizeJustification(stripped);
                 try tokens.append(justification);
             },
         }
@@ -113,7 +113,7 @@ pub fn tokenizeStep(allocator: std.mem.Allocator, step_string: []const u8) !std.
 }
 
 
-pub fn parseStep(allocator: std.mem.Allocator, step_string: []const u8, proof: proofs.Proof) !proofs.Proof.Step {
+pub fn parseStep(allocator: std.mem.Allocator, step_string: []const u8, proof: Proof) !Proof.Step {
     var tokens = try tokenizeStep(allocator, step_string);
     defer tokens.deinit();
     errdefer for (tokens.items) |tok| {
@@ -143,12 +143,12 @@ pub fn parseStep(allocator: std.mem.Allocator, step_string: []const u8, proof: p
     }
 
     // Otherwise, last token must be justification
-    var justification_data = switch(tokens.items[tokens.items.len - 1]) {
+    const justification_data = switch(tokens.items[tokens.items.len - 1]) {
         .Justification => |data| data,
         else => return StepParsingError.InvalidFormat,
     };
 
-    var justification = switch(justification_data) {
+    const justification = switch(justification_data) {
         .Equivalence => |rule_num| ret: {
             if (rule_num < 1 or rule_num > proof.equivalence_rules.len) {
                 return StepParsingError.InvalidEquivalenceRule;
@@ -156,7 +156,7 @@ pub fn parseStep(allocator: std.mem.Allocator, step_string: []const u8, proof: p
             if (tokens.items.len != 3) {
                 return StepParsingError.TooManySteps;
             }
-            var step = switch(tokens.items[1]) {
+            const step = switch(tokens.items[1]) {
                 .StepNumber => |num| ret2: {
                     if (num < 1 or num > proof.steps.items.len) {
                         return StepParsingError.InvalidStepNumber;
