@@ -37,10 +37,7 @@ pub const TestParserType = Parser(
 
 pub const TestToken = lex.Token;
 
-pub fn MatchHashMap(comptime Token: type) type {
-    const ParseTreeType = ParseTree(Token);
-    return std.StringHashMap(*ParseTreeType.Node);
-}
+pub const MatchHashMap = std.StringHashMap(*ParseTree(TestToken).Node);
 
 pub fn ParseTreeDepthFirstIterator(comptime Token: type) type {
     return struct {
@@ -372,8 +369,8 @@ pub fn ParseTree(comptime Token: type) type {
             }
 
             /// Allocator will be used to create the hashmap for storing matches
-            pub fn match(self: *Node, allocator: std.mem.Allocator, pattern: *Node) !?MatchHashMap(Token) {
-                var matches = MatchHashMap(Token).init(allocator);
+            pub fn match(self: *Node, allocator: std.mem.Allocator, pattern: *Node) !?MatchHashMap {
+                var matches = MatchHashMap.init(allocator);
                 errdefer matches.deinit();
 
                 var it = self.iterDepthFirst();

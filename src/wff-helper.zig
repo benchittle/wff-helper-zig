@@ -10,8 +10,8 @@ const stdin = std.io.getStdIn().reader();
 var gpa = std.heap.GeneralPurposeAllocator(.{}){};
 
 const Token = parsing.TestToken;
-const Wff = wfflib.Wff(Token);
-const Proof = proofs.Proof(Token);
+const Wff = wfflib.Wff;
+const Proof = proofs.Proof;
 
 /// Prompt the user for a number. Invalid input will be ignored and the user will
 /// be prompted again.
@@ -158,8 +158,8 @@ pub fn main() !void {
     try moveCursorTopLeft();
     try stdout.print("Welcome to wff-helper!\n\n", .{});
 
-    var equivalence_rules = proofs.initEquivalenceRules(Token, allocator);
-    var inference_rules = proofs.initInferenceRules(Token, allocator);
+    var equivalence_rules = proofs.initEquivalenceRules(allocator);
+    var inference_rules = proofs.initInferenceRules(allocator);
 
     try stdout.print("Start by entering a wff to prove", .{});
     try resetPromptClearError();

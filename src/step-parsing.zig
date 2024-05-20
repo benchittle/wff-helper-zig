@@ -113,7 +113,7 @@ pub fn tokenizeStep(allocator: std.mem.Allocator, step_string: []const u8) !std.
 }
 
 
-pub fn parseStep(allocator: std.mem.Allocator, step_string: []const u8, proof: Proof) !Proof.Step {
+pub fn parseStep(allocator: std.mem.Allocator, step_string: []const u8, proof: proofs.Proof) !proofs.Proof.Step {
     var tokens = try tokenizeStep(allocator, step_string);
     defer tokens.deinit();
     errdefer for (tokens.items) |tok| {
