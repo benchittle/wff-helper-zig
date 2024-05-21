@@ -1098,30 +1098,42 @@ pub fn ParseTable(comptime Variable: type, comptime Terminal: type) type {
 
         pub const StateIdx = usize;
 
-        allocator: std.mem.Allocator,
+        allocator: ?std.mem.Allocator,
         grammar: GrammarType,
         goto_table: [][]Action,
         action_table: [][]Action,
 
         pub fn init(allocator: std.mem.Allocator, grammar: GrammarType) !Self {
-            const goto_table, const action_table = try generateTables(allocator, grammar);
+            if (@inComptime()) {
+                const goto_table, const action_table = try generateTablesComptime(grammar);
+                return Self{
+                    .allocator = null,
+                    .grammar = grammar,
+                    .goto_table = goto_table,
+                    .action_table = action_table,
+                };
+            } else {
+                const goto_table, const action_table = try generateTables(allocator, grammar);
+                return Self{
+                    .allocator = allocator,
+                    .grammar = grammar,
+                    .goto_table = goto_table,
+                    .action_table = action_table,
+                };
+            }
 
-            return Self{
-                .allocator = allocator,
-                .grammar = grammar,
-                .goto_table = goto_table,
-                .action_table = action_table,
-            };
         }
 
         /// Note: Does NOT free the memory associated with the grammar
         pub fn deinit(self: Self) void {
-            for (self.goto_table, self.action_table) |goto_row, action_row| {
-                self.allocator.free(goto_row);
-                self.allocator.free(action_row);
+            if (self.allocator) |allocator| {
+                for (self.goto_table, self.action_table) |goto_row, action_row| {
+                    allocator.free(goto_row);
+                    allocator.free(action_row);
+                }
+                allocator.free(self.goto_table);
+                allocator.free(self.action_table);
             }
-            self.allocator.free(self.goto_table);
-            self.allocator.free(self.action_table);
         }
 
         pub fn getStartState(_: Self) StateIdx {
@@ -1242,9 +1254,61 @@ pub fn ParseTable(comptime Variable: type, comptime Terminal: type) type {
             return .{ variable_branches, terminal_branches };
         }
 
-        fn checkStateAlreadyExists(starting_productions_table: std.ArrayList([]ProductionInstance), productions: std.ArrayList(ProductionInstance)) ?usize {
-            for (starting_productions_table.items, 0..) |start_prod_list, state| {
-                for (productions.items) |prod| {
+        fn expandProductionsComptime(comptime grammar: GrammarType, comptime productions: []const ProductionInstance) !struct { []ProductionInstance, []ProductionInstance } {
+            // const?
+            return comptime ret: {
+                var variable_branches: []const []const ProductionInstance = &[_][]const ProductionInstance {
+                    &[_]ProductionInstance {},
+                } ** grammar.getVariableCount();
+                
+                //try allocator.alloc(std.ArrayList(ProductionInstance), grammar.getVariableCount());
+
+                var terminal_branches: []const []const ProductionInstance = &[_][]const ProductionInstance {
+                    &[_]ProductionInstance {},
+                } ** grammar.getTerminalCount();
+                
+                //try allocator.alloc(std.ArrayList(ProductionInstance), grammar.getTerminalCount());
+
+                var stack: []const ProductionInstance = &[_]ProductionInstance{};
+
+                for (productions) |instance| {
+                    stack = stack ++ &[_]ProductionInstance {instance};
+                }
+
+                // Expand all given ProductionInstances and track all of the symbols
+                // currently being read.
+                while (stack.len > 0) {
+                    const prod = stack[stack.len - 1];
+                    stack = stack[0 .. stack.len - 1];
+
+                    if (prod.readCursor()) |sym| {
+                        switch (sym) {
+                            .variable => |idx| {
+                                // If the variable has not been encountered yet,
+                                // expand it by pushing any productions from it onto
+                                // the stack.
+                                if (variable_branches[idx].len == 0) {
+                                    for (grammar.rules) |rule| {
+                                        if (sym.eql(rule.lhs)) {
+                                            stack = stack ++ &[_]ProductionInstance {ProductionInstance.fromProduction(rule)};
+                                        }
+                                    }
+                                }
+                                // Add the variable as a branch.
+                                variable_branches[idx] = variable_branches[idx] ++ &[_]ProductionInstance {prod.copyAdvanceCursor()};
+                            },
+                            .terminal => |idx| terminal_branches[idx] = terminal_branches[idx] ++ &[_]ProductionInstance {prod.copyAdvanceCursor()},
+                        }
+                    }
+                }
+
+                break :ret .{ variable_branches, terminal_branches };
+            };
+        }
+
+        fn checkStateAlreadyExists(starting_productions_table: [][]ProductionInstance, productions: []ProductionInstance) ?usize {
+            for (starting_productions_table, 0..) |start_prod_list, state| {
+                for (productions) |prod| {
                     for (start_prod_list) |start_prod| {
                         if (prod.eql(start_prod)) break;
                     } else {
@@ -1303,7 +1367,7 @@ pub fn ParseTable(comptime Variable: type, comptime Terminal: type) type {
                         goto_table.items[state][v_idx] = Action.invalid;
                         // If expanding these productions would result in a state
                         // that already exists,
-                    } else if (checkStateAlreadyExists(primary_productions_table, prod_list.*)) |existing_state| {
+                    } else if (checkStateAlreadyExists(primary_productions_table.items, prod_list.items)) |existing_state| {
                         goto_table.items[state][v_idx] = try switch (goto_table.items[state][v_idx]) {
                             .invalid => Action{ .state = existing_state },
                             .state => TableGeneratorError.shiftShiftError,
@@ -1324,7 +1388,7 @@ pub fn ParseTable(comptime Variable: type, comptime Terminal: type) type {
                         action_table.items[state][t_idx] = Action.invalid;
                         // If expanding these productions would result in a state
                         // that already exists,
-                    } else if (checkStateAlreadyExists(primary_productions_table, prod_list.*)) |existing_state| {
+                    } else if (checkStateAlreadyExists(primary_productions_table.items, prod_list.items)) |existing_state| {
                         action_table.items[state][t_idx] = try switch (action_table.items[state][t_idx]) {
                             .invalid => Action{ .state = existing_state },
                             .state => TableGeneratorError.shiftShiftError,
@@ -1346,7 +1410,7 @@ pub fn ParseTable(comptime Variable: type, comptime Terminal: type) type {
                 allocator.free(follow_set);
             }
 
-            // TODO: Populate reductions
+            // Populate reductions
             // For each completed primary production in each state, identify the
             // production rule's index and insert a reduction on each of the LHS's
             // follow set
@@ -1384,6 +1448,117 @@ pub fn ParseTable(comptime Variable: type, comptime Terminal: type) type {
                 }
             }
             return .{ try goto_table.toOwnedSlice(), try action_table.toOwnedSlice() };
+        }
+
+        fn generateTablesComptime(grammar: GrammarType) !struct { [][]Action, [][]Action } {
+            var goto_table: []const []const Action = &[_][]const Action {
+                &[_]Action {Action {.invalid = {}}} ** grammar.getVariableCount(),
+            }; 
+            
+            var action_table: []const []const Action = &[_][]const Action {
+                &[_]Action {Action {.invalid = {}}} ** grammar.getTerminalCount(),
+            };
+            
+            var primary_productions_table: []const []const ProductionInstance = &[_][]const ProductionInstance {
+                &[_]ProductionInstance {ProductionInstance.fromProduction(grammar.rules[grammar.getStartRuleIdx()])},
+            };
+
+            var state: usize = 0;
+            while (state < goto_table.len) : (state += 1) {
+                const variable_branches, const terminal_branches = try expandProductionsComptime(grammar, primary_productions_table[state]);
+
+                for (variable_branches, 0..) |*prod_list, v_idx| {
+                    // If there are no transitions from this variable, move on
+                    // (cell is initialized to invalid so we don't need to set
+                    // it here)
+                    if (prod_list.len == 0) {
+                        continue;
+                    }
+                    
+                    // If expanding these productions would result in a state
+                    // that already exists,
+                    if (checkStateAlreadyExists(primary_productions_table.items, prod_list.items)) |existing_state| {
+                        goto_table.items[state][v_idx] = try switch (goto_table.items[state][v_idx]) {
+                            .invalid => Action{ .state = existing_state },
+                            .state => TableGeneratorError.shiftShiftError,
+                            .reduce => TableGeneratorError.shiftReduceError,
+                            .accept => TableGeneratorError.shiftAcceptError,
+                        };
+                    } else {
+                        goto_table = goto_table ++ &[_]Action {Action{.invalid = {}}} ** grammar.getVariableCount();
+                        action_table = action_table ++ &[_]Action {Action{.invalid = {}}} ** grammar.getTerminalCount();
+                        primary_productions_table = primary_productions_table ++ prod_list;
+                        
+                        goto_table.items[state][v_idx] = Action{ .state = goto_table.len - 1 };
+                    }
+                }
+                for (terminal_branches, 0..) |*prod_list, t_idx| {
+                    // If there are no transitions from this variable, move on
+                    // (cell is initialized to invalid so we don't need to set
+                    // it here)
+                    if (prod_list.len == 0) {
+                        continue;
+                    }
+
+                    // If expanding these productions would result in a state
+                    // that already exists,
+                    if (checkStateAlreadyExists(primary_productions_table.items, prod_list.items)) |existing_state| {
+                        action_table.items[state][t_idx] = try switch (action_table.items[state][t_idx]) {
+                            .invalid => Action{ .state = existing_state },
+                            .state => TableGeneratorError.shiftShiftError,
+                            .reduce => TableGeneratorError.shiftReduceError,
+                            .accept => TableGeneratorError.shiftAcceptError,
+                        };
+                    } else {
+                        goto_table = goto_table ++ &[_]Action {Action{.invalid = {}}} ** grammar.getVariableCount();
+                        action_table = action_table ++ &[_]Action {Action{.invalid = {}}} ** grammar.getTerminalCount();
+                        primary_productions_table = primary_productions_table ++ prod_list;
+
+                        action_table.items[state][t_idx] = Action{ .state = action_table.items.len - 1 };
+                    }
+                }
+            }
+
+            const follow_set = try grammar.getFollowSetComptime();
+
+            // Populate reductions
+            // For each completed primary production in each state, identify the
+            // production rule's index and insert a reduction on each of the LHS's
+            // follow set
+            for (primary_productions_table, 0..) |row, state_num| {
+                for (row) |instance| {
+                    if (instance.readCursor() != null) continue;
+
+                    const rule_idx = grammar.getRuleIdx(instance.production).?;
+                    for (follow_set[instance.production.lhs.variable], 0..) |isFollow, t_idx| {
+                        if (!isFollow) continue;
+
+                        action_table.items[state_num][t_idx] = try switch (action_table.items[state_num][t_idx]) {
+                            .invalid => Action{ .reduce = rule_idx },
+                            .state => TableGeneratorError.shiftReduceError,
+                            .reduce => TableGeneratorError.reduceReduceError,
+                            .accept => TableGeneratorError.reduceAcceptError,
+                        };
+                    }
+
+                    // TODO: hardcoded 0 kinda yucky
+                    if (instance.production.lhs.variable == grammar.getStartSymbol().variable) {
+                        switch (action_table.items[state_num][grammar.getEndSymbol().terminal]) {
+                            .invalid => return TableGeneratorError.acceptError,
+                            .state => return TableGeneratorError.shiftAcceptError,
+                            .reduce => |reduction_rule_idx| {
+                                if (reduction_rule_idx == grammar.getStartRuleIdx()) {
+                                    action_table.items[state_num][grammar.getEndSymbol().terminal] = Action.accept;
+                                } else {
+                                    return TableGeneratorError.acceptError;
+                                }
+                            },
+                            .accept => {},
+                        }
+                    }
+                }
+            }
+            return .{ try goto_table, try action_table };
         }
     };
 }
@@ -1449,7 +1624,9 @@ test "create_parse_table-grammar1_0" {
 
     const P = ParseTable(TestVariable, TestTerminal);
 
-    const table = try P.init(std.testing.allocator, grammar);
+    const table = comptime ret: {
+        break :ret try P.init(std.testing.allocator, grammar);
+    };
     defer table.deinit();
 
     table.printDebugTable();

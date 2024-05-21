@@ -273,7 +273,7 @@ For v in grammar.variables:
 
             
 TODO: document and refactor to make code easier to follow
-TODO: make parstable comptime-able
+DOING: make parstable comptime-able
 
 TODO: add "semantics tree" in different file and refactor Wff.init (wffs should be produced by some other object)
     - change wff.parse_tree to wff.structure
