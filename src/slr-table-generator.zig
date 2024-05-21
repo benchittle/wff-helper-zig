@@ -500,8 +500,8 @@ pub fn Grammar(comptime Variable: type, comptime Terminal: type) type {
 
         // NOTE: $ (END character) can never be first
         pub fn getFirstSetComptime(comptime self: Self) []const []const bool {
-            return comptime ret: {
-                var firsts = [_][self.getTerminalCount()]bool{[_]bool{false} ** self.getTerminalCount()} ** self.getVariableCount();
+            comptime {
+                var firsts = [_][self.getTerminalCount()]bool {[_]bool{false} ** self.getTerminalCount()} ** self.getVariableCount();
 
                 // Iterate over all variable ID's
                 for (0..self.getVariableCount()) |v_idx| {
@@ -547,8 +547,8 @@ pub fn Grammar(comptime Variable: type, comptime Terminal: type) type {
                     firsts_as_slices[i] = &firsts_const[i];
                 }
                 const firsts_as_slices_const = firsts_as_slices;
-                break :ret &firsts_as_slices_const;
-            };
+                return &firsts_as_slices_const;
+            }
         }
 
         // NOTE: Assumes $ is last terminal symbol ID and S' is the first symbol ID
@@ -632,10 +632,10 @@ pub fn Grammar(comptime Variable: type, comptime Terminal: type) type {
         }
 
         pub fn getFollowSetComptime(comptime self: Self) []const []const bool {
-            return comptime ret: {
+            comptime {
                 const first_set = self.getFirstSetComptime();
 
-                var follow_set = [_][self.getTerminalCount()]bool{[_]bool{false} ** self.getTerminalCount()} ** self.getVariableCount();
+                var follow_set = [_][self.getTerminalCount()]bool {[_]bool{false} ** self.getTerminalCount()} ** self.getVariableCount();
 
                 // Initialize FOLLOW(startsymbol) to include end of input symbol.
                 follow_set[0][self.getTerminalCount() - 1] = true;
@@ -694,8 +694,8 @@ pub fn Grammar(comptime Variable: type, comptime Terminal: type) type {
                     follow_set_as_slices[i] = &follow_set_const[i];
                 }
                 const follow_set_as_slices_const = follow_set_as_slices;
-                break :ret &follow_set_as_slices_const;
-            };
+                return &follow_set_as_slices_const;
+            }
         }
 
         fn printDebugProductionInstance(_: Self, prod: ProductionInstance) !void {
@@ -792,7 +792,7 @@ test "Grammar.initFromTuples-grammar1_0" {
 
     const V = TestVariable.fromString;
     const G = Grammar(TestVariable, TestTerminal);
-    comptime var actual_grammar = G.initFromTuples(
+    const actual_grammar = comptime G.initFromTuples(
         .{
             .{ V("S"), .{V("wff")} },
             .{ V("wff"), .{ TestTerminal.Proposition} },
@@ -860,7 +860,7 @@ test "Grammar.initFromTuples-grammar2_2" {
     const V = TestVariable.fromString;
     const G = Grammar(TestVariable, TestTerminal);
 
-    comptime var actual_grammar = G.initFromTuples(
+    const actual_grammar = comptime G.initFromTuples(
         .{
             .{ V("S"), .{V("wff1")} },
 
@@ -913,7 +913,7 @@ test "Grammar.initFromTuples-grammar2_2" {
 
 test "firsts_and_follows-grammar1_0" {
     const V = TestVariable.fromString;
-    comptime var grammar = Grammar(TestVariable, TestTerminal).initFromTuples(.{
+    const grammar = comptime Grammar(TestVariable, TestTerminal).initFromTuples(.{
         .{ V("S"), .{V("wff")} },
         .{ V("wff"), .{TestTerminal.Proposition} },
         .{ V("wff"), .{ TestTerminal.Not, V("wff") } },
@@ -934,7 +934,7 @@ test "firsts_and_follows-grammar1_0" {
         allocator.free(first_set);
     }
 
-    const first_set_comptime = grammar.getFirstSetComptime();
+    const first_set_comptime = comptime grammar.getFirstSetComptime();
 
     const expected_firsts = [_][9]bool{
         .{ true, true, true, false, false, false, false, false, false },
@@ -955,7 +955,7 @@ test "firsts_and_follows-grammar1_0" {
         allocator.free(follow);
     }
 
-    const follow_comptime = grammar.getFollowSetComptime();
+    const follow_comptime = comptime grammar.getFollowSetComptime();
 
     const expected_follow = [_][9]bool{
         .{ false, false, false, false, false, false, false, false, true },
@@ -997,7 +997,7 @@ test "firsts_and_follows-grammar2_2" {
     const V = TestVariable.fromString;
     const G = Grammar(TestVariable, TestTerminal);
 
-    comptime var grammar = G.initFromTuples(
+    const grammar = comptime G.initFromTuples(
         .{
             .{ V("S"), .{V("wff1")} },
 
@@ -1032,7 +1032,7 @@ test "firsts_and_follows-grammar2_2" {
         allocator.free(first_set);
     }
 
-    const first_set_comptime = grammar.getFirstSetComptime();
+    const first_set_comptime = comptime grammar.getFirstSetComptime();
 
     const expected_firsts = [_][9]bool{
         .{ false, false, false, false, true, true, false, true, false },
@@ -1056,7 +1056,7 @@ test "firsts_and_follows-grammar2_2" {
         }
         allocator.free(follow);
     }
-    const follow_comptime = grammar.getFollowSetComptime();
+    const follow_comptime = comptime grammar.getFollowSetComptime();
 
     const expected_follow = [_][9]bool{
         .{ false, false, false, false, false, false, false, false, true },
@@ -1100,28 +1100,29 @@ pub fn ParseTable(comptime Variable: type, comptime Terminal: type) type {
 
         allocator: ?std.mem.Allocator,
         grammar: GrammarType,
-        goto_table: [][]Action,
-        action_table: [][]Action,
+        goto_table: []const []const Action,
+        action_table: []const []const Action,
 
         pub fn init(allocator: std.mem.Allocator, grammar: GrammarType) !Self {
-            if (@inComptime()) {
-                const goto_table, const action_table = try generateTablesComptime(grammar);
+            const goto_table, const action_table = try generateTables(allocator, grammar);
+            return Self{
+                .allocator = allocator,
+                .grammar = grammar,
+                .goto_table = goto_table,
+                .action_table = action_table,
+            };
+        }
+
+        pub fn initComptime(comptime grammar: GrammarType) Self {
+            comptime {
+                const goto_table, const action_table = generateTablesComptime(grammar);
                 return Self{
                     .allocator = null,
                     .grammar = grammar,
                     .goto_table = goto_table,
                     .action_table = action_table,
                 };
-            } else {
-                const goto_table, const action_table = try generateTables(allocator, grammar);
-                return Self{
-                    .allocator = allocator,
-                    .grammar = grammar,
-                    .goto_table = goto_table,
-                    .action_table = action_table,
-                };
             }
-
         }
 
         /// Note: Does NOT free the memory associated with the grammar
@@ -1254,59 +1255,54 @@ pub fn ParseTable(comptime Variable: type, comptime Terminal: type) type {
             return .{ variable_branches, terminal_branches };
         }
 
-        fn expandProductionsComptime(comptime grammar: GrammarType, comptime productions: []const ProductionInstance) !struct { []ProductionInstance, []ProductionInstance } {
-            // const?
-            return comptime ret: {
-                var variable_branches: []const []const ProductionInstance = &[_][]const ProductionInstance {
-                    &[_]ProductionInstance {},
-                } ** grammar.getVariableCount();
-                
-                //try allocator.alloc(std.ArrayList(ProductionInstance), grammar.getVariableCount());
+        fn expandProductionsComptime(comptime grammar: GrammarType, comptime productions: []const ProductionInstance) !struct { []const []const ProductionInstance, []const []const ProductionInstance } {
+            var variable_branches = [_][]const ProductionInstance {
+                &[_]ProductionInstance {},
+            } ** grammar.getVariableCount();
+            
+            var terminal_branches = [_][]const ProductionInstance {
+                &[_]ProductionInstance {},
+            } ** grammar.getTerminalCount();
+            
+            var stack: []const ProductionInstance = &[_]ProductionInstance{};
 
-                var terminal_branches: []const []const ProductionInstance = &[_][]const ProductionInstance {
-                    &[_]ProductionInstance {},
-                } ** grammar.getTerminalCount();
-                
-                //try allocator.alloc(std.ArrayList(ProductionInstance), grammar.getTerminalCount());
+            for (productions) |instance| {
+                stack = stack ++ &[_]ProductionInstance {instance};
+            }
 
-                var stack: []const ProductionInstance = &[_]ProductionInstance{};
+            // Expand all given ProductionInstances and track all of the symbols
+            // currently being read.
+            while (stack.len > 0) {
+                const prod = stack[stack.len - 1];
+                stack = stack[0 .. stack.len - 1];
 
-                for (productions) |instance| {
-                    stack = stack ++ &[_]ProductionInstance {instance};
-                }
-
-                // Expand all given ProductionInstances and track all of the symbols
-                // currently being read.
-                while (stack.len > 0) {
-                    const prod = stack[stack.len - 1];
-                    stack = stack[0 .. stack.len - 1];
-
-                    if (prod.readCursor()) |sym| {
-                        switch (sym) {
-                            .variable => |idx| {
-                                // If the variable has not been encountered yet,
-                                // expand it by pushing any productions from it onto
-                                // the stack.
-                                if (variable_branches[idx].len == 0) {
-                                    for (grammar.rules) |rule| {
-                                        if (sym.eql(rule.lhs)) {
-                                            stack = stack ++ &[_]ProductionInstance {ProductionInstance.fromProduction(rule)};
-                                        }
+                if (prod.readCursor()) |sym| {
+                    switch (sym) {
+                        .variable => |idx| {
+                            // If the variable has not been encountered yet,
+                            // expand it by pushing any productions from it onto
+                            // the stack.
+                            if (variable_branches[idx].len == 0) {
+                                for (grammar.rules) |rule| {
+                                    if (sym.eql(rule.lhs)) {
+                                        stack = stack ++ &[_]ProductionInstance {ProductionInstance.fromProduction(rule)};
                                     }
                                 }
-                                // Add the variable as a branch.
-                                variable_branches[idx] = variable_branches[idx] ++ &[_]ProductionInstance {prod.copyAdvanceCursor()};
-                            },
-                            .terminal => |idx| terminal_branches[idx] = terminal_branches[idx] ++ &[_]ProductionInstance {prod.copyAdvanceCursor()},
-                        }
+                            }
+                            // Add the variable as a branch.
+                            // const new = variable_branches[idx] ++ &[_]ProductionInstance {prod.copyAdvanceCursor()};
+                            // variable_branches = variable_branches[0..idx] ++ &[_][]const ProductionInstance {new} ++ variable_branches[(idx + 1)..variable_branches.len];
+                            variable_branches[idx] = variable_branches[idx] ++ &[_]ProductionInstance {prod.copyAdvanceCursor()};
+                        },
+                        .terminal => |idx| terminal_branches[idx] = terminal_branches[idx] ++ &[_]ProductionInstance {prod.copyAdvanceCursor()},
                     }
                 }
+            }
 
-                break :ret .{ variable_branches, terminal_branches };
-            };
+            return .{ &variable_branches, &terminal_branches };
         }
 
-        fn checkStateAlreadyExists(starting_productions_table: [][]ProductionInstance, productions: []ProductionInstance) ?usize {
+        fn checkStateAlreadyExists(starting_productions_table: []const []const ProductionInstance, productions: []const ProductionInstance) ?usize {
             for (starting_productions_table, 0..) |start_prod_list, state| {
                 for (productions) |prod| {
                     for (start_prod_list) |start_prod| {
@@ -1450,115 +1446,136 @@ pub fn ParseTable(comptime Variable: type, comptime Terminal: type) type {
             return .{ try goto_table.toOwnedSlice(), try action_table.toOwnedSlice() };
         }
 
-        fn generateTablesComptime(grammar: GrammarType) !struct { [][]Action, [][]Action } {
-            var goto_table: []const []const Action = &[_][]const Action {
-                &[_]Action {Action {.invalid = {}}} ** grammar.getVariableCount(),
-            }; 
-            
-            var action_table: []const []const Action = &[_][]const Action {
-                &[_]Action {Action {.invalid = {}}} ** grammar.getTerminalCount(),
-            };
-            
-            var primary_productions_table: []const []const ProductionInstance = &[_][]const ProductionInstance {
-                &[_]ProductionInstance {ProductionInstance.fromProduction(grammar.rules[grammar.getStartRuleIdx()])},
-            };
+        fn generateTablesComptime(comptime grammar: GrammarType) struct { []const []const Action, []const []const Action } {
+            comptime {
+                var goto_table: []const []const Action = &[_][]const Action {
+                    &[_]Action {Action {.invalid = {}}} ** grammar.getVariableCount(),
+                }; 
+                
+                var action_table: []const []const Action = &[_][]const Action {
+                    &[_]Action {Action {.invalid = {}}} ** grammar.getTerminalCount(),
+                };
+                
+                var primary_productions_table: []const []const ProductionInstance = &[_][]const ProductionInstance {
+                    &[_]ProductionInstance {ProductionInstance.fromProduction(grammar.rules[grammar.getStartRuleIdx()])},
+                };
 
-            var state: usize = 0;
-            while (state < goto_table.len) : (state += 1) {
-                const variable_branches, const terminal_branches = try expandProductionsComptime(grammar, primary_productions_table[state]);
+                var state_num: usize = 0;
+                while (state_num < goto_table.len) : (state_num += 1) {
+                    const variable_branches, const terminal_branches = try expandProductionsComptime(grammar, primary_productions_table[state_num]);
 
-                for (variable_branches, 0..) |*prod_list, v_idx| {
-                    // If there are no transitions from this variable, move on
-                    // (cell is initialized to invalid so we don't need to set
-                    // it here)
-                    if (prod_list.len == 0) {
-                        continue;
-                    }
-                    
-                    // If expanding these productions would result in a state
-                    // that already exists,
-                    if (checkStateAlreadyExists(primary_productions_table.items, prod_list.items)) |existing_state| {
-                        goto_table.items[state][v_idx] = try switch (goto_table.items[state][v_idx]) {
-                            .invalid => Action{ .state = existing_state },
-                            .state => TableGeneratorError.shiftShiftError,
-                            .reduce => TableGeneratorError.shiftReduceError,
-                            .accept => TableGeneratorError.shiftAcceptError,
-                        };
-                    } else {
-                        goto_table = goto_table ++ &[_]Action {Action{.invalid = {}}} ** grammar.getVariableCount();
-                        action_table = action_table ++ &[_]Action {Action{.invalid = {}}} ** grammar.getTerminalCount();
-                        primary_productions_table = primary_productions_table ++ prod_list;
+                    for (variable_branches, 0..) |prod_list, v_idx| {
+                        // If there are no transitions from this variable, move on
+                        // (cell is initialized to invalid so we don't need to set
+                        // it here)
+                        if (prod_list.len == 0) {
+                            continue;
+                        }
                         
-                        goto_table.items[state][v_idx] = Action{ .state = goto_table.len - 1 };
+                        // If expanding these productions would result in a state
+                        // that already exists,
+                        if (checkStateAlreadyExists(primary_productions_table, prod_list)) |existing_state| {
+                            const new_action = switch (action_table[state_num][v_idx]) {
+                                .invalid => Action{ .state = existing_state },
+                                .state => @compileError("Parsing error: shift shift conflict"),
+                                .reduce => @compileError("Parsing error: shift reduce conflict"),
+                                .accept => @compileError("Parsing error: shift accept error"),
+                            };
+                            
+                            // Gross horrible disgusting pattern so that we can
+                            // "assign" new values to the entries of the table.
+                            // Essentially recreating the table with the entry
+                            // to be assigned replaced with the desired new 
+                            // entry. Probably very inefficient but it's 
+                            // comptime so who cares.
+                            const new_row = action_table[state_num][0..v_idx] ++ [_]Action { new_action } ++ action_table[state_num][(v_idx + 1)..action_table[state_num].len];
+                            action_table = action_table[0..state_num] ++ [_][]const Action {new_row} ++ action_table[(state_num + 1)..action_table.len];
+                        } else {
+                            goto_table = goto_table ++ [_][]const Action{ &[_]Action {Action{.invalid = {}}} ** grammar.getVariableCount() };
+                            action_table = action_table ++ [_][]const Action{ &[_]Action {Action{.invalid = {}}} ** grammar.getTerminalCount() };
+                            primary_productions_table = primary_productions_table ++ [_][]const ProductionInstance{ prod_list };
+                            
+                            const new_row = goto_table[state_num][0..v_idx] ++ [_]Action {Action {.state = goto_table.len - 1 } } ++ goto_table[state_num][(v_idx + 1)..goto_table[state_num].len];
+                            goto_table = goto_table[0..state_num] ++ [_][]const Action {new_row} ++ goto_table[(state_num + 1)..goto_table.len];
+                            //goto_table[state][v_idx] = Action{ .state = goto_table.len - 1 };
+                        }
                     }
-                }
-                for (terminal_branches, 0..) |*prod_list, t_idx| {
-                    // If there are no transitions from this variable, move on
-                    // (cell is initialized to invalid so we don't need to set
-                    // it here)
-                    if (prod_list.len == 0) {
-                        continue;
-                    }
+                    for (terminal_branches, 0..) |prod_list, t_idx| {
+                        // If there are no transitions from this variable, move on
+                        // (cell is initialized to invalid so we don't need to set
+                        // it here)
+                        if (prod_list.len == 0) {
+                            continue;
+                        }
 
-                    // If expanding these productions would result in a state
-                    // that already exists,
-                    if (checkStateAlreadyExists(primary_productions_table.items, prod_list.items)) |existing_state| {
-                        action_table.items[state][t_idx] = try switch (action_table.items[state][t_idx]) {
-                            .invalid => Action{ .state = existing_state },
-                            .state => TableGeneratorError.shiftShiftError,
-                            .reduce => TableGeneratorError.shiftReduceError,
-                            .accept => TableGeneratorError.shiftAcceptError,
-                        };
-                    } else {
-                        goto_table = goto_table ++ &[_]Action {Action{.invalid = {}}} ** grammar.getVariableCount();
-                        action_table = action_table ++ &[_]Action {Action{.invalid = {}}} ** grammar.getTerminalCount();
-                        primary_productions_table = primary_productions_table ++ prod_list;
+                        // If expanding these productions would result in a state
+                        // that already exists,
+                        if (checkStateAlreadyExists(primary_productions_table, prod_list)) |existing_state| {
+                            const new_action = switch (action_table[state_num][t_idx]) {
+                                .invalid => Action{ .state = existing_state },
+                                .state => @compileError("Parsing error: shift shift conflict"),
+                                .reduce => @compileError("Parsing error: shift reduce conflict"),
+                                .accept => @compileError("Parsing error: shift accept error"),
+                            };
+                            const new_row = action_table[state_num][0..t_idx] ++ [_]Action { new_action } ++ action_table[state_num][(t_idx + 1)..action_table[state_num].len];
+                            action_table = action_table[0..state_num] ++ [_][]const Action {new_row} ++ action_table[(state_num + 1)..action_table.len];
+                        } else {
+                            goto_table = goto_table ++ [_][]const Action{ &[_]Action {Action{.invalid = {}}} ** grammar.getVariableCount() };
+                            action_table = action_table ++ [_][]const Action{ &[_]Action {Action{.invalid = {}}} ** grammar.getTerminalCount() };
+                            primary_productions_table = primary_productions_table ++ [_][]const ProductionInstance{ prod_list };
 
-                        action_table.items[state][t_idx] = Action{ .state = action_table.items.len - 1 };
-                    }
-                }
-            }
-
-            const follow_set = try grammar.getFollowSetComptime();
-
-            // Populate reductions
-            // For each completed primary production in each state, identify the
-            // production rule's index and insert a reduction on each of the LHS's
-            // follow set
-            for (primary_productions_table, 0..) |row, state_num| {
-                for (row) |instance| {
-                    if (instance.readCursor() != null) continue;
-
-                    const rule_idx = grammar.getRuleIdx(instance.production).?;
-                    for (follow_set[instance.production.lhs.variable], 0..) |isFollow, t_idx| {
-                        if (!isFollow) continue;
-
-                        action_table.items[state_num][t_idx] = try switch (action_table.items[state_num][t_idx]) {
-                            .invalid => Action{ .reduce = rule_idx },
-                            .state => TableGeneratorError.shiftReduceError,
-                            .reduce => TableGeneratorError.reduceReduceError,
-                            .accept => TableGeneratorError.reduceAcceptError,
-                        };
-                    }
-
-                    // TODO: hardcoded 0 kinda yucky
-                    if (instance.production.lhs.variable == grammar.getStartSymbol().variable) {
-                        switch (action_table.items[state_num][grammar.getEndSymbol().terminal]) {
-                            .invalid => return TableGeneratorError.acceptError,
-                            .state => return TableGeneratorError.shiftAcceptError,
-                            .reduce => |reduction_rule_idx| {
-                                if (reduction_rule_idx == grammar.getStartRuleIdx()) {
-                                    action_table.items[state_num][grammar.getEndSymbol().terminal] = Action.accept;
-                                } else {
-                                    return TableGeneratorError.acceptError;
-                                }
-                            },
-                            .accept => {},
+                            const new_row = action_table[state_num][0..t_idx] ++ [_]Action {Action {.state = action_table.len - 1 } } ++ action_table[state_num][(t_idx + 1)..action_table[state_num].len];
+                            action_table = action_table[0..state_num] ++ [_][]const Action {new_row} ++ action_table[(state_num + 1)..action_table.len];
                         }
                     }
                 }
+                    
+                const follow_set = grammar.getFollowSetComptime();
+
+                // Populate reductions
+                // For each completed primary production in each state, identify the
+                // production rule's index and insert a reduction on each of the LHS's
+                // follow set
+                // TODO: Make separate function so we can use state_num instead of state_num_
+                for (primary_productions_table, 0..) |row, state_num_| {
+                    for (row) |instance| {
+                        if (instance.readCursor() != null) continue;
+
+                        const rule_idx = grammar.getRuleIdx(instance.production).?;
+                        for (follow_set[instance.production.lhs.variable], 0..) |isFollow, t_idx| {
+                            if (!isFollow) continue;
+
+                            const new_action = switch (action_table[state_num_][t_idx]) {
+                                .invalid => Action{ .reduce = rule_idx },
+                                .state => @compileError("Parsing error: shift reduce error"),
+                                .reduce => @compileError("Parsing error: reduce reduce error"),
+                                .accept => @compileError("Parsing error: reduce accept error"),
+                            };
+                            const new_row = action_table[state_num_][0..t_idx] ++ [_]Action { new_action } ++ action_table[state_num_][(t_idx + 1)..action_table[state_num_].len];
+                            action_table = action_table[0..state_num_] ++ [_][]const Action {new_row} ++ action_table[(state_num_ + 1)..action_table.len];
+                        }
+
+                        // TODO: hardcoded 0 kinda yucky
+                        if (instance.production.lhs.variable == grammar.getStartSymbol().variable) {
+                            switch (action_table[state_num_][grammar.getEndSymbol().terminal]) {
+                                .invalid => @compileError("Parsing error: missing accepting reduction"),
+                                .state => @compileError("Parsing error: shift accept error"),
+                                .reduce => |reduction_rule_idx| {
+                                    if (reduction_rule_idx == grammar.getStartRuleIdx()) {
+                                        const t_idx = grammar.getEndSymbol().terminal;
+                                        const new_row = action_table[state_num_][0..t_idx] ++ [_]Action { Action {.accept = {}} } ++ action_table[state_num_][(t_idx + 1)..action_table[state_num_].len];
+                                        action_table = action_table[0..state_num_] ++ [_][]const Action {new_row} ++ action_table[(state_num_ + 1)..action_table.len];
+                                    } else {
+                                        @compileError("Parsing error: the accepting state can only replace the starting production rule, found a different rule instead");
+                                    }
+                                },
+                                .accept => {},
+                            }
+                        }
+                    }
+                }
+                return .{ goto_table, action_table };
             }
-            return .{ try goto_table, try action_table };
         }
     };
 }
@@ -1566,7 +1583,7 @@ pub fn ParseTable(comptime Variable: type, comptime Terminal: type) type {
 test "ParseTable.expandProductions-grammar1_0" {
     const V = TestVariable.fromString;
     const G = Grammar(TestVariable, TestTerminal);
-    comptime var grammar = G.initFromTuples(.{
+    const grammar = comptime G.initFromTuples(.{
         .{ V("S"), .{V("wff")} },
         .{ V("wff"), .{TestTerminal.Proposition} },
         .{ V("wff"), .{ TestTerminal.Not, V("wff") } },
@@ -1609,9 +1626,10 @@ test "ParseTable.expandProductions-grammar1_0" {
 }
 
 test "create_parse_table-grammar1_0" {
+    @setEvalBranchQuota(10000);
     const V = TestVariable.fromString;
     const G = Grammar(TestVariable, TestTerminal);
-    comptime var grammar = G.initFromTuples(.{
+    const grammar = comptime G.initFromTuples(.{
         .{ V("S"), .{V("wff")} },
         .{ V("wff"), .{TestTerminal.Proposition} },
         .{ V("wff"), .{ TestTerminal.Not, V("wff") } },
@@ -1624,10 +1642,12 @@ test "create_parse_table-grammar1_0" {
 
     const P = ParseTable(TestVariable, TestTerminal);
 
-    const table = comptime ret: {
-        break :ret try P.init(std.testing.allocator, grammar);
-    };
+    const table = try P.init(std.testing.allocator, grammar);
     defer table.deinit();
 
+    const table_comptime = comptime P.initComptime(grammar);
+    defer table_comptime.deinit();
+
     table.printDebugTable();
+    table_comptime.printDebugTable();
 }

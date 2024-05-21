@@ -278,3 +278,5 @@ DOING: make parstable comptime-able
 TODO: add "semantics tree" in different file and refactor Wff.init (wffs should be produced by some other object)
     - change wff.parse_tree to wff.structure
 TODO: add allocator args to more stuff eg ParseTree.copy or Node.copy
+
+Idea: make a ComptimeArrayList with basic functionality to clean up comptime code

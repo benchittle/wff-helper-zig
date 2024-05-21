@@ -346,8 +346,27 @@ const ue = union(enum) {
 //     // };
 // }
 
-test "for iteration" {
-    for(5..0) |i| {
-        stdout.print("{d}\n", .{i});
+// test "for iteration" {
+//     for(5..0) |i| {
+//         stdout.print("{d}\n", .{i});
+//     }
+// }
+
+
+test "comptime array init" {
+    comptime var branches = [_][]const u8 {
+        &[_]u8 {},
+    } ** 3;
+
+
+    branches[1] = branches[1] ++ &[_]u8 {2};
+    try stdout.print("{any}\n", .{branches});
+}
+
+test "functions" {
+    var l: u32 = 10;
+    for (0..l) |i| {
+        l -= 1;
+        try stdout.print("{d}\n", .{i});
     }
 }
