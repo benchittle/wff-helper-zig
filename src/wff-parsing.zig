@@ -39,7 +39,7 @@ pub const TestToken = lex.Token;
 
 pub const MatchHashMap = std.StringHashMap(*ParseTree(TestToken).Node);
 
-pub fn ParseTreeDepthFirstIterator(comptime Token: type) type {
+pub fn ParseTreePreOrderIterator(comptime Token: type) type {
     return struct {
         const Self = @This();
         const ParseTreeType = ParseTree(Token);
@@ -102,7 +102,7 @@ pub fn ParseTreeDepthFirstIterator(comptime Token: type) type {
     };
 }
 
-test "ParseTreeDepthFirstIterator" {
+test "ParseTreePreOrderIterator" {
     const ParseTreeType = TestParserType.ParseTreeType;
     const allocator = std.testing.allocator;
 
@@ -116,7 +116,7 @@ test "ParseTreeDepthFirstIterator" {
     const c: *ParseTreeType.Node = tree.root.kind.nonleaf[1].parent.?;
     try std.testing.expectEqual(c, c.kind.nonleaf[0].parent.?);
 
-    var it = tree.root.iterDepthFirst();
+    var it = tree.root.iterPreOrder();
 
     var t1 = ParseTreeType.Kind{ .leaf = lex.Token.LParen };
     var t2 = ParseTreeType.Kind{ .leaf = lex.Token{ .Proposition = lex.PropositionVar{ .string = try std.testing.allocator.dupe(u8, "p") } } };
@@ -261,8 +261,8 @@ pub fn ParseTree(comptime Token: type) type {
                 var copy_root = try allocator.create(Node);
                 copy_root.parent = null;
 
-                var it = self.iterDepthFirst();
-                var copy_it = copy_root.iterDepthFirst();
+                var it = self.iterPreOrder();
+                var copy_it = copy_root.iterPreOrder();
 
                 while (it.hasNext()) {
                     const node = it.nextUnchecked();
@@ -328,8 +328,8 @@ pub fn ParseTree(comptime Token: type) type {
                 return copy_root;
             }
 
-            pub fn iterDepthFirst(self: *Node) ParseTreeDepthFirstIterator(Token) {
-                return ParseTreeDepthFirstIterator(Token){ .start = self, .current = @ptrCast(self) };
+            pub fn iterPreOrder(self: *Node) ParseTreePreOrderIterator(Token) {
+                return ParseTreePreOrderIterator(Token){ .start = self, .current = @ptrCast(self) };
             }
 
             pub fn iterPostOrder(self: *Node) ParseTreePostOrderIterator(Token) {
@@ -373,8 +373,8 @@ pub fn ParseTree(comptime Token: type) type {
                 var matches = MatchHashMap.init(allocator);
                 errdefer matches.deinit();
 
-                var it = self.iterDepthFirst();
-                var pattern_it = pattern.iterDepthFirst();
+                var it = self.iterPreOrder();
+                var pattern_it = pattern.iterPreOrder();
 
                 while (it.hasNext() and pattern_it.hasNext()) {
                     const node = it.nextUnchecked();
@@ -457,8 +457,8 @@ pub fn ParseTree(comptime Token: type) type {
             return self.root.eql(other.root);
         }
 
-        pub fn iterDepthFirst(self: Self) ParseTreeDepthFirstIterator(Token) {
-            return self.root.iterDepthFirst();
+        pub fn iterPreOrder(self: Self) ParseTreePreOrderIterator(Token) {
+            return self.root.iterPreOrder();
         }
 
         pub fn iterPostOrder(self: Self) ParseTreePostOrderIterator(Token) {
@@ -469,7 +469,7 @@ pub fn ParseTree(comptime Token: type) type {
             var string_buf = std.ArrayList(u8).init(allocator);
             errdefer string_buf.deinit();
 
-            var it = self.iterDepthFirst();
+            var it = self.iterPreOrder();
             while (it.next()) |node| {
                 switch (node.kind) {
                     .leaf => |*tok| {
@@ -1079,7 +1079,7 @@ test "ParseTree: ~p" {
     var t2 = lex.Token{ .Proposition = lex.PropositionVar{ .string = try std.testing.allocator.dupe(u8, "p") } };
     defer std.testing.allocator.free(t2.Proposition.string);
 
-    var it = tree.iterDepthFirst();
+    var it = tree.iterPreOrder();
     _ = it.next();
     try std.testing.expect(t1.eql(it.next().?.kind.leaf));
     _ = it.next();

@@ -1481,7 +1481,7 @@ pub fn ParseTable(comptime Variable: type, comptime Terminal: type) type {
                                 .reduce => @compileError("Parsing error: shift reduce conflict"),
                                 .accept => @compileError("Parsing error: shift accept error"),
                             };
-                            
+
                             // Gross horrible disgusting pattern so that we can
                             // "assign" new values to the entries of the table.
                             // Essentially recreating the table with the entry
@@ -1648,6 +1648,8 @@ test "create_parse_table-grammar1_0" {
     const table_comptime = comptime P.initComptime(grammar);
     defer table_comptime.deinit();
 
+    try std.testing.expectEqualDeep(table.action_table, table_comptime.action_table);
+    try std.testing.expectEqualDeep(table.goto_table, table_comptime.goto_table);
+
     table.printDebugTable();
-    table_comptime.printDebugTable();
 }

@@ -370,3 +370,28 @@ test "functions" {
         try stdout.print("{d}\n", .{i});
     }
 }
+
+const TestError = error {
+    temp,
+};
+
+const t = struct {
+    pub fn dosth(a: u32, b: u16) u32 {
+        return  (a + b < 100); // a + b else TestError.temp;
+    }
+};
+
+fn do() void {
+    return true;
+}
+
+test "comparing fn signatures" {
+    if (@TypeOf(t.dosth) != fn(u32, u16) u32) {
+        @compileLog(@TypeOf(t.dosth));
+        @compileError("Not same");
+    }
+
+    const info = @typeInfo(@TypeOf(t.dosth));
+    @compileLog(info.Fn.return_type);
+}
+
