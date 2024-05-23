@@ -51,7 +51,7 @@ pub fn WffParser(comptime Parser: type) type {
             return Wff { .allocator = allocator, .wff_tree = wff_tree };
         }
 
-        fn oldOperatorToWffBinaryOperator(operator: parsing.TestToken) WffTree.BinaryOperator {
+        fn oldOperatorToWffBinaryOperator(operator: parsing.TestToken) WffTree.Node.BinaryOperator {
             return switch(operator) {
                 .Operator => |op| switch(op) {
                     .Not => std.debug.panic("oldOperatorToWffBinaryOperator called with unary operator", .{}),
@@ -109,19 +109,19 @@ pub fn WffParser(comptime Parser: type) type {
                             },
                             else => std.debug.panic("nonleaf parse node does not have an operator in the expected position in its children", .{})
                         }
-                        wff_node = wff_iter.next();
                     },
                     .leaf => |token| {
-                        //wff_node = wff_iter.next().?;
                         switch(token) {
-                            .Proposition => |prop| {
-                                wff_node.?.kind = .{ .proposition_variable = try allocator.dupe(u8, prop.string) };
-                                wff_node = wff_iter.next();
+                            .Proposition => |prop| wff_node.?.kind = .{ 
+                                .proposition_variable = try allocator.dupe(u8, prop.string) 
                             },
-                            else => {}
+                            .True => wff_node.?.kind = .{ .logical_constant = .t },
+                            .False => wff_node.?.kind = .{ .logical_constant = .f },
+                            else => continue,
                         }
                     }
                 }
+                wff_node = wff_iter.next();
             }
             return WffTree{ .allocator = allocator, .root = wff_root };
         }
@@ -191,8 +191,6 @@ test "WffParser.fromOldGrammar: ((a v b) ^ ~c)" {
         }
     };
 
-    const expected_tree = WffTree { .allocator = allocator, .root = &root };
-    
     const parser = try parsing.TestParserType.init(allocator, parsing.test_grammar_1);
     defer parser.deinit();
     const parse_tree = try parser.parse(allocator, "((a v b) ^ ~c)");
@@ -200,7 +198,7 @@ test "WffParser.fromOldGrammar: ((a v b) ^ ~c)" {
     const actual_tree = try WffParser(parsing.TestParserType).fromOldGrammar(allocator, parse_tree);
     defer actual_tree.deinit();
 
-    var expected_it = expected_tree.iterPreOrder();
+    var expected_it = root.iterPreOrder();
     var actual_it = actual_tree.iterPreOrder();
     while (expected_it.next()) |expected_node| {
         const actual_node = actual_it.next().?;
@@ -208,24 +206,132 @@ test "WffParser.fromOldGrammar: ((a v b) ^ ~c)" {
         switch(expected_node.kind) {
             .unary_operator => |op| try std.testing.expectEqual(op.operator, actual_node.kind.unary_operator.operator),
             .binary_operator => |op| try std.testing.expectEqual(op.operator, actual_node.kind.binary_operator.operator),
-            .proposition_variable => |s| try std.testing.expectEqualStrings(s, actual_node.kind.proposition_variable)
+            .proposition_variable => |s| try std.testing.expectEqualStrings(s, actual_node.kind.proposition_variable),
+            .logical_constant => |constant| try std.testing.expectEqual(constant, actual_node.kind.logical_constant),
+        }
+    }
+}
+
+test "WffParser.fromOldGrammar: a" {
+    const allocator = std.testing.allocator;
+
+    const root = WffTree.Node {
+        .parent = null,
+        .kind = .{
+            .proposition_variable = "a"
+        }
+    };
+
+    const parser = try parsing.TestParserType.init(allocator, parsing.test_grammar_1);
+    defer parser.deinit();
+    const parse_tree = try parser.parse(allocator, "a");
+    defer parse_tree.deinit();
+    const actual_tree = try WffParser(parsing.TestParserType).fromOldGrammar(allocator, parse_tree);
+    defer actual_tree.deinit();
+
+    try std.testing.expectEqualDeep(root, actual_tree.root.*);
+}
+
+test "WffParser.fromOldGrammar: T" {
+    const allocator = std.testing.allocator;
+
+    const root = WffTree.Node {
+        .parent = null,
+        .kind = .{
+            .logical_constant = .t,
+        }
+    };
+
+    const parser = try parsing.TestParserType.init(allocator, parsing.test_grammar_1);
+    defer parser.deinit();
+    const parse_tree = try parser.parse(allocator, "T");
+    defer parse_tree.deinit();
+    const actual_tree = try WffParser(parsing.TestParserType).fromOldGrammar(allocator, parse_tree);
+    defer actual_tree.deinit();
+
+    try std.testing.expectEqualDeep(root, actual_tree.root.*);
+}
+
+test "WffParser.fromOldGrammar: (~T <=> (a ^ F))" {
+    const allocator = std.testing.allocator;
+
+    // Build expected tree for (a v b) ^ ~c
+    var root = WffTree.Node {
+        .parent = null,
+        .kind = undefined,
+    };
+
+    var left_branch = WffTree.Node {
+        .parent = &root,
+        .kind = undefined,
+    };
+
+    var t = WffTree.Node {
+        .parent = &left_branch,
+        .kind = .{ .logical_constant = .t },
+    };
+
+    left_branch.kind = .{ 
+        .unary_operator = .{
+            .operator = .not,
+            .arg = &t,
+        }
+    };
+
+    var right_branch = WffTree.Node {
+        .parent = &root,
+        .kind = undefined,
+    };
+
+    var a = WffTree.Node {
+        .parent = &right_branch,
+        .kind = .{ .proposition_variable = "a" },
+    };
+
+    var f = WffTree.Node {
+        .parent = &right_branch,
+        .kind = .{ .logical_constant = .f },
+    };
+
+    right_branch.kind = .{ 
+        .binary_operator = .{
+            .operator = .and_,
+            .arg1 = &a,
+            .arg2 = &f,
+        }
+    };
+
+    root.kind = .{
+        .binary_operator = .{
+            .operator = .bicond,
+            .arg1 = &left_branch,
+            .arg2 = &right_branch,
+        }
+    };
+
+    const parser = try parsing.TestParserType.init(allocator, parsing.test_grammar_1);
+    defer parser.deinit();
+    const parse_tree = try parser.parse(allocator, "(~T <=> (a ^ F))");
+    defer parse_tree.deinit();
+    const actual_tree = try WffParser(parsing.TestParserType).fromOldGrammar(allocator, parse_tree);
+    defer actual_tree.deinit();
+
+    var expected_it = root.iterPreOrder();
+    var actual_it = actual_tree.iterPreOrder();
+    while (expected_it.next()) |expected_node| {
+        const actual_node = actual_it.next().?;
+        try std.testing.expectEqual(std.meta.activeTag(expected_node.kind), std.meta.activeTag(actual_node.kind));
+        switch(expected_node.kind) {
+            .unary_operator => |op| try std.testing.expectEqual(op.operator, actual_node.kind.unary_operator.operator),
+            .binary_operator => |op| try std.testing.expectEqual(op.operator, actual_node.kind.binary_operator.operator),
+            .proposition_variable => |s| try std.testing.expectEqualStrings(s, actual_node.kind.proposition_variable),
+            .logical_constant => |constant| try std.testing.expectEqual(constant, actual_node.kind.logical_constant),
         }
     }
 }
 
 pub const WffTree = struct {
     const Self = @This();
-
-    const UnaryOperator = enum {
-        not,
-    };
-
-    const BinaryOperator = enum {
-        and_,
-        or_,
-        cond,
-        bicond,
-    };
 
     pub const PreOrderIterator = struct {
         start: *Node,
@@ -247,7 +353,7 @@ pub const WffTree = struct {
                             node = parent;
                         }
                     },
-                    .proposition_variable => unreachable,
+                    .proposition_variable, .logical_constant => unreachable,
                 }
             }
             return null;
@@ -264,7 +370,7 @@ pub const WffTree = struct {
             self.current = switch(self.current.?.kind) {
                 .unary_operator => |op| op.arg,
                 .binary_operator => |op| op.arg1,
-                .proposition_variable => self.backtrack(),
+                .proposition_variable, .logical_constant => self.backtrack(),
             };
 
             if (self.current == null) {
@@ -285,7 +391,7 @@ pub const WffTree = struct {
             return switch(parent.kind) {
                 .unary_operator => true,
                 .binary_operator => |op| node == op.arg2,
-                .proposition_variable => unreachable,
+                .proposition_variable, .logical_constant => unreachable,
             };
         }
 
@@ -301,14 +407,14 @@ pub const WffTree = struct {
             // We know parent is not null, else we already would have returned.
             self.next_node = switch(current_node.parent.?.kind) {
                 .binary_operator => |op| op.arg2,
-                .unary_operator, .proposition_variable => unreachable,
+                .unary_operator, .proposition_variable, .logical_constant => unreachable,
             }; 
 
             while (true) {
                 switch(self.next_node.?.kind) {
                     .unary_operator => |op| self.next_node = op.arg,
                     .binary_operator => |op| self.next_node = op.arg1,
-                    .proposition_variable => break,
+                    .proposition_variable, .logical_constant => break,
                 }
             }
 
@@ -317,6 +423,22 @@ pub const WffTree = struct {
     };
 
     pub const Node = struct {
+        const UnaryOperator = enum {
+            not,
+        };
+
+        const BinaryOperator = enum {
+            and_,
+            or_,
+            cond,
+            bicond,
+        };
+
+        const LogicalConstant = enum {
+            t,
+            f,
+        };
+
         parent: ?*Node,
         kind: union(enum) {
             unary_operator: struct {
@@ -328,7 +450,8 @@ pub const WffTree = struct {
                 arg1: *Node,
                 arg2: *Node,
             },
-            proposition_variable: []const u8
+            proposition_variable: []const u8,
+            logical_constant: LogicalConstant,
         },
 
         fn initKindUndefined(allocator: std.mem.Allocator, parent: ?*Node) !*Node {
@@ -349,7 +472,7 @@ pub const WffTree = struct {
                 switch(start.kind) {
                     .unary_operator => |op| start = op.arg,
                     .binary_operator => |op| start = op.arg1,
-                    .proposition_variable => break,
+                    .proposition_variable, .logical_constant => break,
                 }
             }
             return PostOrderIterator{ .root = self, .next_node = start };
@@ -364,7 +487,7 @@ pub const WffTree = struct {
         while (it.next()) |node| {
             switch(node.kind) {
                 .proposition_variable => |s| self.allocator.free(s),
-                .unary_operator, .binary_operator => {},
+                .logical_constant, .unary_operator, .binary_operator => {},
             }
             self.allocator.destroy(node);
         }
