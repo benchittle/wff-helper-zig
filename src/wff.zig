@@ -15,11 +15,13 @@ pub fn WffParser(comptime Parser: type) type {
     }
     // TODO: Check Parser has necessary method
 
+    //const OldParser = parsing.TestParserType;
     const OldParseTree = parsing.ParseTree(parsing.TestToken);
+
     const NewParseTree = void;
-    const ParseReturnType = @typeInfo(@TypeOf(Parser.parse)).Fn.return_type.?;
+    const ParseReturnType = @typeInfo(@typeInfo(@TypeOf(Parser.parse)).Fn.return_type.?).ErrorUnion.payload;
     if (ParseReturnType != OldParseTree and ParseReturnType != NewParseTree) {
-        @compileError("Cannot use this parser: the parse tree type returned by parser.parse does not use a recognized token");
+        @compileError("Cannot use this parser: there is no function to convert its parse tree to a WffTree");
     }
 
     return struct {
@@ -49,63 +51,71 @@ pub fn WffParser(comptime Parser: type) type {
             return Wff { .allocator = allocator, .wff_tree = wff_tree };
         }
 
-        fn oldOperatorToWffOperator(operator: parsing.TestToken) WffTree.BinaryOperator {
+        fn oldOperatorToWffBinaryOperator(operator: parsing.TestToken) WffTree.BinaryOperator {
             return switch(operator) {
                 .Operator => |op| switch(op) {
-                    .Not => .not,
+                    .Not => std.debug.panic("oldOperatorToWffBinaryOperator called with unary operator", .{}),
                     .And => .and_,
                     .Or => .or_,
                     .Cond => .cond,
                     .Bicond => .bicond,
                 },
-                else => std.debug.panic("oldOperatorToWffOperator called with non operator token argument"),
+                else => std.debug.panic("oldOperatorToWffBinaryOperator called with non operator token argument", .{}),
             };
         }
 
+        // TODO: defer / cleanup on error
         fn fromOldGrammar(allocator: std.mem.Allocator, parse_tree: OldParseTree) !WffTree {
             const wff_root = try WffTree.Node.initKindUndefined(allocator, null);
 
             var parse_iter = parse_tree.iterPreOrder();
             var wff_iter = wff_root.iterPreOrder();
-            var wff_node = wff_iter.next();
+            var wff_node: ?*WffTree.Node = wff_iter.next().?;
             while (parse_iter.next()) |parse_node| {
                 switch(parse_node.kind) {
                     .nonleaf => |children| {
                         // Get operator
-                        const operator = ret: {
+                        const operatorToken = ret: {
                             if (children.len == 5) {
                                 break :ret children[2].kind.leaf;
                             } else if (children.len == 2) {
                                 break :ret children[0].kind.leaf;
+                            // In case of 1 child, this indicates the next node 
+                            // is a temrinal / proposition, so we'll simply 
+                            // advance to it
+                            } else if (children.len == 1) {
+                                continue;
                             } else {
-                                std.debug.panic("nonleaf parse tree node has unexpected number of children");
+                                std.debug.panic("nonleaf parse tree node has unexpected number of children", .{});
                             }
                         };
-                        // Assign current wff node as this operator
-                        switch(operator) {
+                        //wff_node = wff_iter.next().?;
+                        // Assign operator to current wff node
+                        switch(operatorToken) {
                             .Operator => |op| switch(op) {
-                                .Not => wff_node.kind = .{
+                                .Not => wff_node.?.kind = .{
                                     .unary_operator = .{ 
                                         .operator = .not,
-                                        .arg = try WffTree.Node.initKindUndefined(allocator, wff_node),
+                                        .arg = try WffTree.Node.initKindUndefined(allocator, wff_node.?),
                                     },
                                 },
-                                .And, .Or, .Cond, .Bicond => wff_node.kind = .{
+                                .And, .Or, .Cond, .Bicond => wff_node.?.kind = .{
                                     .binary_operator = .{
-                                        .operator = oldOperatorToWffOperator(op),
-                                        .arg1 = try WffTree.Node.initKindUndefined(allocator, wff_node),
-                                        .arg2 = try WffTree.Node.initKindUndefined(allocator, wff_node),
+                                        .operator = oldOperatorToWffBinaryOperator(operatorToken),
+                                        .arg1 = try WffTree.Node.initKindUndefined(allocator, wff_node.?),
+                                        .arg2 = try WffTree.Node.initKindUndefined(allocator, wff_node.?),
                                     }
                                 }
                             },
-                            else => std.debug.panic("nonleaf parse node does not have an operator in the expected position in its children")
+                            else => std.debug.panic("nonleaf parse node does not have an operator in the expected position in its children", .{})
                         }
                         wff_node = wff_iter.next();
                     },
                     .leaf => |token| {
+                        //wff_node = wff_iter.next().?;
                         switch(token) {
                             .Proposition => |prop| {
-                                wff_node.kind = .{ .proposition_variable = allocator.dupe(prop.string) };
+                                wff_node.?.kind = .{ .proposition_variable = try allocator.dupe(u8, prop.string) };
                                 wff_node = wff_iter.next();
                             },
                             else => {}
@@ -113,6 +123,7 @@ pub fn WffParser(comptime Parser: type) type {
                     }
                 }
             }
+            return WffTree{ .allocator = allocator, .root = wff_root };
         }
 
         fn fromNewGrammar(allocator: std.mem.Allocator, parse_tree: NewParseTree) !WffTree {
@@ -121,6 +132,85 @@ pub fn WffParser(comptime Parser: type) type {
             return WffError.BadSubstitution;
         }
     };
+}
+
+test "WffParser.fromOldGrammar: ((a v b) ^ ~c)" {
+    const allocator = std.testing.allocator;
+
+    // Build expected tree for (a v b) ^ ~c
+    var root = WffTree.Node {
+        .parent = null,
+        .kind = undefined,
+    };
+
+    var left_branch = WffTree.Node {
+        .parent = &root,
+        .kind = undefined,
+    };
+
+    var a = WffTree.Node {
+        .parent = &left_branch,
+        .kind = .{ .proposition_variable = "a" },
+    };
+
+    var b = WffTree.Node {
+        .parent = &left_branch,
+        .kind = .{ .proposition_variable = "b" },
+    };
+
+    left_branch.kind = .{ 
+        .binary_operator = .{
+            .operator = .or_,
+            .arg1 = &a,
+            .arg2 = &b,
+        }
+    };
+
+    var right_branch = WffTree.Node {
+        .parent = &root,
+        .kind = undefined,
+    };
+
+    var c = WffTree.Node {
+        .parent = &right_branch,
+        .kind = .{ .proposition_variable = "c" },
+    };
+
+    right_branch.kind = .{ 
+        .unary_operator = .{
+            .operator = .not,
+            .arg = &c,
+        }
+    };
+
+    root.kind = .{
+        .binary_operator = .{
+            .operator = .and_,
+            .arg1 = &left_branch,
+            .arg2 = &right_branch,
+        }
+    };
+
+    const expected_tree = WffTree { .allocator = allocator, .root = &root };
+    
+    const parser = try parsing.TestParserType.init(allocator, parsing.test_grammar_1);
+    defer parser.deinit();
+    const parse_tree = try parser.parse(allocator, "((a v b) ^ ~c)");
+    defer parse_tree.deinit();
+    const actual_tree = try WffParser(parsing.TestParserType).fromOldGrammar(allocator, parse_tree);
+    defer actual_tree.deinit();
+
+    var expected_it = expected_tree.iterPreOrder();
+    var actual_it = actual_tree.iterPreOrder();
+    while (expected_it.next()) |expected_node| {
+        const actual_node = actual_it.next().?;
+        try std.testing.expectEqual(std.meta.activeTag(expected_node.kind), std.meta.activeTag(actual_node.kind));
+        switch(expected_node.kind) {
+            .unary_operator => |op| try std.testing.expectEqual(op.operator, actual_node.kind.unary_operator.operator),
+            .binary_operator => |op| try std.testing.expectEqual(op.operator, actual_node.kind.binary_operator.operator),
+            .proposition_variable => |s| try std.testing.expectEqualStrings(s, actual_node.kind.proposition_variable)
+        }
+    }
 }
 
 pub const WffTree = struct {
@@ -138,8 +228,9 @@ pub const WffTree = struct {
     };
 
     pub const PreOrderIterator = struct {
-        start: *const Node,
+        start: *Node,
         current: ?*Node,
+        done: bool,
 
         // Traverse back up the tree and return the first unvisited node to the
         // right. If we're traversing up the rightmost branch and reach the root
@@ -163,13 +254,63 @@ pub const WffTree = struct {
         }
 
         pub fn next(self: *PreOrderIterator) ?*Node {
-            const current_node = self.current orelse return null;
+            if (self.done) return null;
 
-            self.current = switch(current_node.kind) {
+            if (self.current == null) {
+                self.current = self.start;
+                return self.current;
+            }
+
+            self.current = switch(self.current.?.kind) {
                 .unary_operator => |op| op.arg,
                 .binary_operator => |op| op.arg1,
                 .proposition_variable => self.backtrack(),
             };
+
+            if (self.current == null) {
+                self.done = true;
+            }
+
+            return self.current;
+        }
+    };
+
+    pub const PostOrderIterator = struct {
+        root: *Node,
+        next_node: ?*Node,
+
+        fn isLastSiblingNode(node: *Node) bool {
+            const parent = node.parent orelse return true; 
+
+            return switch(parent.kind) {
+                .unary_operator => true,
+                .binary_operator => |op| node == op.arg2,
+                .proposition_variable => unreachable,
+            };
+        }
+
+
+        pub fn next(self: *PostOrderIterator) ?*Node {
+            const current_node = self.next_node orelse return null;
+            
+            if (isLastSiblingNode(current_node)) {
+                self.next_node = current_node.parent;
+                return current_node;
+            }
+
+            // We know parent is not null, else we already would have returned.
+            self.next_node = switch(current_node.parent.?.kind) {
+                .binary_operator => |op| op.arg2,
+                .unary_operator, .proposition_variable => unreachable,
+            }; 
+
+            while (true) {
+                switch(self.next_node.?.kind) {
+                    .unary_operator => |op| self.next_node = op.arg,
+                    .binary_operator => |op| self.next_node = op.arg1,
+                    .proposition_variable => break,
+                }
+            }
 
             return current_node;
         }
@@ -199,19 +340,46 @@ pub const WffTree = struct {
         }
 
         fn iterPreOrder(self: *Node) PreOrderIterator {
-            return PreOrderIterator{ .start = self, .current = self };
+            return PreOrderIterator{ .start = self, .current = null, .done = false };
+        }
+
+        fn iterPostOrder(self: *Node) PostOrderIterator {
+            var start = self;
+            while (true) {
+                switch(start.kind) {
+                    .unary_operator => |op| start = op.arg,
+                    .binary_operator => |op| start = op.arg1,
+                    .proposition_variable => break,
+                }
+            }
+            return PostOrderIterator{ .root = self, .next_node = start };
         }
     };
 
     allocator: std.mem.Allocator,
     root: *Node,
 
+    pub fn deinit(self: Self) void {
+        var it = self.iterPostOrder();
+        while (it.next()) |node| {
+            switch(node.kind) {
+                .proposition_variable => |s| self.allocator.free(s),
+                .unary_operator, .binary_operator => {},
+            }
+            self.allocator.destroy(node);
+        }
+    }
+
     pub fn iterPreOrder(self: Self) PreOrderIterator {
         return self.root.iterPreOrder();
     } 
+
+    pub fn iterPostOrder(self: Self) PostOrderIterator {
+        return self.root.iterPostOrder();
+    }
 };
 
-test "WffTreePreOrderIterator" {
+test "WffTreePreOrderIterator: ((a v b) ^ ~c)" {
     // (a v b) ^ ~c
     var root = WffTree.Node {
         .parent = null,
@@ -274,6 +442,72 @@ test "WffTreePreOrderIterator" {
     try std.testing.expectEqual(&b, it.next().?);
     try std.testing.expectEqual(&right_branch, it.next().?);
     try std.testing.expectEqual(&c, it.next().?);
+    try std.testing.expectEqual(null, it.next());
+}
+
+test "WffTreePostOrderIterator: ((a v b) ^ ~c)" {
+    // (a v b) ^ ~c
+    var root = WffTree.Node {
+        .parent = null,
+        .kind = undefined,
+    };
+
+    var left_branch = WffTree.Node {
+        .parent = &root,
+        .kind = undefined,
+    };
+
+    var a = WffTree.Node {
+        .parent = &left_branch,
+        .kind = .{ .proposition_variable = "a" },
+    };
+
+    var b = WffTree.Node {
+        .parent = &left_branch,
+        .kind = .{ .proposition_variable = "b" },
+    };
+
+    left_branch.kind = .{ 
+        .binary_operator = .{
+            .operator = .or_,
+            .arg1 = &a,
+            .arg2 = &b,
+        }
+    };
+
+    var right_branch = WffTree.Node {
+        .parent = &root,
+        .kind = undefined,
+    };
+
+    var c = WffTree.Node {
+        .parent = &right_branch,
+        .kind = .{ .proposition_variable = "c" },
+    };
+
+    right_branch.kind = .{ 
+        .unary_operator = .{
+            .operator = .not,
+            .arg = &c,
+        }
+    };
+
+    root.kind = .{
+        .binary_operator = .{
+            .operator = .and_,
+            .arg1 = &left_branch,
+            .arg2 = &right_branch,
+        }
+    };
+    
+    var it = root.iterPostOrder();
+
+    try std.testing.expectEqual(&a, it.next().?);
+    try std.testing.expectEqual(&b, it.next().?);
+    try std.testing.expectEqual(&left_branch, it.next().?);
+    try std.testing.expectEqual(&c, it.next().?);
+    try std.testing.expectEqual(&right_branch, it.next().?);
+    try std.testing.expectEqual(&root, it.next().?);
     try std.testing.expectEqual(null, it.next());
 }
 
