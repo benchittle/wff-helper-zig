@@ -385,16 +385,26 @@ fn do() void {
     return true;
 }
 
-test "comparing fn signatures" {
-    // if (@TypeOf(t.dosth) != fn(u32, u16) u32) {
-    //     @compileLog(@TypeOf(t.dosth));
-    //     @compileError("Not same");
-    // }
+// test "comparing fn signatures" {
+//     // if (@TypeOf(t.dosth) != fn(u32, u16) u32) {
+//     //     @compileLog(@TypeOf(t.dosth));
+//     //     @compileError("Not same");
+//     // }
 
-    const info = @typeInfo(@TypeOf(t.dosth));
-    const info2 = info.Fn.return_type.?;
-    const info3 = @typeInfo(info2);
+//     const info = @typeInfo(@TypeOf(t.dosth));
+//     const info2 = info.Fn.return_type.?;
+//     const info3 = @typeInfo(info2);
     
-    @compileLog(info3.ErrorUnion.);
-}
+//     @compileLog(info3.ErrorUnion.);
+// }
 
+test "arena alloc" {
+    const allocator = std.testing.allocator;
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const arena_alloc = arena.allocator();
+
+    _ = try arena_alloc.dupe(u8, "hello world\n");
+
+    //allocator.free(s);
+}
