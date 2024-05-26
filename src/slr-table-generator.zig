@@ -1596,6 +1596,28 @@ test "ParseTable.expandProductions-grammar1_0" {
 
     const P = ParseTable(TestVariable, TestTerminal);
 
+    const expected_variable_branches = &[_][]const ProductionInstance {
+        &[_]ProductionInstance {},
+        &[_]ProductionInstance { .{.production = grammar.rules[0], .cursor = 1} },
+    };
+
+    const expected_terminal_branches = &[_][]const ProductionInstance {
+        &[_]ProductionInstance { .{.production = grammar.rules[1], .cursor = 1} },
+        &[_]ProductionInstance { .{.production = grammar.rules[2], .cursor = 1} },
+        &[_]ProductionInstance { 
+            .{.production = grammar.rules[6], .cursor = 1},
+            .{.production = grammar.rules[5], .cursor = 1}, 
+            .{.production = grammar.rules[4], .cursor = 1}, 
+            .{.production = grammar.rules[3], .cursor = 1}, 
+        },
+        &[_]ProductionInstance {},
+        &[_]ProductionInstance {},
+        &[_]ProductionInstance {},
+        &[_]ProductionInstance {},
+        &[_]ProductionInstance {},
+        &[_]ProductionInstance {},
+    };
+
     const start_productions = [_]ProductionInstance{ProductionInstance.fromProduction(grammar.rules[0])};
     const variable_branches, const terminal_branches = try P.expandProductions(std.testing.allocator, grammar, &start_productions);
     defer {
@@ -1608,21 +1630,27 @@ test "ParseTable.expandProductions-grammar1_0" {
         std.testing.allocator.free(variable_branches);
         std.testing.allocator.free(terminal_branches);
     }
+    for (expected_variable_branches, variable_branches) |expected, actual| {
+        try std.testing.expectEqualSlices(ProductionInstance, expected, actual.items);
+    }
+    for (expected_terminal_branches, terminal_branches) |expected, actual| {
+        try std.testing.expectEqualSlices(ProductionInstance, expected, actual.items);
+    }
 
-    debug.print("\nVARIABLES:\n", .{});
-    for (variable_branches, 0..) |variable_prods, i| {
-        debug.print("{d}\n", .{i});
-        for (variable_prods.items) |p| {
-            try grammar.printDebugProductionInstance(p);
-        }
-    }
-    debug.print("\nTERMINALS:\n", .{});
-    for (terminal_branches, 0..) |terminal_prods, i| {
-        debug.print("{d}\n", .{i});
-        for (terminal_prods.items) |p| {
-            try grammar.printDebugProductionInstance(p);
-        }
-    }
+    // debug.print("\nVARIABLES:\n", .{});
+    // for (variable_branches, 0..) |variable_prods, i| {
+    //     debug.print("{d}\n", .{i});
+    //     for (variable_prods.items) |p| {
+    //         try grammar.printDebugProductionInstance(p);
+    //     }
+    // }
+    // debug.print("\nTERMINALS:\n", .{});
+    // for (terminal_branches, 0..) |terminal_prods, i| {
+    //     debug.print("{d}\n", .{i});
+    //     for (terminal_prods.items) |p| {
+    //         try grammar.printDebugProductionInstance(p);
+    //     }
+    // }
 }
 
 test "create_parse_table-grammar1_0" {
@@ -1642,14 +1670,68 @@ test "create_parse_table-grammar1_0" {
 
     const P = ParseTable(TestVariable, TestTerminal);
 
+    const expected_table = P {
+        .allocator = null,
+        .grammar = grammar,
+        .goto_table = &[_][]const P.Action {
+            &[_]P.Action { .{.invalid = {}}, .{.state = 1} },
+            &[_]P.Action { .{.invalid = {}}, .{.invalid = {}} },
+            &[_]P.Action { .{.invalid = {}}, .{.invalid = {}} },
+            &[_]P.Action { .{.invalid = {}}, .{.state = 5} },
+            &[_]P.Action { .{.invalid = {}}, .{.state = 6} },
+
+            &[_]P.Action { .{.invalid = {}}, .{.invalid = {}} },
+            &[_]P.Action { .{.invalid = {}}, .{.invalid = {}} },
+            &[_]P.Action { .{.invalid = {}}, .{.state = 11} },
+            &[_]P.Action { .{.invalid = {}}, .{.state = 12} },
+            &[_]P.Action { .{.invalid = {}}, .{.state = 13} },
+            
+            &[_]P.Action { .{.invalid = {}}, .{.state = 14} },
+            &[_]P.Action { .{.invalid = {}}, .{.invalid = {}} },
+            &[_]P.Action { .{.invalid = {}}, .{.invalid = {}} },
+            &[_]P.Action { .{.invalid = {}}, .{.invalid = {}} },
+            &[_]P.Action { .{.invalid = {}}, .{.invalid = {}} },
+
+            &[_]P.Action { .{.invalid = {}}, .{.invalid = {}} },
+            &[_]P.Action { .{.invalid = {}}, .{.invalid = {}} },
+            &[_]P.Action { .{.invalid = {}}, .{.invalid = {}} },
+            &[_]P.Action { .{.invalid = {}}, .{.invalid = {}} },
+        },
+        .action_table = &[_][]const P.Action {
+            &[_]P.Action { .{.state = 2}, .{.state = 3}, .{.state = 4}, .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}} },
+            &[_]P.Action { .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}}, .{.accept = {}} },
+            &[_]P.Action { .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}}, .{.reduce = 1}, .{.reduce = 1}, .{.reduce = 1}, .{.reduce = 1}, .{.reduce = 1}, .{.reduce = 1} },
+            &[_]P.Action { .{.state = 2}, .{.state = 3}, .{.state = 4}, .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}} },
+            &[_]P.Action { .{.state = 2}, .{.state = 3}, .{.state = 4}, .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}} },
+            
+            &[_]P.Action { .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}}, .{.reduce = 2}, .{.reduce = 2}, .{.reduce = 2}, .{.reduce = 2}, .{.reduce = 2}, .{.reduce = 2} },
+            &[_]P.Action { .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}}, .{.state = 7}, .{.invalid = {}}, .{.state = 8}, .{.state = 9}, .{.state = 10},  .{.invalid = {}} },
+            &[_]P.Action { .{.state = 2}, .{.state = 3}, .{.state = 4}, .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}} },
+            &[_]P.Action { .{.state = 2}, .{.state = 3}, .{.state = 4}, .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}} },
+            &[_]P.Action { .{.state = 2}, .{.state = 3}, .{.state = 4}, .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}} },
+
+            &[_]P.Action { .{.state = 2}, .{.state = 3}, .{.state = 4}, .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}} },
+            &[_]P.Action { .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}}, .{.state = 15}, .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}} },
+            &[_]P.Action { .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}}, .{.state = 16}, .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}} },
+            &[_]P.Action { .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}}, .{.state = 17}, .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}} },
+            &[_]P.Action { .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}}, .{.state = 18}, .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}} },
+
+            &[_]P.Action { .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}}, .{.reduce = 3}, .{.reduce = 3}, .{.reduce = 3}, .{.reduce = 3}, .{.reduce = 3}, .{.reduce = 3} },
+            &[_]P.Action { .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}}, .{.reduce = 4}, .{.reduce = 4}, .{.reduce = 4}, .{.reduce = 4}, .{.reduce = 4}, .{.reduce = 4} },
+            &[_]P.Action { .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}}, .{.reduce = 5}, .{.reduce = 5}, .{.reduce = 5}, .{.reduce = 5}, .{.reduce = 5}, .{.reduce = 5} },
+            &[_]P.Action { .{.invalid = {}}, .{.invalid = {}}, .{.invalid = {}}, .{.reduce = 6}, .{.reduce = 6}, .{.reduce = 6}, .{.reduce = 6}, .{.reduce = 6}, .{.reduce = 6} },
+        }
+    };
+
     const table = try P.init(std.testing.allocator, grammar);
     defer table.deinit();
 
     const table_comptime = comptime P.initComptime(grammar);
     defer table_comptime.deinit();
 
+    try std.testing.expectEqualDeep(expected_table.goto_table, table.goto_table);
+    try std.testing.expectEqualDeep(expected_table.action_table, table.action_table);
+
     try std.testing.expectEqualDeep(table.action_table, table_comptime.action_table);
     try std.testing.expectEqualDeep(table.goto_table, table_comptime.goto_table);
-
-    table.printDebugTable();
 }
