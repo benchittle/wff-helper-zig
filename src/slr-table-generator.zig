@@ -1115,6 +1115,7 @@ pub fn ParseTable(comptime Variable: type, comptime Terminal: type) type {
 
         pub fn initComptime(comptime grammar: GrammarType) Self {
             comptime {
+                @setEvalBranchQuota(10000);
                 const goto_table, const action_table = generateTablesComptime(grammar);
                 return Self{
                     .allocator = null,

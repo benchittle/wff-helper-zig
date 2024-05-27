@@ -9,35 +9,110 @@ pub const ParseError = error{
     UnexpectedToken,
 };
 
-pub const test_grammar_1 = ret: {
-    const _V = TestVariable.fromString;
+
+//#####################################
+
+
+const TestVariable = struct {
+    const Self = @This();
+
+    name: []const u8,
+
+    fn fromString(string: []const u8) Self {
+        return TestVariable{ .name = string };
+    }
+
+    fn getString(self: Self) []const u8 {
+        return self.name;
+    }
+
+    pub fn eql(self: Self, other: Self) bool {
+        return std.mem.eql(u8, self.name, other.name);
+    }
+};
+
+const TestToken = lex.Token;
+const TestTerminal = enum {
+    const Self = @This();
+
+    Proposition,
+    Not,
+    LParen,
+    RParen,
+    And,
+    Or,
+    Cond,
+    Bicond,
+    End,
+
+    pub fn eql(self: Self, other: Self) bool {
+        return self == other;
+    }
+
+    fn getString(self: Self) []const u8 {
+        return switch (self) {
+            .Proposition => "PROP",
+            .Not => "~",
+            .LParen => "(",
+            .RParen => ")",
+            .And => "^",
+            .Or => "v",
+            .Cond => "=>",
+            .Bicond => "<=>",
+            .End => "$",
+        };
+    }
+};
+
+fn oldTokenToTestTerminal(token: TestToken) ?TestTerminal {
+    return switch (token) {
+        .LParen => TestTerminal.LParen,
+        .RParen => TestTerminal.RParen,
+        .True, .False, .Proposition => TestTerminal.Proposition,
+        .Operator => |op| switch (op) {
+            .Not => TestTerminal.Not,
+            .And => TestTerminal.And,
+            .Or => TestTerminal.Or,
+            .Cond => TestTerminal.Cond,
+            .Bicond => TestTerminal.Bicond,
+        },
+    };
+}
+
+const test_grammar_old = ret: {
+    const V = TestVariable.fromString;
+
     const G = slr.Grammar(TestVariable, TestTerminal);
     break :ret G.initFromTuples(
         .{
-            .{ _V("S"), .{_V("wff")} },
-            .{ _V("wff"), .{ TestTerminal.Proposition} },
-            .{ _V("wff"), .{ TestTerminal.Not, _V("wff") } },
-            .{ _V("wff"), .{ TestTerminal.LParen, _V("wff"), TestTerminal.And, _V("wff"), TestTerminal.RParen } },
-            .{ _V("wff"), .{ TestTerminal.LParen, _V("wff"), TestTerminal.Or, _V("wff"), TestTerminal.RParen } },
-            .{ _V("wff"), .{ TestTerminal.LParen, _V("wff"), TestTerminal.Cond, _V("wff"), TestTerminal.RParen } },
-            .{ _V("wff"), .{ TestTerminal.LParen, _V("wff"), TestTerminal.Bicond, _V("wff"), TestTerminal.RParen } },
+            .{ V("S"), .{V("wff")} },
+            .{ V("wff"), .{ TestTerminal.Proposition} },
+            .{ V("wff"), .{ TestTerminal.Not, V("wff") } },
+            .{ V("wff"), .{ TestTerminal.LParen, V("wff"), TestTerminal.And, V("wff"), TestTerminal.RParen } },
+            .{ V("wff"), .{ TestTerminal.LParen, V("wff"), TestTerminal.Or, V("wff"), TestTerminal.RParen } },
+            .{ V("wff"), .{ TestTerminal.LParen, V("wff"), TestTerminal.Cond, V("wff"), TestTerminal.RParen } },
+            .{ V("wff"), .{ TestTerminal.LParen, V("wff"), TestTerminal.Bicond, V("wff"), TestTerminal.RParen } },
         },
-        _V("S"),
+        V("S"),
         TestTerminal.End,
     );
 };
 
-pub const TestParserType = Parser(
+const TestParser = Parser(
     TestVariable,
     TestTerminal,
-    lex.Token,
+    TestToken,
     lex.tokenize,
-    oldTokenToTerminal,
+    oldTokenToTestTerminal,
 );
 
-pub const TestToken = lex.Token;
+const test_parser = TestParser {
+    .table = TestParser.ParseTable.initComptime(test_grammar_old),
+};
 
-pub const MatchHashMap = std.StringHashMap(*ParseTree(TestToken).Node);
+const TestParseTree = ParseTree(TestToken);
+
+//#####################################
 
 pub fn ParseTreePreOrderIterator(comptime Token: type) type {
     return struct {
@@ -103,28 +178,24 @@ pub fn ParseTreePreOrderIterator(comptime Token: type) type {
 }
 
 test "ParseTreePreOrderIterator" {
-    const ParseTreeType = TestParserType.ParseTreeType;
     const allocator = std.testing.allocator;
 
-    const parser = try TestParserType.init(allocator, test_grammar_1);
-    defer parser.deinit();
-
-    const tree = try parser.parse(allocator, "(p v q)");
+    const tree = try test_parser.parse(allocator, "(p v q)");
     defer tree.deinit();
 
     try std.testing.expectEqual(tree.root, tree.root.kind.nonleaf[0].parent.?);
-    const c: *ParseTreeType.Node = tree.root.kind.nonleaf[1].parent.?;
+    const c: *TestParseTree.Node = tree.root.kind.nonleaf[1].parent.?;
     try std.testing.expectEqual(c, c.kind.nonleaf[0].parent.?);
 
     var it = tree.root.iterPreOrder();
 
-    var t1 = ParseTreeType.Kind{ .leaf = lex.Token.LParen };
-    var t2 = ParseTreeType.Kind{ .leaf = lex.Token{ .Proposition = lex.PropositionVar{ .string = try std.testing.allocator.dupe(u8, "p") } } };
+    var t1 = TestParseTree.Kind{ .leaf = TestToken.LParen };
+    var t2 = TestParseTree.Kind{ .leaf = TestToken{ .Proposition = .{ .string = try std.testing.allocator.dupe(u8, "p") } } };
     defer std.testing.allocator.free(t2.leaf.Proposition.string);
-    var t3 = ParseTreeType.Kind{ .leaf = lex.Token{ .Operator = lex.WffOperator.Or } };
-    var t4 = ParseTreeType.Kind{ .leaf = lex.Token{ .Proposition = lex.PropositionVar{ .string = try std.testing.allocator.dupe(u8, "q") } } };
+    var t3 = TestParseTree.Kind{ .leaf = TestToken{ .Operator = .Or } };
+    var t4 = TestParseTree.Kind{ .leaf = TestToken{ .Proposition = .{ .string = try std.testing.allocator.dupe(u8, "q") } } };
     defer std.testing.allocator.free(t4.leaf.Proposition.string);
-    var t5 = ParseTreeType.Kind{ .leaf = lex.Token.RParen };
+    var t5 = TestParseTree.Kind{ .leaf = TestToken.RParen };
 
     _ = it.next();
     try std.testing.expect(t1.leaf.eql(it.next().?.kind.leaf));
@@ -201,24 +272,20 @@ pub fn ParseTreePostOrderIterator(comptime Token: type) type {
 }
 
 test "ParseTreePostOrderIterator" {
-    const ParseTreeType = ParseTree(lex.Token);
     const allocator = std.testing.allocator;
 
-    const parser = try TestParserType.init(allocator, test_grammar_1);
-    defer parser.deinit();
-
-    const tree = try parser.parse(allocator, "(p v q)");
+    const tree = try test_parser.parse(allocator, "(p v q)");
     defer tree.deinit();
 
     var it = tree.root.iterPostOrder();
 
-    var t1 = ParseTreeType.Kind{ .leaf = lex.Token.LParen };
-    var t2 = ParseTreeType.Kind{ .leaf = lex.Token{ .Proposition = lex.PropositionVar{ .string = try std.testing.allocator.dupe(u8, "p") } } };
+    var t1 = TestParseTree.Kind{ .leaf = lex.Token.LParen };
+    var t2 = TestParseTree.Kind{ .leaf = lex.Token{ .Proposition = lex.PropositionVar{ .string = try std.testing.allocator.dupe(u8, "p") } } };
     defer std.testing.allocator.free(t2.leaf.Proposition.string);
-    var t3 = ParseTreeType.Kind{ .leaf = lex.Token{ .Operator = lex.WffOperator.Or } };
-    var t4 = ParseTreeType.Kind{ .leaf = lex.Token{ .Proposition = lex.PropositionVar{ .string = try std.testing.allocator.dupe(u8, "q") } } };
+    var t3 = TestParseTree.Kind{ .leaf = lex.Token{ .Operator = lex.WffOperator.Or } };
+    var t4 = TestParseTree.Kind{ .leaf = lex.Token{ .Proposition = lex.PropositionVar{ .string = try std.testing.allocator.dupe(u8, "q") } } };
     defer std.testing.allocator.free(t4.leaf.Proposition.string);
-    var t5 = ParseTreeType.Kind{ .leaf = lex.Token.RParen };
+    var t5 = TestParseTree.Kind{ .leaf = lex.Token.RParen };
 
     try std.testing.expect(t1.leaf.eql(it.nextUnchecked().kind.leaf));
     try std.testing.expect(t2.leaf.eql(it.nextUnchecked().kind.leaf));
@@ -406,10 +473,7 @@ pub fn ParseTree(comptime Token: type) type {
 test "ParseTree.toString: (p v q)" {
     const allocator = std.testing.allocator;
 
-    const parser = try TestParserType.init(allocator, test_grammar_1);
-    defer parser.deinit();
-
-    const tree = try parser.parse(allocator, "(p v q)");
+    const tree = try test_parser.parse(allocator, "(p v q)");
     defer tree.deinit();
 
     const string = try tree.toString(std.testing.allocator);
@@ -421,10 +485,7 @@ test "ParseTree.toString: (p v q)" {
 test "ParseTree.toString: ~((a ^ b) => (c ^ ~d))" {
     const allocator = std.testing.allocator;
 
-    const parser = try TestParserType.init(allocator, test_grammar_1);
-    defer parser.deinit();
-
-    const tree = try parser.parse(allocator, "~((a ^ b) => (c ^ ~d))");
+    const tree = try test_parser.parse(allocator, "~((a ^ b) => (c ^ ~d))");
     defer tree.deinit();
 
     const string = try tree.toString(std.testing.allocator);
@@ -436,10 +497,7 @@ test "ParseTree.toString: ~((a ^ b) => (c ^ ~d))" {
 test "ParseTree.copy: (p v q)" {
     const allocator = std.testing.allocator;
 
-    const parser = try TestParserType.init(allocator, test_grammar_1);
-    defer parser.deinit();
-
-    const tree = try parser.parse(allocator, "(p v q)");
+    const tree = try test_parser.parse(allocator, "(p v q)");
     defer tree.deinit();
 
     var copy = try tree.copy();
@@ -451,10 +509,7 @@ test "ParseTree.copy: (p v q)" {
 test "ParseTree.copy: ((a ^ b) v (c ^ d))" {
     const allocator = std.testing.allocator;
 
-    const parser = try TestParserType.init(allocator, test_grammar_1);
-    defer parser.deinit();
-
-    const tree = try parser.parse(allocator, "((a ^ b) v (c ^ d))");
+    const tree = try test_parser.parse(allocator, "((a ^ b) v (c ^ d))");
     defer tree.deinit();
 
     var copy = try tree.copy();
@@ -466,10 +521,7 @@ test "ParseTree.copy: ((a ^ b) v (c ^ d))" {
 test "ParseTree.copy: p" {
     const allocator = std.testing.allocator;
 
-    const parser = try TestParserType.init(allocator, test_grammar_1);
-    defer parser.deinit();
-
-    const tree = try parser.parse(allocator, "p");
+    const tree = try test_parser.parse(allocator, "p");
     defer tree.deinit();
 
     var copy = try tree.copy();
@@ -489,9 +541,9 @@ pub fn Parser(
 ) type {
     return struct {
         const Self = @This();
-        const Grammar = slr.Grammar(Variable, Terminal);
-        const ParseTable = slr.ParseTable(Variable, Terminal);
-        const ParseTreeType = ParseTree(Token);
+        pub const Grammar = slr.Grammar(Variable, Terminal);
+        pub const ParseTable = slr.ParseTable(Variable, Terminal);
+        pub const ParseTreeType = ParseTree(Token);
 
         const StackItem = struct {
             state: ParseTable.StateIdx,
@@ -641,122 +693,15 @@ pub fn Parser(
     };
 }
 
-const TestTerminal = enum {
-    const Self = @This();
-
-    Proposition,
-    Not,
-    LParen,
-    RParen,
-    And,
-    Or,
-    Cond,
-    Bicond,
-    End,
-
-    pub fn eql(self: Self, other: Self) bool {
-        return self == other;
-    }
-
-    fn getString(self: Self) []const u8 {
-        return switch (self) {
-            .Proposition => "PROP",
-            .Not => "~",
-            .LParen => "(",
-            .RParen => ")",
-            .And => "^",
-            .Or => "v",
-            .Cond => "=>",
-            .Bicond => "<=>",
-            .End => "$",
-        };
-    }
-};
-
-// const TestToken = union(TestTerminal) {
-//     const Self = @This();
-
-//     Proposition: []const u8,
-//     Not: void,
-//     LParen: void,
-//     RParen: void,
-//     And: void,
-//     Or: void,
-//     Cond: void,
-//     Bicond: void,
-//     End: void,
-
-//     pub fn eql(self: Self, other: Self) bool {
-//         if (!@as(TestTerminal, self).eql(other)) {
-//             return false;
-//         }
-//         return switch(self) {
-//             .Proposition => |s| std.mem.eql(u8, s, other.Proposition),
-//             else => true,
-//         };
-//     }
-
-//     fn getTerminal(self: Self) ?TestTerminal {
-//         return @as(TestTerminal, self);
-//     }
-
-//     fn getString(self: Self) []const u8 {
-//         return switch (self) {
-//             .Proposition => |s| s,
-//             .Not => "~",
-//             .LParen => "(",
-//             .RParen => ")",
-//             .And => "^",
-//             .Or => "v",
-//             .Cond => "=>",
-//             .Bicond => "<=>",
-//             .End => "$",
-//         };
-//     }
-// };
-
-const TestVariable = struct {
-    const Self = @This();
-
-    name: []const u8,
-
-    fn fromString(string: []const u8) Self {
-        return TestVariable{ .name = string };
-    }
-
-    fn getString(self: Self) []const u8 {
-        return self.name;
-    }
-
-    pub fn eql(self: Self, other: Self) bool {
-        return std.mem.eql(u8, self.name, other.name);
-    }
-};
-
-fn oldTokenToTerminal(token: lex.Token) ?TestTerminal {
-    return switch (token) {
-        .LParen => TestTerminal.LParen,
-        .RParen => TestTerminal.RParen,
-        .True, .False, .Proposition => TestTerminal.Proposition,
-        .Operator => |op| switch (op) {
-            .Not => TestTerminal.Not,
-            .And => TestTerminal.And,
-            .Or => TestTerminal.Or,
-            .Cond => TestTerminal.Cond,
-            .Bicond => TestTerminal.Bicond,
-        },
-    };
-}
-
 test "Parser.parse: ''" {
-    const parser = try TestParserType.init(std.testing.allocator, test_grammar_1);
+    const parser = try TestParser.init(std.testing.allocator, test_grammar_old);
     defer parser.deinit();
 
     try std.testing.expectError(lex.LexError.NoTokensFound, parser.parse(std.testing.allocator, ""));
 }
 
 test "Parser.parse: '~)q p v('" {
-    const parser = try TestParserType.init(std.testing.allocator, test_grammar_1);
+    const parser = try TestParser.init(std.testing.allocator, test_grammar_old);
     defer parser.deinit();
 
     try std.testing.expectError(ParseError.InvalidSyntax, parser.parse(std.testing.allocator, "~)q p v ("));
@@ -765,7 +710,7 @@ test "Parser.parse: '~)q p v('" {
 test "Parser.parse: '(p v q)'" {
     const allocator = std.testing.allocator;
 
-    const parser = try TestParserType.init(allocator, test_grammar_1);
+    const parser = try TestParser.init(allocator, test_grammar_old);
     defer parser.deinit();
 
     const tree = try parser.parse(allocator, "(p v q)");
@@ -819,7 +764,7 @@ test "Parser.parse: '(p v q)'" {
 test "ParseTree: ~p" {
     const allocator = std.testing.allocator;
 
-    const parser = try TestParserType.init(allocator, test_grammar_1);
+    const parser = try TestParser.init(allocator, test_grammar_old);
     defer parser.deinit();
 
     const tree = try parser.parse(allocator, "~p");

@@ -115,32 +115,6 @@ test "Token.equals" {
     try std.testing.expect(!t1.eql(t5));
 }
 
-// test "ParseTree.matchAll: (p v q)" {
-//     var allocator = std.testing.allocator;
-//     var tree = try ParseTree.init(allocator, "(p v q)");
-//     defer tree.deinit();
-//     var pattern = try ParseTree.init(allocator, "(p v q)");
-//     defer pattern.deinit();
-
-//     var all_matches = try tree.matchAll(pattern);
-//     defer {
-//         if (all_matches) |all| {
-//             for (all.items) |*matches| {
-//                 matches.deinit();
-//             }
-//             all.deinit();
-//         }
-//     }
-
-//     try std.testing.expect(all_matches.?.items.len == 1);
-
-//     var match1 = all_matches.?.items[0];
-
-//     try std.testing.expect(match1.count() == 2);
-//     try std.testing.expectEqual(&tree.root.data.Nonterminal.items[1], match1.get("p").?);
-//     try std.testing.expectEqual(&tree.root.data.Nonterminal.items[3], match1.get("q").?);
-// }
-
 // Tokenize a string containing a WFF. Returns an ArrayList of Tokens if a valid
 // string is passed, else a LexError. Caller must free the returned ArrayList.
 pub fn tokenize(allocator: std.mem.Allocator, wff_string: []const u8) !std.ArrayList(Token) {

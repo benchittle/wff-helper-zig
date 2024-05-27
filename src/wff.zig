@@ -1,4 +1,6 @@
 const std = @import("std");
+const lex = @import("wff-lexing.zig");
+const slr = @import("slr-table-generator.zig");
 const parsing = @import("wff-parsing.zig");
 const debug = std.debug;
 
@@ -7,6 +9,157 @@ pub const WffError = error{
     BadSubstitution,
 };
 
+
+//#####################################
+
+
+const GrammarVariable = struct {
+    const Self = @This();
+
+    name: []const u8,
+
+    fn fromString(string: []const u8) Self {
+        return GrammarVariable{ .name = string };
+    }
+
+    fn getString(self: Self) []const u8 {
+        return self.name;
+    }
+
+    pub fn eql(self: Self, other: Self) bool {
+        return std.mem.eql(u8, self.name, other.name);
+    }
+};
+
+const GrammarTerminal = enum {
+    const Self = @This();
+
+    Proposition,
+    Not,
+    LParen,
+    RParen,
+    And,
+    Or,
+    Cond,
+    Bicond,
+    End,
+
+    pub fn eql(self: Self, other: Self) bool {
+        return self == other;
+    }
+
+    fn getString(self: Self) []const u8 {
+        return switch (self) {
+            .Proposition => "PROP",
+            .Not => "~",
+            .LParen => "(",
+            .RParen => ")",
+            .And => "^",
+            .Or => "v",
+            .Cond => "=>",
+            .Bicond => "<=>",
+            .End => "$",
+        };
+    }
+};
+
+const OldToken = lex.Token;
+
+fn oldTokenToTestTerminal(token: OldToken) ?GrammarTerminal {
+    return switch (token) {
+        .LParen => GrammarTerminal.LParen,
+        .RParen => GrammarTerminal.RParen,
+        .True, .False, .Proposition => GrammarTerminal.Proposition,
+        .Operator => |op| switch (op) {
+            .Not => GrammarTerminal.Not,
+            .And => GrammarTerminal.And,
+            .Or => GrammarTerminal.Or,
+            .Cond => GrammarTerminal.Cond,
+            .Bicond => GrammarTerminal.Bicond,
+        },
+    };
+}
+
+const old_grammar = ret: {
+    const V = GrammarVariable.fromString;
+    const G = slr.Grammar(GrammarVariable, GrammarTerminal);
+    break :ret G.initFromTuples(
+        .{
+            .{ V("S"), .{V("wff")} },
+            .{ V("wff"), .{GrammarTerminal.Proposition} },
+            .{ V("wff"), .{ GrammarTerminal.Not, V("wff") } },
+            .{ V("wff"), .{ GrammarTerminal.LParen, V("wff"), GrammarTerminal.And, V("wff"), GrammarTerminal.RParen } },
+            .{ V("wff"), .{ GrammarTerminal.LParen, V("wff"), GrammarTerminal.Or, V("wff"), GrammarTerminal.RParen } },
+            .{ V("wff"), .{ GrammarTerminal.LParen, V("wff"), GrammarTerminal.Cond, V("wff"), GrammarTerminal.RParen } },
+            .{ V("wff"), .{ GrammarTerminal.LParen, V("wff"), GrammarTerminal.Bicond, V("wff"), GrammarTerminal.RParen } },
+        },
+        V("S"),
+        GrammarTerminal.End,
+    );
+};
+
+const OldParser = parsing.Parser(
+    GrammarVariable,
+    GrammarTerminal,
+    OldToken,
+    lex.tokenize,
+    oldTokenToTestTerminal,
+);
+const OldParseTree = parsing.ParseTree(OldToken);
+const old_parser = OldParser {
+    .table = OldParser.ParseTable.initComptime(old_grammar),
+};
+
+pub const OldWffParser = WffParser(OldParser);
+pub const old_wff_parser = OldWffParser.init(old_parser);
+
+pub const NewParser = void;
+
+// const TestToken = union(TestTerminal) {
+//     const Self = @This();
+
+//     Proposition: []const u8,
+//     Not: void,
+//     LParen: void,
+//     RParen: void,
+//     And: void,
+//     Or: void,
+//     Cond: void,
+//     Bicond: void,
+//     End: void,
+
+//     pub fn eql(self: Self, other: Self) bool {
+//         if (!@as(TestTerminal, self).eql(other)) {
+//             return false;
+//         }
+//         return switch(self) {
+//             .Proposition => |s| std.mem.eql(u8, s, other.Proposition),
+//             else => true,
+//         };
+//     }
+
+//     fn getTerminal(self: Self) ?TestTerminal {
+//         return @as(TestTerminal, self);
+//     }
+
+//     fn getString(self: Self) []const u8 {
+//         return switch (self) {
+//             .Proposition => |s| s,
+//             .Not => "~",
+//             .LParen => "(",
+//             .RParen => ")",
+//             .And => "^",
+//             .Or => "v",
+//             .Cond => "=>",
+//             .Bicond => "<=>",
+//             .End => "$",
+//         };
+//     }
+// };
+
+//#####################################
+
+
 pub fn WffParser(comptime Parser: type) type {
     const expected_signature = "pub fn parse(self, std.mem.Allocator, []const u8) !ParseTree(...)";
     if (!@hasDecl(Parser, "parse")) {
@@ -14,11 +167,8 @@ pub fn WffParser(comptime Parser: type) type {
     }
     // TODO: Check Parser has necessary method signature
 
-    const OldParseTree = parsing.ParseTree(parsing.TestToken);
-
     const NewParseTree = void;
-    const ParseReturnType = @typeInfo(@typeInfo(@TypeOf(Parser.parse)).Fn.return_type.?).ErrorUnion.payload;
-    if (ParseReturnType != OldParseTree and ParseReturnType != NewParseTree) {
+    if (Parser != OldParser and Parser != NewParser) {
         @compileError("Cannot use this parser: there is no function to convert its parse tree to a WffTree");
     }
 
@@ -40,9 +190,9 @@ pub fn WffParser(comptime Parser: type) type {
             defer parse_tree.deinit();
 
             const wff_tree = try ret: {
-                if (ParseReturnType == OldParseTree) {
+                if (Parser == OldParser) {
                     break :ret fromOldGrammar(allocator, parse_tree);
-                } else if (ParseReturnType == NewParseTree) {
+                } else if (Parser == NewParseTree) {
                     break :ret fromNewGrammar(allocator, parse_tree);
                 } else {
                     unreachable;
@@ -53,7 +203,7 @@ pub fn WffParser(comptime Parser: type) type {
             return Wff{ .allocator = allocator, .tree = wff_tree };
         }
 
-        fn oldOperatorToWffBinaryOperator(operator: parsing.TestToken) WffTree.Node.BinaryOperator {
+        fn oldOperatorToWffBinaryOperator(operator: OldToken) WffTree.Node.BinaryOperator {
             return switch (operator) {
                 .Operator => |op| switch (op) {
                     .Not => std.debug.panic("oldOperatorToWffBinaryOperator called with unary operator", .{}),
@@ -183,11 +333,9 @@ test "WffParser.fromOldGrammar: ((a v b) ^ ~c)" {
         .arg2 = &right_branch,
     } };
 
-    const parser = try parsing.TestParserType.init(allocator, parsing.test_grammar_1);
-    defer parser.deinit();
-    const parse_tree = try parser.parse(allocator, "((a v b) ^ ~c)");
+    const parse_tree = try old_parser.parse(allocator, "((a v b) ^ ~c)");
     defer parse_tree.deinit();
-    const actual_tree = try WffParser(parsing.TestParserType).fromOldGrammar(allocator, parse_tree);
+    const actual_tree = try OldWffParser.fromOldGrammar(allocator, parse_tree);
     defer actual_tree.deinit();
 
     var expected_it = root.iterPreOrder();
@@ -209,11 +357,9 @@ test "WffParser.fromOldGrammar: a" {
 
     const root = WffTree.Node{ .parent = null, .kind = .{ .proposition_variable = "a" } };
 
-    const parser = try parsing.TestParserType.init(allocator, parsing.test_grammar_1);
-    defer parser.deinit();
-    const parse_tree = try parser.parse(allocator, "a");
+    const parse_tree = try old_parser.parse(allocator, "a");
     defer parse_tree.deinit();
-    const actual_tree = try WffParser(parsing.TestParserType).fromOldGrammar(allocator, parse_tree);
+    const actual_tree = try OldWffParser.fromOldGrammar(allocator, parse_tree);
     defer actual_tree.deinit();
 
     try std.testing.expectEqualDeep(root, actual_tree.root.*);
@@ -226,11 +372,9 @@ test "WffParser.fromOldGrammar: T" {
         .logical_constant = .t,
     } };
 
-    const parser = try parsing.TestParserType.init(allocator, parsing.test_grammar_1);
-    defer parser.deinit();
-    const parse_tree = try parser.parse(allocator, "T");
+    const parse_tree = try old_parser.parse(allocator, "T");
     defer parse_tree.deinit();
-    const actual_tree = try WffParser(parsing.TestParserType).fromOldGrammar(allocator, parse_tree);
+    const actual_tree = try OldWffParser.fromOldGrammar(allocator, parse_tree);
     defer actual_tree.deinit();
 
     try std.testing.expectEqualDeep(root, actual_tree.root.*);
@@ -287,11 +431,9 @@ test "WffParser.fromOldGrammar: (~T <=> (a ^ F))" {
         .arg2 = &right_branch,
     } };
 
-    const parser = try parsing.TestParserType.init(allocator, parsing.test_grammar_1);
-    defer parser.deinit();
-    const parse_tree = try parser.parse(allocator, "(~T <=> (a ^ F))");
+    const parse_tree = try old_parser.parse(allocator, "(~T <=> (a ^ F))");
     defer parse_tree.deinit();
-    const actual_tree = try WffParser(parsing.TestParserType).fromOldGrammar(allocator, parse_tree);
+    const actual_tree = try OldWffParser.fromOldGrammar(allocator, parse_tree);
     defer actual_tree.deinit();
 
     var expected_it = root.iterPreOrder();
@@ -310,16 +452,13 @@ test "WffParser.fromOldGrammar: (~T <=> (a ^ F))" {
 
 test "WffParser.parse: ((a v b) ^ ~c)" {
     const allocator = std.testing.allocator;
-    const Parser = parsing.TestParserType;
 
-    const parser = try Parser.init(allocator, parsing.test_grammar_1);
-    defer parser.deinit();
-    const parse_tree = try parser.parse(allocator, "((a v b) ^ ~c)");
+    const parse_tree = try old_parser.parse(allocator, "((a v b) ^ ~c)");
     defer parse_tree.deinit();
-    const expected_tree = try WffParser(Parser).fromOldGrammar(allocator, parse_tree);
+    const expected_tree = try OldWffParser.fromOldGrammar(allocator, parse_tree);
     defer expected_tree.deinit();
 
-    const wff_parser = WffParser(Parser).init(parser);
+    const wff_parser = OldWffParser.init(old_parser);
     defer wff_parser.deinit();
     const actual_wff = try wff_parser.parse(allocator, "((a v b) ^ ~c)");
     defer actual_wff.deinit();
@@ -351,12 +490,12 @@ pub const WffTree = struct {
         fn backtrack_next(self: PreOrderIterator, node: *Node) ?*Node {
             var next_node = node;
             while (next_node.parent) |parent| {
-                // If we're copying from a subtree, we need to make sure we 
-                // don't go past the start node, since its parent won't be null. 
+                // If we're copying from a subtree, we need to make sure we
+                // don't go past the start node, since its parent won't be null.
                 if (next_node == self.start) {
                     return null;
                 }
-                switch(parent.kind) {
+                switch (parent.kind) {
                     .unary_operator => next_node = parent,
                     .binary_operator => |op| {
                         if (next_node == op.arg1) {
@@ -678,8 +817,8 @@ pub const WffTree = struct {
         /// When called on a nonleaf node, make a copy of the entire tree but
         /// with this node (subtree) replaced with a given other node which can
         /// be the root of a new subtree.
-        /// When called on the root node of a tree, returns the given 
-        /// replacement node. 
+        /// When called on the root node of a tree, returns the given
+        /// replacement node.
         fn copyAbove(self: *Node, allocator: std.mem.Allocator, replacement_root: *Node) !*Node {
             const root = ret: {
                 var node = self;
@@ -735,11 +874,11 @@ pub const WffTree = struct {
                     copy_it.skipChildren();
 
                     const copy_parent = copy_node.parent.?;
-                    // Have to use destroy instead of calling deinit 
+                    // Have to use destroy instead of calling deinit
                     // since node.kind is undefined.
                     allocator.destroy(copy_node);
 
-                    switch(copy_parent.kind) {
+                    switch (copy_parent.kind) {
                         .unary_operator => copy_parent.kind.unary_operator.arg = replacement_root,
                         .binary_operator => |op| {
                             if (node == op.arg1) {
@@ -943,25 +1082,18 @@ test "WffTreePostOrderIterator: ((a v b) ^ ~c)" {
 
 test "WffTree.copy: (p v q), ((a ^ b) v (c ^ d)), and p" {
     const allocator = std.testing.allocator;
-    const Parser = parsing.TestParserType;
 
-    const parser = try Parser.init(allocator, parsing.test_grammar_1);
-    defer parser.deinit();
-
-    const wff_parser = WffParser(Parser).init(parser);
-    defer wff_parser.deinit();
-
-    const wff1 = try wff_parser.parse(allocator, "(p v q)");
+    const wff1 = try old_wff_parser.parse(allocator, "(p v q)");
     defer wff1.deinit();
     var tree_copy1 = try wff1.tree.copy(allocator);
     defer tree_copy1.deinit();
 
-    const wff2 = try wff_parser.parse(allocator, "((a ^ b) v (c ^ d))");
+    const wff2 = try old_wff_parser.parse(allocator, "((a ^ b) v (c ^ d))");
     defer wff2.deinit();
     var tree_copy2 = try wff2.tree.copy(allocator);
     defer tree_copy2.deinit();
 
-    const wff3 = try wff_parser.parse(allocator, "p");
+    const wff3 = try old_wff_parser.parse(allocator, "p");
     defer wff3.deinit();
     var copy_tree3 = try wff3.tree.copy(allocator);
     defer copy_tree3.deinit();
@@ -973,17 +1105,10 @@ test "WffTree.copy: (p v q), ((a ^ b) v (c ^ d)), and p" {
 
 test "WffTree.Node.match: (p v q) with pattern (p v q)" {
     const allocator = std.testing.allocator;
-    const Parser = parsing.TestParserType;
 
-    const parser = try Parser.init(allocator, parsing.test_grammar_1);
-    defer parser.deinit();
-
-    const wff_parser = WffParser(Parser).init(parser);
-    defer wff_parser.deinit();
-
-    const wff = try wff_parser.parse(allocator, "(p v q)");
+    const wff = try old_wff_parser.parse(allocator, "(p v q)");
     defer wff.deinit();
-    const pattern_wff = try wff_parser.parse(allocator, "(p v q)");
+    const pattern_wff = try old_wff_parser.parse(allocator, "(p v q)");
     defer pattern_wff.deinit();
 
     var matches = (try wff.tree.root.match(allocator, pattern_wff.tree.root)).?;
@@ -996,17 +1121,10 @@ test "WffTree.Node.match: (p v q) with pattern (p v q)" {
 
 test "WffTree.Node.match: ((a ^ b) v (c ^ d)) with pattern (p v q)" {
     const allocator = std.testing.allocator;
-    const Parser = parsing.TestParserType;
 
-    const parser = try Parser.init(allocator, parsing.test_grammar_1);
-    defer parser.deinit();
-
-    const wff_parser = WffParser(Parser).init(parser);
-    defer wff_parser.deinit();
-
-    const wff = try wff_parser.parse(allocator, "((a ^ b) v (c ^ d))");
+    const wff = try old_wff_parser.parse(allocator, "((a ^ b) v (c ^ d))");
     defer wff.deinit();
-    const pattern_wff = try wff_parser.parse(allocator, "(p v q)");
+    const pattern_wff = try old_wff_parser.parse(allocator, "(p v q)");
     defer pattern_wff.deinit();
 
     var matches = (try wff.tree.root.match(allocator, pattern_wff.tree.root)).?;
@@ -1019,17 +1137,10 @@ test "WffTree.Node.match: ((a ^ b) v (c ^ d)) with pattern (p v q)" {
 
 test "WffTree.Node.match: (p v p) with pattern (p v p)" {
     const allocator = std.testing.allocator;
-    const Parser = parsing.TestParserType;
 
-    const parser = try Parser.init(allocator, parsing.test_grammar_1);
-    defer parser.deinit();
-
-    const wff_parser = WffParser(Parser).init(parser);
-    defer wff_parser.deinit();
-
-    const wff = try wff_parser.parse(allocator, "(p v p)");
+    const wff = try old_wff_parser.parse(allocator, "(p v p)");
     defer wff.deinit();
-    const pattern_wff = try wff_parser.parse(allocator, "(p v p)");
+    const pattern_wff = try old_wff_parser.parse(allocator, "(p v p)");
     defer pattern_wff.deinit();
 
     var matches = (try wff.tree.root.match(allocator, pattern_wff.tree.root)).?;
@@ -1041,17 +1152,10 @@ test "WffTree.Node.match: (p v p) with pattern (p v p)" {
 
 test "WffTree.Node.match: (p v q) with pattern (p v p)" {
     const allocator = std.testing.allocator;
-    const Parser = parsing.TestParserType;
 
-    const parser = try Parser.init(allocator, parsing.test_grammar_1);
-    defer parser.deinit();
-
-    const wff_parser = WffParser(Parser).init(parser);
-    defer wff_parser.deinit();
-
-    const wff = try wff_parser.parse(allocator, "(p v q)");
+    const wff = try old_wff_parser.parse(allocator, "(p v q)");
     defer wff.deinit();
-    const pattern_wff = try wff_parser.parse(allocator, "(p v p)");
+    const pattern_wff = try old_wff_parser.parse(allocator, "(p v p)");
     defer pattern_wff.deinit();
 
     try std.testing.expect(try wff.tree.root.match(allocator, pattern_wff.tree.root) == null);
@@ -1059,17 +1163,10 @@ test "WffTree.Node.match: (p v q) with pattern (p v p)" {
 
 test "WffTree.Node.match: ((a ^ b) => (a ^ b)) with pattern (p => p)" {
     const allocator = std.testing.allocator;
-    const Parser = parsing.TestParserType;
 
-    const parser = try Parser.init(allocator, parsing.test_grammar_1);
-    defer parser.deinit();
-
-    const wff_parser = WffParser(Parser).init(parser);
-    defer wff_parser.deinit();
-
-    const wff = try wff_parser.parse(allocator, "((a ^ b) => (a ^ b))");
+    const wff = try old_wff_parser.parse(allocator, "((a ^ b) => (a ^ b))");
     defer wff.deinit();
-    const pattern_wff = try wff_parser.parse(allocator, "(p => p)");
+    const pattern_wff = try old_wff_parser.parse(allocator, "(p => p)");
     defer pattern_wff.deinit();
 
     var matches = (try wff.tree.root.match(allocator, pattern_wff.tree.root)).?;
@@ -1081,17 +1178,10 @@ test "WffTree.Node.match: ((a ^ b) => (a ^ b)) with pattern (p => p)" {
 
 test "ParseTree.Node.match: ((a ^ b) => (a ^ a)) with pattern (p => p)" {
     const allocator = std.testing.allocator;
-    const Parser = parsing.TestParserType;
 
-    const parser = try Parser.init(allocator, parsing.test_grammar_1);
-    defer parser.deinit();
-
-    const wff_parser = WffParser(Parser).init(parser);
-    defer wff_parser.deinit();
-
-    const wff = try wff_parser.parse(allocator, "((a ^ b) => (a ^ a))");
+    const wff = try old_wff_parser.parse(allocator, "((a ^ b) => (a ^ a))");
     defer wff.deinit();
-    const pattern_wff = try wff_parser.parse(allocator, "(p => p)");
+    const pattern_wff = try old_wff_parser.parse(allocator, "(p => p)");
     defer pattern_wff.deinit();
 
     try std.testing.expect(try wff.tree.root.match(allocator, pattern_wff.tree.root) == null);
@@ -1099,17 +1189,10 @@ test "ParseTree.Node.match: ((a ^ b) => (a ^ a)) with pattern (p => p)" {
 
 test "WffTree.Node.match: (x <=> x) with pattern (p <=> q)" {
     const allocator = std.testing.allocator;
-    const Parser = parsing.TestParserType;
 
-    const parser = try Parser.init(allocator, parsing.test_grammar_1);
-    defer parser.deinit();
-
-    const wff_parser = WffParser(Parser).init(parser);
-    defer wff_parser.deinit();
-
-    const wff = try wff_parser.parse(allocator, "(x <=> x)");
+    const wff = try old_wff_parser.parse(allocator, "(x <=> x)");
     defer wff.deinit();
-    const pattern_wff = try wff_parser.parse(allocator, "(p <=> q)");
+    const pattern_wff = try old_wff_parser.parse(allocator, "(p <=> q)");
     defer pattern_wff.deinit();
 
     var matches = (try wff.tree.root.match(allocator, pattern_wff.tree.root)).?;
@@ -1146,8 +1229,8 @@ pub const Wff = struct {
                 substitution_tree.deinit();
             }
 
-            // First we substitute any proposition variables in the destination 
-            // pattern for which we have a match with a copy of the matched 
+            // First we substitute any proposition variables in the destination
+            // pattern for which we have a match with a copy of the matched
             // source subtree.
             var it = substitution_tree.iterPreOrder();
             while (it.next()) |result_node| {
@@ -1158,7 +1241,7 @@ pub const Wff = struct {
                             const source_copy = try source_node.copy(allocator);
                             // Free the top node (after its contents have been
                             // copied), keep the rest of the tree.
-                            // Don't call source_copy.deinit() since we want 
+                            // Don't call source_copy.deinit() since we want
                             // result_node to take ownership of its contents.
                             defer allocator.destroy(source_copy);
 
@@ -1168,9 +1251,9 @@ pub const Wff = struct {
                             // so free it.
                             allocator.free(variable);
 
-                            // Set the parent of any copied children to the new 
+                            // Set the parent of any copied children to the new
                             // address.
-                            switch(result_node.kind) {
+                            switch (result_node.kind) {
                                 .unary_operator => |op| op.arg.parent = result_node,
                                 .binary_operator => |op| {
                                     op.arg1.parent = result_node;
@@ -1179,7 +1262,7 @@ pub const Wff = struct {
                                 .proposition_variable, .logical_constant => {},
                             }
                         }
-                    }
+                    },
                 }
             }
 
@@ -1273,21 +1356,14 @@ pub const Wff = struct {
 
 test "Wff.equals" {
     const allocator = std.testing.allocator;
-    const Parser = parsing.TestParserType;
 
-    const parser = try Parser.init(allocator, parsing.test_grammar_1);
-    defer parser.deinit();
-
-    const wff_parser = WffParser(Parser).init(parser);
-    defer wff_parser.deinit();
-
-    var wff1 = try wff_parser.parse(std.testing.allocator, "((a ^ b) => (c ^ d))");
+    var wff1 = try old_wff_parser.parse(allocator, "((a ^ b) => (c ^ d))");
     defer wff1.deinit();
     var wff2 = try wff1.copy();
     defer wff2.deinit();
-    var wff3 = try wff_parser.parse(std.testing.allocator, "((a ^ b) => (c ^ d))");
+    var wff3 = try old_wff_parser.parse(allocator, "((a ^ b) => (c ^ d))");
     defer wff3.deinit();
-    var wff4 = try wff_parser.parse(std.testing.allocator, "(p => q)");
+    var wff4 = try old_wff_parser.parse(allocator, "(p => q)");
     defer wff4.deinit();
 
     try std.testing.expect(wff3.eql(wff1));
@@ -1297,19 +1373,12 @@ test "Wff.equals" {
 
 test "Wff.replace: ((a ^ b) v (c ^ d)) using (p v q) to (p => q)" {
     const allocator = std.testing.allocator;
-    const Parser = parsing.TestParserType;
 
-    const parser = try Parser.init(allocator, parsing.test_grammar_1);
-    defer parser.deinit();
-
-    const wff_parser = WffParser(Parser).init(parser);
-    defer wff_parser.deinit();
-
-    var wff = try wff_parser.parse(allocator, "((a ^ b) v (c ^ d))");
+    var wff = try old_wff_parser.parse(allocator, "((a ^ b) v (c ^ d))");
     defer wff.deinit();
-    var pattern = try wff_parser.parse(allocator, "(p v q)");
+    var pattern = try old_wff_parser.parse(allocator, "(p v q)");
     defer pattern.deinit();
-    var replace = try wff_parser.parse(allocator, "(p => q)");
+    var replace = try old_wff_parser.parse(allocator, "(p => q)");
     defer replace.deinit();
 
     var match = (try wff.match(allocator, pattern)).?;
@@ -1317,7 +1386,7 @@ test "Wff.replace: ((a ^ b) v (c ^ d)) using (p v q) to (p => q)" {
     var new = (try match.replace(allocator, replace));
     defer new.deinit();
 
-    var expected = try wff_parser.parse(allocator, "((a ^ b) => (c ^ d))");
+    var expected = try old_wff_parser.parse(allocator, "((a ^ b) => (c ^ d))");
     defer expected.deinit();
 
     try std.testing.expect(expected.eql(new));
@@ -1326,19 +1395,12 @@ test "Wff.replace: ((a ^ b) v (c ^ d)) using (p v q) to (p => q)" {
 
 test "Wff.replace: ((a ^ b) v (c ^ d)) using (p v p) to (p => q)" {
     const allocator = std.testing.allocator;
-    const Parser = parsing.TestParserType;
 
-    const parser = try Parser.init(allocator, parsing.test_grammar_1);
-    defer parser.deinit();
-
-    const wff_parser = WffParser(Parser).init(parser);
-    defer wff_parser.deinit();
-
-    var wff = try wff_parser.parse(allocator, "((a ^ b) v (c ^ d))");
+    var wff = try old_wff_parser.parse(allocator, "((a ^ b) v (c ^ d))");
     defer wff.deinit();
-    var pattern = try wff_parser.parse(allocator, "(p v p)");
+    var pattern = try old_wff_parser.parse(allocator, "(p v p)");
     defer pattern.deinit();
-    var replace = try wff_parser.parse(allocator, "(p => q)");
+    var replace = try old_wff_parser.parse(allocator, "(p => q)");
     defer replace.deinit();
 
     try std.testing.expect(try wff.match(allocator, pattern) == null);
@@ -1346,19 +1408,12 @@ test "Wff.replace: ((a ^ b) v (c ^ d)) using (p v p) to (p => q)" {
 
 test "Wff.replace: ((a ^ b) v (c ^ d)) using (p ^ q) to (q ^ p)" {
     const allocator = std.testing.allocator;
-    const Parser = parsing.TestParserType;
 
-    const parser = try Parser.init(allocator, parsing.test_grammar_1);
-    defer parser.deinit();
-
-    const wff_parser = WffParser(Parser).init(parser);
-    defer wff_parser.deinit();
-
-    var wff = try wff_parser.parse(allocator, "((a ^ b) v (c ^ d))");
+    var wff = try old_wff_parser.parse(allocator, "((a ^ b) v (c ^ d))");
     defer wff.deinit();
-    var pattern = try wff_parser.parse(allocator, "(p ^ q)");
+    var pattern = try old_wff_parser.parse(allocator, "(p ^ q)");
     defer pattern.deinit();
-    var replace = try wff_parser.parse(allocator, "(q ^ p)");
+    var replace = try old_wff_parser.parse(allocator, "(q ^ p)");
     defer replace.deinit();
 
     var matches = (try wff.matchAll(allocator, pattern)).?;
@@ -1370,7 +1425,7 @@ test "Wff.replace: ((a ^ b) v (c ^ d)) using (p ^ q) to (q ^ p)" {
 
     var right = matches.items[1];
 
-    var expected = try wff_parser.parse(allocator, "((a ^ b) v (d ^ c))");
+    var expected = try old_wff_parser.parse(allocator, "((a ^ b) v (d ^ c))");
     defer expected.deinit();
     var new = (try right.replace(allocator, replace));
     defer new.deinit();
