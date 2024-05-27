@@ -15,7 +15,7 @@ pub const test_grammar_1 = ret: {
     break :ret G.initFromTuples(
         .{
             .{ _V("S"), .{_V("wff")} },
-            .{ _V("wff"), .{TestTerminal.Proposition} },
+            .{ _V("wff"), .{ TestTerminal.Proposition} },
             .{ _V("wff"), .{ TestTerminal.Not, _V("wff") } },
             .{ _V("wff"), .{ TestTerminal.LParen, _V("wff"), TestTerminal.And, _V("wff"), TestTerminal.RParen } },
             .{ _V("wff"), .{ TestTerminal.LParen, _V("wff"), TestTerminal.Or, _V("wff"), TestTerminal.RParen } },

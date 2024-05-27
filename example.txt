@@ -278,10 +278,18 @@ TODO: add allocator args to more stuff eg ParseTree.copy or Node.copy
 
 Idea: make a ComptimeArrayList with basic functionality to clean up comptime code
 
+TODO: Rename wff-parsing.zig to parser.zig
+
+Idea: Make match/replace a bit simpler (maybe)
+    - Create a function to perform a substitution for a single variable eg 
+    substitute(allocator, prop_var_to_replace, new_wff)
+
 TODO: add "semantics tree" in different file and refactor Wff.init (wffs should be produced by some other object)
     - change wff.parse_tree to wff.structure
     - the semantics tree should make all higher level code gramamr-agnostic i.e as long as no new operators are introduced, any format in which a wff string is entered and parsed should first be converted to a semantics tree, and any two wffs that are logically equivalent should produced the same semantics tree regardless of their entry and parsing format
     - CURRENT TASK: integrate wfftree in place of parsetree in code
+
+
 
 Check out adjacency matrix or edge list for tree internals
 
