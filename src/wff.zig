@@ -200,7 +200,11 @@ pub fn WffParser(comptime Parser: type) type {
             };
             errdefer wff_tree.deinit();
 
-            return Wff{ .allocator = allocator, .tree = wff_tree };
+            return Wff{ 
+                .allocator = allocator, 
+                .tree = wff_tree,
+                .string = try wff_tree.makeString(allocator),
+            };
         }
 
         fn oldOperatorToWffBinaryOperator(operator: OldToken) WffTree.Node.BinaryOperator {
@@ -350,6 +354,9 @@ test "WffParser.fromOldGrammar: ((a v b) ^ ~c)" {
             .logical_constant => |constant| try std.testing.expectEqual(constant, actual_node.kind.logical_constant),
         }
     }
+    const wff_string = try actual_tree.makeString(allocator);
+    defer allocator.free(wff_string);
+    try std.testing.expectEqualStrings("((a v b) ^ ~c)", wff_string);
 }
 
 test "WffParser.fromOldGrammar: a" {
@@ -363,6 +370,10 @@ test "WffParser.fromOldGrammar: a" {
     defer actual_tree.deinit();
 
     try std.testing.expectEqualDeep(root, actual_tree.root.*);
+
+    const wff_string = try actual_tree.makeString(allocator);
+    defer allocator.free(wff_string);
+    try std.testing.expectEqualStrings("a", wff_string);
 }
 
 test "WffParser.fromOldGrammar: T" {
@@ -378,6 +389,10 @@ test "WffParser.fromOldGrammar: T" {
     defer actual_tree.deinit();
 
     try std.testing.expectEqualDeep(root, actual_tree.root.*);
+
+    const wff_string = try actual_tree.makeString(allocator);
+    defer allocator.free(wff_string);
+    try std.testing.expectEqualStrings("T", wff_string);
 }
 
 test "WffParser.fromOldGrammar: (~T <=> (a ^ F))" {
@@ -448,6 +463,10 @@ test "WffParser.fromOldGrammar: (~T <=> (a ^ F))" {
             .logical_constant => |constant| try std.testing.expectEqual(constant, actual_node.kind.logical_constant),
         }
     }
+
+    const wff_string = try actual_tree.makeString(allocator);
+    defer allocator.free(wff_string);
+    try std.testing.expectEqualStrings("(~T <=> (a ^ F))", wff_string);
 }
 
 test "WffParser.parse: ((a v b) ^ ~c)" {
@@ -622,6 +641,57 @@ pub const WffTree = struct {
         }
     };
 
+    pub const InOrderIterator = struct {
+        stack: std.ArrayList(*Node),
+
+        pub fn init(allocator: std.mem.Allocator, root: *Node) !InOrderIterator {
+            var it = InOrderIterator{
+                .stack = std.ArrayList(*Node).init(allocator),
+            };
+            try it.stack.append(root);
+            try it.descendLeft();
+            return it;
+        }
+
+        pub fn deinit(self: InOrderIterator) void {
+            self.stack.deinit();
+        }
+
+        fn descendLeft(self: *InOrderIterator) !void {
+            while (true) {
+                switch(self.stack.getLast().kind) {
+                    .binary_operator => |op| try self.stack.append(op.arg1),
+                    .unary_operator, .proposition_variable, .logical_constant => break
+                }
+            }
+        }
+
+        pub fn next(self: *InOrderIterator) !?*Node {
+            if (self.stack.items.len == 0) {
+                return null;
+            }
+
+            const next_node = self.stack.pop();
+            switch(next_node.kind) {
+                .unary_operator => |op| {
+                    try self.stack.append(op.arg);
+                    try self.descendLeft();
+                },
+                .binary_operator => |op| {
+                    try self.stack.append(op.arg2);
+                    try self.descendLeft();
+                },
+                .proposition_variable, .logical_constant => {},
+            }
+
+            return next_node;
+        }
+
+        pub fn peek(self: InOrderIterator) ?*Node {
+            return self.stack.getLastOrNull();
+        }
+    };
+
     pub const Node = struct {
         const UnaryOperator = enum {
             not,
@@ -652,6 +722,25 @@ pub const WffTree = struct {
             },
             proposition_variable: []const u8,
             logical_constant: LogicalConstant,
+
+            fn getString(self: @This()) []const u8 {
+                return switch(self) {
+                    .unary_operator => |op| switch(op.operator) {
+                        .not => "~",
+                    },
+                    .binary_operator => |op| switch(op.operator) {
+                        .and_ => "^",
+                        .or_ => "v",
+                        .cond => "=>",
+                        .bicond => "<=>",
+                    },
+                    .proposition_variable => |s| s,
+                    .logical_constant => |constant| switch(constant) {
+                        .t => "T",
+                        .f => "F",
+                    }
+                };
+            }
         },
 
         fn initKindUndefined(allocator: std.mem.Allocator, parent: ?*Node) !*Node {
@@ -689,7 +778,7 @@ pub const WffTree = struct {
             return PostOrderIterator{ .root = self, .next_node = start };
         }
 
-        fn eql(self: *Node, other: *Node) bool {
+        pub fn eql(self: *Node, other: *Node) bool {
             var it = self.iterPreOrder();
             var other_it = other.iterPreOrder();
 
@@ -920,6 +1009,31 @@ pub const WffTree = struct {
             }
             return copy_root;
         }
+
+        fn countBinaryAbove(self: *Node) usize {
+            var count: usize = 0;
+            var node = self;
+            while (node.parent) |parent| {
+                switch(parent.kind) {
+                    .binary_operator => count += 1,
+                    else => {}
+                }
+                node = parent;
+            }
+            return count;
+        }
+
+        fn isLeftOperand(self: *Node) bool {
+            var operand = self;
+            while (operand.parent) |parent| {
+                switch(parent.kind) {
+                    .unary_operator => operand = parent,
+                    .binary_operator => |op| return operand == op.arg1,
+                    .proposition_variable, .logical_constant => unreachable,
+                }
+            }
+            return false;
+        }
     };
 
     allocator: std.mem.Allocator,
@@ -940,6 +1054,10 @@ pub const WffTree = struct {
         return self.root.iterPostOrder();
     }
 
+    pub fn iterInOrder(self: Self, allocator: std.mem.Allocator) !InOrderIterator {
+        return InOrderIterator.init(allocator, self.root);
+    }
+
     pub fn eql(self: Self, other: Self) bool {
         return self.root.eql(other.root);
     }
@@ -950,9 +1068,70 @@ pub const WffTree = struct {
             .root = try self.root.copy(allocator),
         };
     }
+
+
+    // TODO: Calling countBinaryAbove on every terminal is inefficient. It would 
+    // be better to make one pass through the tree and note the number of binary
+    // nodes above each node.
+    pub fn makeString(self: Self, allocator: std.mem.Allocator) ![]const u8 {
+        var string = std.ArrayList(u8).init(allocator);
+        var term = std.ArrayList(u8).init(allocator);
+
+        var it = try self.iterInOrder(allocator);
+        defer it.deinit();
+
+        // Special case if the wff is just a propositional variable / logical 
+        // constant
+        // if (it.peek().?.parent == null) {
+        //     try string.appendSlice(it.peek().?.kind.getString());
+        //     return try string.toOwnedSlice();
+        // }
+
+        var open_brackets: usize = 0;
+        while (try it.next()) |node| {
+            switch(node.kind) {
+                .proposition_variable, .logical_constant => {
+
+                    if (node.isLeftOperand()) {
+                        const new_open_brackets = node.countBinaryAbove();
+                        for (0..(new_open_brackets - open_brackets)) |_| {
+                            try string.append('(');
+                        }
+                        open_brackets = new_open_brackets;
+
+                        try string.appendSlice(node.kind.getString());
+                    } else {
+                        try string.appendSlice(node.kind.getString());
+
+                        const next_open_brackets = if (it.peek()) |next| next.countBinaryAbove() + 1 else 0;
+                        for (0..(open_brackets - next_open_brackets)) |_| {
+                            try string.append(')');
+                        }
+                        open_brackets = next_open_brackets;
+                    }
+                    term.clearRetainingCapacity();
+                },
+                .binary_operator => {
+                    try string.append(' ');
+                    try string.appendSlice(node.kind.getString());
+                    try string.append(' ');
+                },
+                .unary_operator => {
+                    const new_open_brackets = node.countBinaryAbove();
+                    for (0..(new_open_brackets - open_brackets)) |_| {
+                        try string.append('(');
+                    }
+                    open_brackets = new_open_brackets;
+
+                    try string.appendSlice(node.kind.getString());
+                }
+            }
+        }
+        return try string.toOwnedSlice();
+    }
 };
 
-test "WffTreePreOrderIterator: ((a v b) ^ ~c)" {
+test "WffTree.PreOrderIterator: ((a v b) ^ ~c)" {
     // (a v b) ^ ~c
     var root = WffTree.Node{
         .parent = null,
@@ -1020,7 +1199,7 @@ test "WffTreePreOrderIterator: ((a v b) ^ ~c)" {
     try std.testing.expectEqual(null, it.previous());
 }
 
-test "WffTreePostOrderIterator: ((a v b) ^ ~c)" {
+test "WffTree.PostOrderIterator: ((a v b) ^ ~c)" {
     // (a v b) ^ ~c
     var root = WffTree.Node{
         .parent = null,
@@ -1078,6 +1257,122 @@ test "WffTreePostOrderIterator: ((a v b) ^ ~c)" {
     try std.testing.expectEqual(&right_branch, it.next().?);
     try std.testing.expectEqual(&root, it.next().?);
     try std.testing.expectEqual(null, it.next());
+}
+
+test "WffTree.InOrderIterator: ((a v b) ^ ~c)" {
+    const allocator = std.testing.allocator;
+
+    var root = WffTree.Node{
+        .parent = null,
+        .kind = undefined,
+    };
+
+    var left_branch = WffTree.Node{
+        .parent = &root,
+        .kind = undefined,
+    };
+
+    var a = WffTree.Node{
+        .parent = &left_branch,
+        .kind = .{ .proposition_variable = "a" },
+    };
+
+    var b = WffTree.Node{
+        .parent = &left_branch,
+        .kind = .{ .proposition_variable = "b" },
+    };
+
+    left_branch.kind = .{ .binary_operator = .{
+        .operator = .or_,
+        .arg1 = &a,
+        .arg2 = &b,
+    } };
+
+    var right_branch = WffTree.Node{
+        .parent = &root,
+        .kind = undefined,
+    };
+
+    var c = WffTree.Node{
+        .parent = &right_branch,
+        .kind = .{ .proposition_variable = "c" },
+    };
+
+    right_branch.kind = .{ .unary_operator = .{
+        .operator = .not,
+        .arg = &c,
+    } };
+
+    root.kind = .{ .binary_operator = .{
+        .operator = .and_,
+        .arg1 = &left_branch,
+        .arg2 = &right_branch,
+    } };
+
+    const tree = WffTree {
+        .allocator = allocator,
+        .root = &root,
+    };
+
+    var it = try tree.iterInOrder(allocator);
+    defer it.deinit();
+
+    try std.testing.expectEqual(&a, (try it.next()).?);
+    try std.testing.expectEqual(&left_branch, (try it.next()).?);
+    try std.testing.expectEqual(&b, (try it.next()).?);
+    try std.testing.expectEqual(&root, (try it.next()).?);
+    try std.testing.expectEqual(&right_branch, (try it.next()).?);
+    try std.testing.expectEqual(&c, (try it.next()).?);
+    try std.testing.expectEqual(null, try it.next());
+}
+
+test "WffTree.makeString: ((avb)^~   c)" {
+    const allocator = std.testing.allocator;
+
+    const wff = try old_wff_parser.parse(allocator, "((avb)^~   c)");
+    defer wff.deinit();
+
+    try std.testing.expectEqualStrings("((a v b) ^ ~c)", wff.string);
+}
+
+test "WffTree.makeString: (a => (b => (a ^ b)))" {
+    const allocator = std.testing.allocator;
+    const string = "(a => (b => (a ^ b)))";
+
+    const wff = try old_wff_parser.parse(allocator, string);
+    defer wff.deinit();
+
+    try std.testing.expectEqualStrings(string, wff.string);
+}
+
+test "WffTree.makeString: ~~((~~a => (b ^ (a v b))) <=> ~b)" {
+    const allocator = std.testing.allocator;
+    const string = "~~((~~a => (b ^ (a v b))) <=> ~b)";
+
+    const wff = try old_wff_parser.parse(allocator, string);
+    defer wff.deinit();
+
+    try std.testing.expectEqualStrings(string, wff.string);
+}
+
+test "WffTree.makeString: b" {
+    const allocator = std.testing.allocator;
+    const string = "b";
+
+    const wff = try old_wff_parser.parse(allocator, string);
+    defer wff.deinit();
+
+    try std.testing.expectEqualStrings(string, wff.string);
+}
+
+test "WffTree.makeString: ~x" {
+    const allocator = std.testing.allocator;
+    const string = "~x";
+
+    const wff = try old_wff_parser.parse(allocator, string);
+    defer wff.deinit();
+
+    try std.testing.expectEqualStrings(string, wff.string);
 }
 
 test "WffTree.copy: (p v q), ((a ^ b) v (c ^ d)), and p" {
@@ -1206,7 +1501,7 @@ test "WffTree.Node.match: (x <=> x) with pattern (p <=> q)" {
 pub const Wff = struct {
     const Self = @This();
     const ParseTree = parsing.ParseTree(parsing.TestToken);
-    const MatchHashMap = std.StringHashMap(*WffTree.Node);
+    pub const MatchHashMap = std.StringHashMap(*WffTree.Node);
 
     pub const Match = struct {
         source_wff: *const Wff,
@@ -1220,7 +1515,13 @@ pub const Wff = struct {
         /// Lookup a match in the hashmap and build a new Wff for it if it exists
         pub fn getBuildWff(self: Match, allocator: std.mem.Allocator, key: []const u8) !?Wff {
             const node = self.matches.get(key) orelse return null;
-            return try Wff.initFromNode(allocator, node);
+            const tree = WffTree{ .allocator = allocator, .root = try node.copy(allocator) };
+            return Self {
+                .allocator = allocator,
+                .tree = tree,
+                .string = try tree.makeString(allocator),
+
+            };
         }
 
         pub fn replace(self: Match, allocator: std.mem.Allocator, destination_pattern: Wff) !Wff {
@@ -1276,48 +1577,25 @@ pub const Wff = struct {
             return Wff{
                 .allocator = allocator,
                 .tree = substitution_tree,
-                //.string = try result.toString(result.allocator),
+                .string = try substitution_tree.makeString(allocator),
             };
         }
     };
 
     allocator: std.mem.Allocator,
     tree: WffTree,
-    //string: []u8,
-
-    // /// Create a new Wff instance from a nonterminal node. The node is used as
-    // /// the root of the new parse tree, and all nodes are copied, so this Wff
-    // /// shares no memory with the parse tree nodes it was created from.
-    // pub fn initFromNode(allocator: std.mem.Allocator, node: *ParseTree.Node) !Self {
-    //     // The root node is always nonterminal.
-    //     std.debug.assert(switch (node.kind) {
-    //         .leaf => false,
-    //         .nonleaf => true,
-    //     });
-
-    //     var tree = ParseTree{
-    //         .allocator = allocator,
-    //         .root = try node.copy(allocator),
-    //     };
-    //     errdefer tree.deinit();
-
-    //     return Self{
-    //         .allocator = allocator,
-    //         //.string = try tree.toString(allocator),
-    //         .tree = tree,
-    //     };
-    // }
+    string: []const u8,
 
     pub fn deinit(self: Self) void {
         self.tree.deinit();
-        //self.allocator.free(self.string);
+        self.allocator.free(self.string);
     }
 
-    pub fn copy(self: *Self) !Self {
+    pub fn copy(self: *Self, allocator: std.mem.Allocator) !Self {
         return Self{
-            //.string = try self.allocator.dupe(u8, self.string),
-            .allocator = self.allocator,
-            .tree = try self.tree.copy(self.allocator),
+            .allocator = allocator,
+            .tree = try self.tree.copy(allocator),
+            .string = try allocator.dupe(u8, self.string),
         };
     }
 
@@ -1359,7 +1637,7 @@ test "Wff.equals" {
 
     var wff1 = try old_wff_parser.parse(allocator, "((a ^ b) => (c ^ d))");
     defer wff1.deinit();
-    var wff2 = try wff1.copy();
+    var wff2 = try wff1.copy(allocator);
     defer wff2.deinit();
     var wff3 = try old_wff_parser.parse(allocator, "((a ^ b) => (c ^ d))");
     defer wff3.deinit();

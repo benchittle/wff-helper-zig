@@ -12,6 +12,7 @@ var gpa = std.heap.GeneralPurposeAllocator(.{}){};
 const Token = parsing.TestToken;
 const Wff = wfflib.Wff;
 const Proof = proofs.Proof;
+const WffParser = wfflib.OldWffParser;
 
 /// Prompt the user for a number. Invalid input will be ignored and the user will
 /// be prompted again.
@@ -41,7 +42,7 @@ fn getNumber(comptime T: type) !?T {
     }
 }
 
-pub fn getWff(allocator: std.mem.Allocator) !?Wff {
+pub fn getWff(allocator: std.mem.Allocator, parser: WffParser) !?Wff {
     //try resetPrompt();
 
     var buf: [1024]u8 = undefined;
@@ -55,7 +56,7 @@ pub fn getWff(allocator: std.mem.Allocator) !?Wff {
             else => return err,
         } orelse return null;
 
-        const wff = Wff.init(allocator, buf_read) catch |err| switch (err) {
+        const wff = parser.parse(allocator, buf_read) catch |err| switch (err) {
             error.OutOfMemory => return err,
             else => {
                 try printErrResetPrompt("Error: Invalid wff", .{});
@@ -152,6 +153,7 @@ fn printErrResetPrompt(comptime format: []const u8, args: anytype) !void {
 }
 
 pub fn main() !void {
+    const wff_parser = wfflib.old_wff_parser;
     var allocator = gpa.allocator();
 
     try clearScreen();
@@ -163,15 +165,15 @@ pub fn main() !void {
 
     try stdout.print("Start by entering a wff to prove", .{});
     try resetPromptClearError();
-    var wff = try getWff(allocator) orelse return;
+    var wff = try getWff(allocator, wff_parser) orelse return;
     defer wff.deinit();
 
     var proof_methods: [4]Proof.Method = undefined;
     var available_methods: []Proof.Method = undefined;
     {
-        var implication_form = try Wff.init(allocator, "(p => q)");
+        var implication_form = try wff_parser.parse(allocator, "(p => q)");
         defer implication_form.deinit();
-        if (try wff.match(implication_form)) |match| {
+        if (try wff.match(allocator, implication_form)) |match| {
             var m = match;
             m.deinit();
             proof_methods = .{ Proof.Method.None, Proof.Method.Direct, Proof.Method.Indirect, Proof.Method.Contradiction };
@@ -207,7 +209,7 @@ pub fn main() !void {
     );
 
     try clearScreen();
-    while (!(try proof.verify())) {
+    while (!(try proof.verify(allocator))) {
         try moveCursorTopLeft();
         const proof_str = try proof.toString(allocator);
         defer allocator.free(proof_str);
