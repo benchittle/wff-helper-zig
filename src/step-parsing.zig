@@ -1,5 +1,5 @@
 const std = @import("std");
-const wffs = @import("wff.zig");
+const wfflib = @import("wff.zig");
 const proofs = @import("proof.zig");
 
 const StepParsingError = error {
@@ -15,6 +15,8 @@ const StepParsingError = error {
     InvalidInferenceRule,
     TooManySteps,
 };
+
+const WffParser = wfflib.OldWffParser;
 
 /// Remove leading and trailing whitespace from a string.
 fn strStrip(ascii_string: []const u8) []const u8 {
@@ -35,8 +37,8 @@ fn strStrip(ascii_string: []const u8) []const u8 {
     return ascii_string[start..end];
 }
 
-const Token = union(enum) {
-    Wff: wffs.Wff,
+const StepToken = union(enum) {
+    Wff: wfflib.Wff,
     StepNumber: usize,
     Justification: union(enum) {
         Equivalence: usize,
@@ -46,19 +48,19 @@ const Token = union(enum) {
 };
 
 
-pub fn tokenizeJustification(string: []const u8) !Token {
+pub fn tokenizeJustification(string: []const u8) !StepToken {
     if (std.ascii.eqlIgnoreCase("assumption", string)) {
-        return Token{.Justification = .Assumption};
+        return StepToken{.Justification = .Assumption};
     } else if (string[0] == 'E' or string[0] == 'e') {
         if (std.fmt.parseInt(usize, string[1..], 10)) |rule_num| {
-            return Token{.Justification = .{.Equivalence = rule_num}};
+            return StepToken{.Justification = .{.Equivalence = rule_num}};
         } else |err| switch(err) {
             error.Overflow => return StepParsingError.InvalidRuleNumber,
             error.InvalidCharacter => return StepParsingError.UnexpectedToken,
         }
     } else if (string[0] == 'I' or string[0] == 'i') {
         if (std.fmt.parseInt(usize, string[1..], 10)) |rule_num| {
-            return Token{.Justification = .{.Inference = rule_num}};
+            return StepToken{.Justification = .{.Inference = rule_num}};
         } else |err| switch(err) {
             error.Overflow => return StepParsingError.InvalidRuleNumber,
             error.InvalidCharacter => return StepParsingError.UnexpectedToken,
@@ -69,22 +71,22 @@ pub fn tokenizeJustification(string: []const u8) !Token {
 }
 
 
-pub fn tokenizeStep(allocator: std.mem.Allocator, step_string: []const u8) !std.ArrayList(Token) {
+pub fn tokenizeStep(allocator: std.mem.Allocator, wff_parser: WffParser, step_string: []const u8) !std.ArrayList(StepToken) {
     if (step_string.len == 0) {
         return StepParsingError.EmptyString;
     }    
 
-    var tokens = std.ArrayList(Token).init(allocator);
+    var tokens = std.ArrayList(StepToken).init(allocator);
     errdefer tokens.deinit();
     
     var it = std.mem.split(u8, step_string, ",");
     const wff_string = it.next().?;
-    var wff = wffs.Wff.init(allocator, wff_string) catch |err| switch(err) {
+    var wff = wff_parser.parse(allocator, wff_string) catch |err| switch(err) {
         error.OutOfMemory => return err,
         else => return StepParsingError.InvalidWff,
     };
     errdefer wff.deinit();
-    try tokens.append(Token{.Wff = wff});
+    try tokens.append(StepToken{.Wff = wff});
 
     while (it.next()) |str| {
         const stripped = strStrip(str);
@@ -92,7 +94,7 @@ pub fn tokenizeStep(allocator: std.mem.Allocator, step_string: []const u8) !std.
             return StepParsingError.UnexpectedToken;
         }
         if (std.fmt.parseInt(usize, stripped, 10)) |step_num| {
-            try tokens.append(Token{.StepNumber = step_num});
+            try tokens.append(StepToken{.StepNumber = step_num});
         } else |err| switch(err) {
             error.Overflow => {
                 return StepParsingError.InvalidStepNumber;
@@ -113,8 +115,8 @@ pub fn tokenizeStep(allocator: std.mem.Allocator, step_string: []const u8) !std.
 }
 
 
-pub fn parseStep(allocator: std.mem.Allocator, step_string: []const u8, proof: proofs.Proof) !proofs.Proof.Step {
-    var tokens = try tokenizeStep(allocator, step_string);
+pub fn parseStep(allocator: std.mem.Allocator, wff_parser: WffParser, step_string: []const u8, proof: proofs.Proof) !proofs.Proof.Step {
+    var tokens = try tokenizeStep(allocator, wff_parser, step_string);
     defer tokens.deinit();
     errdefer for (tokens.items) |tok| {
         switch (tok) {
@@ -130,7 +132,7 @@ pub fn parseStep(allocator: std.mem.Allocator, step_string: []const u8, proof: p
     };
 
     // If wff is T, then there should be no other tokens.
-    var wff_true = try wffs.Wff.init(allocator, "T");
+    var wff_true = try wff_parser.parse(allocator, "T");
     defer wff_true.deinit();
     if (wff.eql(wff_true)) {
         if (tokens.items.len != 1) {

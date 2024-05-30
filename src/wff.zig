@@ -9,9 +9,7 @@ pub const WffError = error{
     BadSubstitution,
 };
 
-
 //#####################################
-
 
 const GrammarVariable = struct {
     const Self = @This();
@@ -106,7 +104,7 @@ const OldParser = parsing.Parser(
     oldTokenToTestTerminal,
 );
 const OldParseTree = parsing.ParseTree(OldToken);
-const old_parser = OldParser {
+const old_parser = OldParser{
     .table = OldParser.ParseTable.initComptime(old_grammar),
 };
 
@@ -159,7 +157,6 @@ pub const NewParser = void;
 
 //#####################################
 
-
 pub fn WffParser(comptime Parser: type) type {
     const expected_signature = "pub fn parse(self, std.mem.Allocator, []const u8) !ParseTree(...)";
     if (!@hasDecl(Parser, "parse")) {
@@ -200,8 +197,8 @@ pub fn WffParser(comptime Parser: type) type {
             };
             errdefer wff_tree.deinit();
 
-            return Wff{ 
-                .allocator = allocator, 
+            return Wff{
+                .allocator = allocator,
                 .tree = wff_tree,
                 .string = try wff_tree.makeString(allocator),
             };
@@ -659,9 +656,9 @@ pub const WffTree = struct {
 
         fn descendLeft(self: *InOrderIterator) !void {
             while (true) {
-                switch(self.stack.getLast().kind) {
+                switch (self.stack.getLast().kind) {
                     .binary_operator => |op| try self.stack.append(op.arg1),
-                    .unary_operator, .proposition_variable, .logical_constant => break
+                    .unary_operator, .proposition_variable, .logical_constant => break,
                 }
             }
         }
@@ -672,7 +669,7 @@ pub const WffTree = struct {
             }
 
             const next_node = self.stack.pop();
-            switch(next_node.kind) {
+            switch (next_node.kind) {
                 .unary_operator => |op| {
                     try self.stack.append(op.arg);
                     try self.descendLeft();
@@ -724,21 +721,21 @@ pub const WffTree = struct {
             logical_constant: LogicalConstant,
 
             fn getString(self: @This()) []const u8 {
-                return switch(self) {
-                    .unary_operator => |op| switch(op.operator) {
+                return switch (self) {
+                    .unary_operator => |op| switch (op.operator) {
                         .not => "~",
                     },
-                    .binary_operator => |op| switch(op.operator) {
+                    .binary_operator => |op| switch (op.operator) {
                         .and_ => "^",
                         .or_ => "v",
                         .cond => "=>",
                         .bicond => "<=>",
                     },
                     .proposition_variable => |s| s,
-                    .logical_constant => |constant| switch(constant) {
+                    .logical_constant => |constant| switch (constant) {
                         .t => "T",
                         .f => "F",
-                    }
+                    },
                 };
             }
         },
@@ -1014,9 +1011,9 @@ pub const WffTree = struct {
             var count: usize = 0;
             var node = self;
             while (node.parent) |parent| {
-                switch(parent.kind) {
+                switch (parent.kind) {
                     .binary_operator => count += 1,
-                    else => {}
+                    else => {},
                 }
                 node = parent;
             }
@@ -1026,7 +1023,7 @@ pub const WffTree = struct {
         fn isLeftOperand(self: *Node) bool {
             var operand = self;
             while (operand.parent) |parent| {
-                switch(parent.kind) {
+                switch (parent.kind) {
                     .unary_operator => operand = parent,
                     .binary_operator => |op| return operand == op.arg1,
                     .proposition_variable, .logical_constant => unreachable,
@@ -1069,8 +1066,7 @@ pub const WffTree = struct {
         };
     }
 
-
-    // TODO: Calling countBinaryAbove on every terminal is inefficient. It would 
+    // TODO: Calling countBinaryAbove on every terminal is inefficient. It would
     // be better to make one pass through the tree and note the number of binary
     // nodes above each node.
     pub fn makeString(self: Self, allocator: std.mem.Allocator) ![]const u8 {
@@ -1080,7 +1076,7 @@ pub const WffTree = struct {
         var it = try self.iterInOrder(allocator);
         defer it.deinit();
 
-        // Special case if the wff is just a propositional variable / logical 
+        // Special case if the wff is just a propositional variable / logical
         // constant
         // if (it.peek().?.parent == null) {
         //     try string.appendSlice(it.peek().?.kind.getString());
@@ -1089,9 +1085,8 @@ pub const WffTree = struct {
 
         var open_brackets: usize = 0;
         while (try it.next()) |node| {
-            switch(node.kind) {
+            switch (node.kind) {
                 .proposition_variable, .logical_constant => {
-
                     if (node.isLeftOperand()) {
                         const new_open_brackets = node.countBinaryAbove();
                         for (0..(new_open_brackets - open_brackets)) |_| {
@@ -1124,7 +1119,7 @@ pub const WffTree = struct {
                     open_brackets = new_open_brackets;
 
                     try string.appendSlice(node.kind.getString());
-                }
+                },
             }
         }
         return try string.toOwnedSlice();
@@ -1309,7 +1304,7 @@ test "WffTree.InOrderIterator: ((a v b) ^ ~c)" {
         .arg2 = &right_branch,
     } };
 
-    const tree = WffTree {
+    const tree = WffTree{
         .allocator = allocator,
         .root = &root,
     };
@@ -1506,21 +1501,20 @@ pub const Wff = struct {
     pub const Match = struct {
         source_wff: *const Wff,
         source_subtree_root: *WffTree.Node,
-        matches: MatchHashMap,
+        map: MatchHashMap,
 
         pub fn deinit(self: *Match) void {
-            self.matches.deinit();
+            self.map.deinit();
         }
 
         /// Lookup a match in the hashmap and build a new Wff for it if it exists
         pub fn getBuildWff(self: Match, allocator: std.mem.Allocator, key: []const u8) !?Wff {
-            const node = self.matches.get(key) orelse return null;
+            const node = self.map.get(key) orelse return null;
             const tree = WffTree{ .allocator = allocator, .root = try node.copy(allocator) };
-            return Self {
+            return Self{
                 .allocator = allocator,
                 .tree = tree,
                 .string = try tree.makeString(allocator),
-
             };
         }
 
@@ -1538,7 +1532,7 @@ pub const Wff = struct {
                 switch (result_node.kind) {
                     .unary_operator, .binary_operator, .logical_constant => {},
                     .proposition_variable => |variable| {
-                        if (self.matches.get(variable)) |source_node| {
+                        if (self.map.get(variable)) |source_node| {
                             const source_copy = try source_node.copy(allocator);
                             // Free the top node (after its contents have been
                             // copied), keep the rest of the tree.
@@ -1604,7 +1598,7 @@ pub const Wff = struct {
     }
 
     pub fn match(self: *const Self, allocator: std.mem.Allocator, pattern: Self) !?Match {
-        return Match{ .source_wff = self, .source_subtree_root = self.tree.root, .matches = try self.tree.root.match(allocator, pattern.tree.root) orelse return null };
+        return Match{ .source_wff = self, .source_subtree_root = self.tree.root, .map = try self.tree.root.match(allocator, pattern.tree.root) orelse return null };
     }
 
     pub fn matchAll(self: *const Self, allocator: std.mem.Allocator, pattern: Self) !?std.ArrayList(Match) {
@@ -1620,7 +1614,7 @@ pub const Wff = struct {
 
         while (it.next()) |node| {
             if (try node.match(allocator, pattern.tree.root)) |m| {
-                try all_matches.append(Match{ .source_wff = self, .source_subtree_root = node, .matches = m });
+                try all_matches.append(Match{ .source_wff = self, .source_subtree_root = node, .map = m });
             }
         }
         if (all_matches.items.len > 0) {

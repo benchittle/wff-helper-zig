@@ -67,7 +67,7 @@ pub fn getWff(allocator: std.mem.Allocator, parser: WffParser) !?Wff {
     }
 }
 
-pub fn getStep(allocator: std.mem.Allocator, proof: Proof) !?Proof.Step {
+pub fn getStep(allocator: std.mem.Allocator, wff_parser: WffParser, proof: Proof) !?Proof.Step {
     var buf: [1024]u8 = undefined;
 
     while (true) {
@@ -80,7 +80,7 @@ pub fn getStep(allocator: std.mem.Allocator, proof: Proof) !?Proof.Step {
             else => return err,
         } orelse return null;
 
-        const step = step_parse.parseStep(allocator, buf_read, proof) catch |err| switch (err) {
+        const step = step_parse.parseStep(allocator, wff_parser, buf_read, proof) catch |err| switch (err) {
             error.OutOfMemory => return err,
             else => {
                 try printErrResetPrompt("Error: Invalid input.", .{});
@@ -217,8 +217,8 @@ pub fn main() !void {
 
         try stdout.print("\nEnter a step in the proof\n\n", .{});
         try resetPrompt();
-        var step = try getStep(allocator, proof) orelse return;
-        if (!(try step.isValid())) {
+        var step = try getStep(allocator, wff_parser, proof) orelse return;
+        if (!(try step.isValid(allocator))) {
             try printErrResetPrompt("Error: Invalid step.", .{});
             continue;
         }
@@ -227,5 +227,9 @@ pub fn main() !void {
         try clearScreen();
     }
 
+    try moveCursorTopLeft();
+    const proof_str = try proof.toString(allocator);
+    defer allocator.free(proof_str);
+    try stdout.print("{s}", .{proof_str});
     try stdout.print("Proof complete!\n", .{});
 }
