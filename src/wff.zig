@@ -498,7 +498,9 @@ pub const WffTree = struct {
 
     pub const PreOrderIterator = struct {
         start: *Node,
-        next_node: ?*Node,
+        current_node: ?*Node,
+        skipNext: bool = false,
+        isExhausted: bool = false,
 
         // Traverse back up the tree and return the first unvisited node to the
         // right. If we're traversing up the rightmost branch and reach the root
@@ -523,7 +525,7 @@ pub const WffTree = struct {
                     .proposition_variable, .logical_constant => unreachable,
                 }
             }
-            return null;
+            return null; // TODO: I think this is unreachable
         }
 
         /// From the given starting node, get the deepest node always branching
@@ -540,19 +542,46 @@ pub const WffTree = struct {
         }
 
         pub fn next(self: *PreOrderIterator) ?*Node {
-            const current_node = self.next_node orelse return null;
+            const next_node = self.peek();
+            
+            if (self.skipNext) {
+                self.skipNext = false;
+            }
 
-            self.next_node = switch (current_node.kind) {
-                .unary_operator => |op| op.arg,
-                .binary_operator => |op| op.arg1,
-                .proposition_variable, .logical_constant => self.backtrack_next(current_node),
-            };
-
-            return current_node;
+            if (next_node == null) {
+                self.isExhausted = true;
+                return null;
+            } else {
+                self.current_node = next_node;
+                return self.current_node;
+            }
         }
 
         pub fn peek(self: PreOrderIterator) ?*Node {
-            return self.next_node;
+            if (self.isExhausted) {
+                return null;
+            }
+            const next_node: ?*Node = ret: {
+                if (self.skipNext) {
+                    if (self.current_node) |node| {
+                        break :ret self.backtrack_next(node);
+                    } else {
+                        return null;
+                    }
+                } else {
+                    if (self.current_node == null) {
+                        break :ret self.start;
+                    } else {
+                        break :ret switch(self.current_node.?.kind) {
+                            .unary_operator => |op| op.arg,
+                            .binary_operator => |op| op.arg1,
+                            .proposition_variable, .logical_constant => self.backtrack_next(self.current_node.?),
+                        };
+                    }
+                }
+            };
+
+            return next_node;
         }
 
         pub fn hasNext(self: PreOrderIterator) bool {
@@ -560,9 +589,15 @@ pub const WffTree = struct {
         }
 
         pub fn previous(self: *PreOrderIterator) ?*Node {
-            if (self.next_node) |node| {
-                if (node.parent) |parent| {
-                    self.next_node = switch (parent.kind) {
+            if (self.isExhausted) {
+                self.current_node = get_deepest_right(self.start);
+                self.isExhausted = false;
+            } else if (self.current_node) |node| {
+                if (node == self.start) {
+                    self.current_node = null;
+                } else {
+                    const parent = node.parent.?;
+                    self.current_node = switch (parent.kind) {
                         .unary_operator => parent,
                         .binary_operator => |op| ret: {
                             if (node == op.arg2) {
@@ -573,20 +608,13 @@ pub const WffTree = struct {
                         },
                         .proposition_variable, .logical_constant => unreachable,
                     };
-                } else {
-                    // Current node is root so we can't go back any further
-                    return null;
                 }
-            } else {
-                // Iterator was exhausted, so we get the last node returned.
-                self.next_node = get_deepest_right(self.start);
             }
-            return self.next_node;
+            return self.current_node;
         }
 
         pub fn skipChildren(self: *PreOrderIterator) void {
-            const current = self.previous() orelse return;
-            self.next_node = self.backtrack_next(current);
+            self.skipNext = true;
         }
     };
 
@@ -612,11 +640,9 @@ pub const WffTree = struct {
                 return current_node;
             }
 
-            // We know parent is not null, else we already would have returned.
-            self.next_node = switch (current_node.parent.?.kind) {
-                .binary_operator => |op| op.arg2,
-                .unary_operator, .proposition_variable, .logical_constant => unreachable,
-            };
+            // We know parent is not null or unary, else we already would have
+            // returned.
+            self.next_node = current_node.parent.?.kind.binary_operator.arg2;
 
             while (true) {
                 switch (self.next_node.?.kind) {
@@ -760,7 +786,7 @@ pub const WffTree = struct {
         }
 
         fn iterPreOrder(self: *Node) PreOrderIterator {
-            return PreOrderIterator{ .start = self, .next_node = self };
+            return PreOrderIterator{ .start = self, .current_node = null };
         }
 
         fn iterPostOrder(self: *Node) PostOrderIterator {
@@ -803,7 +829,7 @@ pub const WffTree = struct {
             var copy_root = try Node.initKindUndefined(allocator, null);
             var copy_it = copy_root.iterPreOrder();
             errdefer {
-                var node = copy_it.peek().?;
+                var node = copy_it.current_node.?;
                 while (copy_it.previous()) |previous| {
                     node.deinit(allocator);
                     node = previous;
@@ -814,7 +840,7 @@ pub const WffTree = struct {
             var it = self.iterPreOrder();
 
             while (it.next()) |node| {
-                var copy_node = copy_it.peek().?;
+                var copy_node = copy_it.next().?;
 
                 copy_node.kind = switch (node.kind) {
                     .unary_operator => |op| .{
@@ -837,7 +863,6 @@ pub const WffTree = struct {
                         .logical_constant = constant,
                     },
                 };
-                _ = copy_it.next();
             }
             return copy_root;
         }
@@ -846,8 +871,8 @@ pub const WffTree = struct {
         // pattern nodes. Make sure the pattern is not deallocated before the
         // returned hash map is done being used.
         fn match(self: *Node, allocator: std.mem.Allocator, pattern: *Node) !?Wff.MatchHashMap {
-            var matches = Wff.MatchHashMap.init(allocator);
-            errdefer matches.deinit();
+            var map = Wff.MatchHashMap.init(allocator);
+            errdefer map.deinit();
 
             var it = self.iterPreOrder();
             var pattern_it = pattern.iterPreOrder();
@@ -875,12 +900,12 @@ pub const WffTree = struct {
                         // more than once (e.g. (p ^ p)) we must check that
                         // both subwffs matching p are equal, otherwise it's
                         // not a match.
-                        if (matches.get(variable)) |existing_match| {
+                        if (map.get(variable)) |existing_match| {
                             if (!existing_match.eql(node)) {
-                                _ = matches.remove(variable);
+                                _ = map.remove(variable);
                             }
                         } else {
-                            try matches.put(variable, node);
+                            try map.put(variable, node);
                         }
 
                         continue;
@@ -888,14 +913,14 @@ pub const WffTree = struct {
                 };
 
                 if (!is_match) {
-                    matches.deinit();
+                    map.deinit();
                     return null;
                 }
             }
-            if (matches.count() > 0) {
-                return matches;
+            if (map.count() > 0) {
+                return map;
             } else {
-                matches.deinit();
+                map.deinit();
                 return null;
             }
         }
@@ -926,7 +951,8 @@ pub const WffTree = struct {
             errdefer {
                 // Avoid freeing the replacement node and its children.
                 if (first_node_after_replacement) |stop_node| {
-                    var node = copy_it.peek().?;
+                    // TODO: We shouldn't call deinit on first node since it might be undefined
+                    var node = copy_it.current_node.?;
                     while (copy_it.previous()) |previous| {
                         if (node == stop_node) {
                             break;
@@ -936,10 +962,10 @@ pub const WffTree = struct {
                     }
                     node.deinit(allocator);
 
-                    copy_it.next_node = replacement_root;
+                    copy_it.current_node = replacement_root;
                     _ = copy_it.previous();
                 }
-                var node = copy_it.peek().?;
+                var node = copy_it.next().?;
                 while (copy_it.previous()) |previous| {
                     node.deinit(allocator);
                     node = previous;
@@ -953,7 +979,7 @@ pub const WffTree = struct {
             }
 
             while (it.next()) |node| {
-                var copy_node = copy_it.peek().?;
+                var copy_node = copy_it.next().?;
                 if (node == self) {
                     it.skipChildren();
                     // Do this before we deallocate copy_node.
@@ -964,7 +990,7 @@ pub const WffTree = struct {
                     // since node.kind is undefined.
                     allocator.destroy(copy_node);
 
-                    switch (copy_parent.kind) {
+                    switch (node.parent.?.kind) {
                         .unary_operator => copy_parent.kind.unary_operator.arg = replacement_root,
                         .binary_operator => |op| {
                             if (node == op.arg1) {
@@ -978,7 +1004,7 @@ pub const WffTree = struct {
                     old_parent = replacement_root.parent;
                     replacement_root.parent = copy_parent;
 
-                    first_node_after_replacement = copy_it.peek();
+                    first_node_after_replacement = copy_it.current_node;
                 } else {
                     copy_node.kind = switch (node.kind) {
                         .unary_operator => |op| .{
@@ -1001,7 +1027,6 @@ pub const WffTree = struct {
                             .logical_constant = constant,
                         },
                     };
-                    _ = copy_it.next();
                 }
             }
             return copy_root;
@@ -1533,6 +1558,7 @@ pub const Wff = struct {
                     .unary_operator, .binary_operator, .logical_constant => {},
                     .proposition_variable => |variable| {
                         if (self.map.get(variable)) |source_node| {
+                            it.skipChildren();
                             const source_copy = try source_node.copy(allocator);
                             // Free the top node (after its contents have been
                             // copied), keep the rest of the tree.
@@ -1601,6 +1627,7 @@ pub const Wff = struct {
         return Match{ .source_wff = self, .source_subtree_root = self.tree.root, .map = try self.tree.root.match(allocator, pattern.tree.root) orelse return null };
     }
 
+    // TODO: Make this into method on tree or node and call it here instead
     pub fn matchAll(self: *const Self, allocator: std.mem.Allocator, pattern: Self) !?std.ArrayList(Match) {
         var all_matches = std.ArrayList(Match).init(allocator);
         errdefer {

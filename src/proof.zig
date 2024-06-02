@@ -30,8 +30,8 @@ const EquivalenceRule = struct {
                 for (left_to_right.items) |*m| m.deinit();
                 left_to_right.deinit();
             }
-            for (left_to_right.items) |matches| {
-                var result = try matches.replace(allocator, self.rhs);
+            for (left_to_right.items) |match| {
+                var result = try match.replace(allocator, self.rhs);
                 defer result.deinit();
                 if (result.eql(to)) {
                     return true;
@@ -43,8 +43,8 @@ const EquivalenceRule = struct {
                 for (right_to_left.items) |*m| m.deinit();
                 right_to_left.deinit();
             }
-            for (right_to_left.items) |matches| {
-                var result = try matches.replace(allocator, self.lhs);
+            for (right_to_left.items) |match| {
+                var result = try match.replace(allocator, self.lhs);
                 defer result.deinit();
                 if (result.eql(to)) {
                     return true;
@@ -53,7 +53,25 @@ const EquivalenceRule = struct {
         }
         return false;
     }
-    };
+};
+
+// test "EquivalenceRule.canTransform (expect error): (~p v ~q) to ~(p ^ q) using ~~a = a" {
+//     const allocator = std.testing.allocator;
+    
+//     var from = try wfflib.old_wff_parser.parse(allocator, "(~p v ~q)");
+//     defer from.deinit();
+//     var to = try wfflib.old_wff_parser.parse(allocator, "~(p ^ q)");
+//     defer to.deinit();
+
+//     var rule = EquivalenceRule {
+//         .lhs = try wfflib.old_wff_parser.parse(allocator, "~~a"),
+//         .rhs = try wfflib.old_wff_parser.parse(allocator, "a"),
+//         .num = undefined,
+//     };
+//     defer rule.deinit();
+//     //try std.testing.expectError(try rule.canTransform(allocator, from, to));
+//     _ = try rule.canTransform(allocator, from, to);
+// }
 
 test "EquivalenceRule.canTransform: (~p v q) to (p => q) using (~a v b) = (a => b)" {
     const allocator = std.testing.allocator;
@@ -77,7 +95,6 @@ test "EquivalenceRule.canTransform: (~p v q) to (p => q) using (~a v b) = (a => 
     try std.testing.expect(try rule.canTransform(allocator, to, from));
     try std.testing.expect(!(try rule.canTransform(allocator, from, wrong)));
     try std.testing.expect(!(try rule.canTransform(allocator, wrong, to)));
-
 }
 
 test "EquivalenceRule.canTransform: ((w v x) ^ (y => z)) to ((w v x) ^ (~y v z)) using (~a v b) = (a => b)" {
@@ -186,25 +203,38 @@ const InferenceRule = struct {
     const Self = @This();
     const Wff = wfflib.Wff;
 
+    const Conditions = union(enum) {
+        one: [1]Wff,
+        two: [2]Wff,
+
+        fn getSlice(self: *const @This()) []const Wff {
+            switch(self.*) {
+                .one => |*array| return array,
+                .two => |*array| return array,
+            }
+        }
+    };
+
     allocator: std.mem.Allocator,
-    conditions: []Wff,
+    conditions: Conditions,
     result: Wff,
     num: usize,
 
     pub fn deinit(self: Self) void {
-        for (self.conditions) |wff| wff.deinit();
-        self.allocator.free(self.conditions);
+        for (self.conditions.getSlice()) |wff| {
+            wff.deinit();
+        }
         self.result.deinit();
     }
 
     // TODO: Why does this use nodes and stuff?
-    pub fn canTransform(self: Self, allocator: std.mem.Allocator, from: []Wff, to: Wff) !bool {
-        if (from.len != self.conditions.len) return ProofError.InferenceRuleError;
+    pub fn canTransform(self: Self, allocator: std.mem.Allocator, from: []const Wff, to: Wff) !bool {
+        if (from.len != self.conditions.getSlice().len) return ProofError.InferenceRuleError;
         var all_matches = wfflib.Wff.MatchHashMap.init(allocator);
         defer all_matches.deinit();
 
-        for (from, 0..) |wff, i| {
-            var match = try wff.match(allocator, self.conditions[i]) orelse return false;
+        for (from, self.conditions.getSlice()) |wff, condition| {
+            var match = try wff.match(allocator, condition) orelse return false;
             defer match.deinit();
 
             var it = match.map.iterator();
@@ -245,7 +275,11 @@ test "InferenceRule.canTransform: p to (p v q) using I1" {
     defer wrong.deinit();
 
     const rules = initInferenceRules(allocator);
-    defer for (rules) |r| r.deinit();
+    defer {
+        for (rules) |r| {
+            r.deinit();
+        }
+    }
     const infer1 = rules[0];
 
     try std.testing.expect(try infer1.canTransform(allocator, &conds, result));
@@ -311,17 +345,26 @@ pub fn initInferenceRules(allocator: std.mem.Allocator) [6]InferenceRule {
 
         fn makeRule(self: *Self, comptime cond1: []const u8, comptime cond2: []const u8, comptime result: []const u8) InferenceRule {
             self.count += 1;
-            const count = if (cond2.len == 0) 1 else 2;
-            var conditions = self.allocator.alloc(wfflib.Wff, count)
-                catch std.debug.panic("Failed to initialize inference rules!\n", .{});
+            const conditions = ret: {
+                if (cond2.len == 0) {
+                    break :ret InferenceRule.Conditions {
+                        .one = [1]wfflib.Wff {
+                            wfflib.old_wff_parser.parse(self.allocator, cond1)
+                                catch std.debug.panic("Failed to initialize inference rules!\n", .{}),
+                        }
+                    };
+                } else {
+                    break :ret InferenceRule.Conditions {
+                        .two = [2]wfflib.Wff {
+                            wfflib.old_wff_parser.parse(self.allocator, cond1)
+                                catch std.debug.panic("Failed to initialize inference rules!\n", .{}),
+                            wfflib.old_wff_parser.parse(self.allocator, cond2)
+                                catch std.debug.panic("Failed to initialize inference rules!\n", .{}),  
+                        }
+                    };
+                }
+            };
 
-            conditions[0] = wfflib.old_wff_parser.parse(self.allocator, cond1)
-                catch std.debug.panic("Failed to initialize inference rules!\n", .{});
-            if (count > 1) {
-                conditions[1] = wfflib.old_wff_parser.parse(self.allocator, cond2)
-                    catch std.debug.panic("Failed to initialize inference rules!\n", .{});
-            }
-            
             return InferenceRule{
                 .allocator = self.allocator,
                 .conditions = conditions,
@@ -364,13 +407,25 @@ pub const Proof = struct {
     };
 
     pub const Justification = union(enum) {
+        pub const InferenceSource = union(enum) {
+            one: [1]*Step,
+            two: [2]*Step,
+
+            fn getSlice(self: @This()) []const *Step {
+                switch(self) {
+                    .one => |conds| return &conds,
+                    .two => |conds| return &conds,
+                }
+            }
+        };
+
         Equivalence: struct {
             rule: EquivalenceRule,
             from: *Step,
         },
         Inference: struct {
             rule: InferenceRule,
-            from: [2]?*Step,
+            from: InferenceSource,
         },
         // Theorem: struct {
         //     wff: *w.Wff,
@@ -390,10 +445,17 @@ pub const Proof = struct {
                     return try e.rule.canTransform(allocator, e.from.wff, self.wff);
                 },
                 .Inference => |i| {
-                    var conditions: [2]Wff = undefined;
-                    inline for (i.from, 0..) |step, j| conditions[j] = if (step) |s| s.wff else undefined;
-                    const count: u32 = if (i.from[1] == null) 1 else 2;
-                    return try i.rule.canTransform(allocator, conditions[0..count], self.wff);
+                    switch(i.from) {
+                        .one => |one| {
+                            const conditions: []const Wff = &[1]Wff {one[0].wff};
+                            return try i.rule.canTransform(allocator, conditions, self.wff);
+                        },
+                        .two => |two| {
+                            const conditions: []const Wff = &[2]Wff {two[0].wff, two[1].wff};
+                            return try i.rule.canTransform(allocator, conditions, self.wff);
+                        }
+                    }
+                    
                 },
                 .Assumption => |assumption_list| {
                     for (assumption_list) |wff| {
@@ -539,22 +601,25 @@ pub const Proof = struct {
                     justification_string = try std.fmt.allocPrint(allocator, "{d}, E{d}\n", .{step_num + 1, e.rule.num});
                 },
                 .Inference => |inf| {
-                    if (inf.from[1] == null) {
-                        var step_num: usize = 0;
-                        while (inf.from[0] != &self.steps.items[step_num]) {
-                            step_num += 1;
+                    switch(inf.from) {
+                        .one => |array| {
+                            var step_num: usize = 0;
+                            while (array[0] != &self.steps.items[step_num]) {
+                                step_num += 1;
+                            }
+                            justification_string = try std.fmt.allocPrint(allocator, "{d}, I{d}\n", .{step_num + 1, inf.rule.num});             
+                        },
+                        .two => |array| {
+                            var step_num1: usize = 0;
+                            while (array[0] != &self.steps.items[step_num1]) {
+                                step_num1 += 1;
+                            }
+                            var step_num2: usize = 0;
+                            while (array[1] != &self.steps.items[step_num2]) {
+                                step_num2 += 1;
+                            }
+                            justification_string = try std.fmt.allocPrint(allocator, "{d}, {d}, I{d}\n", .{step_num1, step_num2, inf.rule.num});
                         }
-                        justification_string = try std.fmt.allocPrint(allocator, "{d}, I{d}\n", .{step_num + 1, inf.rule.num});                        
-                    } else {
-                        var step_num1: usize = 0;
-                        while (inf.from[0] != &self.steps.items[step_num1]) {
-                            step_num1 += 1;
-                        }
-                        var step_num2: usize = 0;
-                        while (inf.from[1] != &self.steps.items[step_num2]) {
-                            step_num2 += 1;
-                        }
-                        justification_string = try std.fmt.allocPrint(allocator, "{d}, {d}, I{d}\n", .{step_num1, step_num2, inf.rule.num});
                     }
                 },
                 .Assumption => justification_string = try allocator.dupe(u8, "Assumption\n"),
@@ -570,7 +635,7 @@ pub const Proof = struct {
 };
 
 
-test "proof: (a => (b => a))" {
+test "Proof of (a => (b => a))" {
     const ProofType = Proof;
     const allocator = std.testing.allocator;
 
@@ -618,7 +683,9 @@ test "proof: (a => (b => a))" {
         .how = ProofType.Justification{
             .Inference = .{
                 .rule = inference_rules[0],
-                .from = .{&proof.steps.items[proof.steps.items.len - 1], null}
+                .from = .{
+                    .one = [1]*Proof.Step {&proof.steps.items[proof.steps.items.len - 1]},
+                }
             }
         }
     };
@@ -630,7 +697,7 @@ test "proof: (a => (b => a))" {
         .wff = try wfflib.old_wff_parser.parse(allocator, "(~b v a)"),
         .how = ProofType.Justification{
             .Equivalence = .{
-                .rule = equivalence_rules[9],
+                .rule = equivalence_rules[9], // E10
                 .from = &proof.steps.items[proof.steps.items.len - 1],
             }
         }

@@ -296,3 +296,20 @@ Check out adjacency matrix or edge list for tree internals
 Notes for new parse tree to wff tree:
 - iterate terminals and find first common ancestor
 - iterate deepest terminals first and "fold" up the tree
+
+
+Idea: add uninitialised field to WffTree.Node
+
+BUG
+```
+Proving: ((p ^ q) => p)
+Method: Indirect
+Assumptions: ~p
+Goal: ~(p ^ q)
+Proof:
+1. ~p      Assumption
+2. (~p v ~q)      1, I1
+
+Enter a step in the proof
+
+

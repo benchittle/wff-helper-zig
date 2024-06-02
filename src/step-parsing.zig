@@ -179,10 +179,9 @@ pub fn parseStep(allocator: std.mem.Allocator, wff_parser: WffParser, step_strin
                 return StepParsingError.InvalidInferenceRule;
             }
 
-            var step1: ?*proofs.Proof.Step = undefined;
-            var step2: ?*proofs.Proof.Step = undefined;
+            var fromSteps: proofs.Proof.Justification.InferenceSource = undefined;
             if (tokens.items.len == 3) {
-                step1 = switch(tokens.items[1]) {
+                const step1 = switch(tokens.items[1]) {
                     .StepNumber => |num| ret2: {
                         if (num < 1 or num > proof.steps.items.len) {
                             return StepParsingError.InvalidStepNumber;
@@ -191,9 +190,11 @@ pub fn parseStep(allocator: std.mem.Allocator, wff_parser: WffParser, step_strin
                     },
                     else => return StepParsingError.InvalidFormat,
                 };
-                step2 = null;
+                fromSteps = .{
+                    .one = [1]*proofs.Proof.Step {step1},
+                };
             } else if (tokens.items.len == 4) {
-                step1 = switch(tokens.items[1]) {
+                const step1 = switch(tokens.items[1]) {
                     .StepNumber => |num| ret2: {
                         if (num < 1 or num > proof.steps.items.len) {
                             return StepParsingError.InvalidStepNumber;
@@ -202,7 +203,7 @@ pub fn parseStep(allocator: std.mem.Allocator, wff_parser: WffParser, step_strin
                     },
                     else => return StepParsingError.InvalidFormat,
                 };
-                step2 = switch(tokens.items[2]) {
+                const step2 = switch(tokens.items[2]) {
                     .StepNumber => |num| ret2: {
                         if (num < 1 or num > proof.steps.items.len) {
                             return StepParsingError.InvalidStepNumber;
@@ -210,6 +211,9 @@ pub fn parseStep(allocator: std.mem.Allocator, wff_parser: WffParser, step_strin
                         break :ret2 &proof.steps.items[num - 1];
                     },
                     else => return StepParsingError.InvalidFormat,
+                };
+                fromSteps = .{
+                    .two = [2]*proofs.Proof.Step {step1, step2},
                 };
             } else {
                 return StepParsingError.InvalidFormat;
@@ -218,7 +222,7 @@ pub fn parseStep(allocator: std.mem.Allocator, wff_parser: WffParser, step_strin
             break :ret proofs.Proof.Justification{
                 .Inference = .{
                     .rule = proof.inference_rules[rule_num - 1],
-                    .from = .{step1, step2},
+                    .from = fromSteps,
                 }
             };
         },
