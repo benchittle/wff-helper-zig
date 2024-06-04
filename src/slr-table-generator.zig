@@ -769,7 +769,7 @@ const TestVariable = struct {
     }
 };
 
-test "Grammar.initFromTuples-grammar1_0" {
+test "Grammar.initFromTuples [grammar1.0]" {
     // R0: S   -> wff
     // R1: wff -> Proposition
     // R2: wff -> Not    wff
@@ -828,7 +828,7 @@ test "Grammar.initFromTuples-grammar1_0" {
     try std.testing.expectEqualDeep(expected_grammar.terminals, actual_grammar.terminals);
 }
 
-test "Grammar.initFromTuples-grammar2_2" {
+test "Grammar.initFromTuples [grammar2.2]" {
     const V_S = 0;
     const V_WFF1 = 1;
     const V_WFF2 = 2;
@@ -911,7 +911,7 @@ test "Grammar.initFromTuples-grammar2_2" {
     try std.testing.expectEqualDeep(expected_grammar.terminals, actual_grammar.terminals);
 }
 
-test "firsts_and_follows-grammar1_0" {
+test "firsts_and_follows [grammar1.0]" {
     const V = TestVariable.fromString;
     const grammar = comptime Grammar(TestVariable, TestTerminal).initFromTuples(.{
         .{ V("S"), .{V("wff")} },
@@ -980,7 +980,7 @@ test "firsts_and_follows-grammar1_0" {
     // }
 }
 
-test "firsts_and_follows-grammar2_2" {
+test "firsts_and_follows [grammar2.2]" {
     // R0:  S -> wff1
     // R1:  wff1 -> wff2
     // R2:  wff1 -> wff1 <=> wff2
@@ -1383,8 +1383,8 @@ pub fn ParseTable(comptime Variable: type, comptime Terminal: type) type {
                     // this cell as invalid.
                     if (prod_list.items.len == 0) {
                         action_table.items[state][t_idx] = Action.invalid;
-                        // If expanding these productions would result in a state
-                        // that already exists,
+                    // If expanding these productions would result in a state
+                    // that already exists,
                     } else if (checkStateAlreadyExists(primary_productions_table.items, prod_list.items)) |existing_state| {
                         action_table.items[state][t_idx] = try switch (action_table.items[state][t_idx]) {
                             .invalid => Action{ .state = existing_state },
@@ -1475,8 +1475,8 @@ pub fn ParseTable(comptime Variable: type, comptime Terminal: type) type {
                         
                         // If expanding these productions would result in a state
                         // that already exists,
-                        if (checkStateAlreadyExists(primary_productions_table, prod_list)) |existing_state| {
-                            const new_action = switch (action_table[state_num][v_idx]) {
+                        else if (checkStateAlreadyExists(primary_productions_table, prod_list)) |existing_state| {
+                            const new_action = switch (goto_table[state_num][v_idx]) {
                                 .invalid => Action{ .state = existing_state },
                                 .state => @compileError("Parsing error: shift shift conflict"),
                                 .reduce => @compileError("Parsing error: shift reduce conflict"),
@@ -1489,8 +1489,8 @@ pub fn ParseTable(comptime Variable: type, comptime Terminal: type) type {
                             // to be assigned replaced with the desired new 
                             // entry. Probably very inefficient but it's 
                             // comptime so who cares.
-                            const new_row = action_table[state_num][0..v_idx] ++ [_]Action { new_action } ++ action_table[state_num][(v_idx + 1)..action_table[state_num].len];
-                            action_table = action_table[0..state_num] ++ [_][]const Action {new_row} ++ action_table[(state_num + 1)..action_table.len];
+                            const new_row = goto_table[state_num][0..v_idx] ++ [_]Action { new_action } ++ goto_table[state_num][(v_idx + 1)..goto_table[state_num].len];
+                            goto_table = goto_table[0..state_num] ++ [_][]const Action {new_row} ++ goto_table[(state_num + 1)..goto_table.len];
                         } else {
                             goto_table = goto_table ++ [_][]const Action{ &[_]Action {Action{.invalid = {}}} ** grammar.getVariableCount() };
                             action_table = action_table ++ [_][]const Action{ &[_]Action {Action{.invalid = {}}} ** grammar.getTerminalCount() };
@@ -1498,9 +1498,9 @@ pub fn ParseTable(comptime Variable: type, comptime Terminal: type) type {
                             
                             const new_row = goto_table[state_num][0..v_idx] ++ [_]Action {Action {.state = goto_table.len - 1 } } ++ goto_table[state_num][(v_idx + 1)..goto_table[state_num].len];
                             goto_table = goto_table[0..state_num] ++ [_][]const Action {new_row} ++ goto_table[(state_num + 1)..goto_table.len];
-                            //goto_table[state][v_idx] = Action{ .state = goto_table.len - 1 };
                         }
                     }
+                    // @compileLog(goto_table);
                     for (terminal_branches, 0..) |prod_list, t_idx| {
                         // If there are no transitions from this variable, move on
                         // (cell is initialized to invalid so we don't need to set
@@ -1581,7 +1581,7 @@ pub fn ParseTable(comptime Variable: type, comptime Terminal: type) type {
     };
 }
 
-test "ParseTable.expandProductions-grammar1_0" {
+test "ParseTable.expandProductions [grammar1.0]" {
     const V = TestVariable.fromString;
     const G = Grammar(TestVariable, TestTerminal);
     const grammar = comptime G.initFromTuples(.{
@@ -1654,7 +1654,7 @@ test "ParseTable.expandProductions-grammar1_0" {
     // }
 }
 
-test "create_parse_table-grammar1_0" {
+test "Create parse table [grammar1.0]" {
     @setEvalBranchQuota(10000);
     const V = TestVariable.fromString;
     const G = Grammar(TestVariable, TestTerminal);
@@ -1733,6 +1733,49 @@ test "create_parse_table-grammar1_0" {
     try std.testing.expectEqualDeep(expected_table.goto_table, table.goto_table);
     try std.testing.expectEqualDeep(expected_table.action_table, table.action_table);
 
+    try std.testing.expectEqualDeep(table.action_table, table_comptime.action_table);
+    try std.testing.expectEqualDeep(table.goto_table, table_comptime.goto_table);
+}
+
+test "Create parse table [grammar2.0]" {
+    @setEvalBranchQuota(10000);
+    const V = TestVariable.fromString;
+    const G = Grammar(TestVariable, TestTerminal);
+    const grammar = comptime G.initFromTuples(
+        .{
+            .{ V("S"), .{V("wff1")} },
+
+            .{ V("wff1"), .{V("wff2")} },
+            .{ V("wff1"), .{ V("wff1"), TestTerminal.Bicond, V("wff2") } },
+
+            .{ V("wff2"), .{V("wff3")} },
+            .{ V("wff2"), .{ V("wff2"), TestTerminal.Cond, V("wff3") } },
+
+            .{ V("wff3"), .{V("wff4")} },
+            .{ V("wff3"), .{ V("wff3"), TestTerminal.Or, V("wff4") } },
+            .{ V("wff3"), .{ V("wff3"), TestTerminal.And, V("wff4") } },
+
+            .{ V("wff4"), .{V("prop")} },
+            .{ V("wff4"), .{ TestTerminal.Not, V("wff4") } },
+
+            .{ V("prop"), .{ TestTerminal.LParen, V("wff1"), TestTerminal.RParen } },
+            .{ V("prop"), .{TestTerminal.Proposition} },
+        },
+        V("S"),
+        TestTerminal.End,
+    );
+    defer grammar.deinit();
+
+    const P = ParseTable(TestVariable, TestTerminal);
+
+    const table = try P.init(std.testing.allocator, grammar);
+    defer table.deinit();
+
+    const table_comptime = comptime P.initComptime(grammar);
+    defer table_comptime.deinit();
+    
+    table.printDebugTable();
+    
     try std.testing.expectEqualDeep(table.action_table, table_comptime.action_table);
     try std.testing.expectEqualDeep(table.goto_table, table_comptime.goto_table);
 }
