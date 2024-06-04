@@ -209,17 +209,23 @@ pub fn main() !void {
     );
 
     try clearScreen();
+    var isInvalidStep = false;
     while (!(try proof.verify(allocator))) {
         try moveCursorTopLeft();
         const proof_str = try proof.toString(allocator);
         defer allocator.free(proof_str);
         try stdout.print("{s}", .{proof_str});
 
+        if (isInvalidStep) {
+            try stdout.print("\nError: Invalid step", .{});
+            isInvalidStep = false;
+        }
         try stdout.print("\nEnter a step in the proof\n\n", .{});
         try resetPrompt();
         var step = try getStep(allocator, wff_parser, proof) orelse return;
-        if (!(try step.isValid(allocator))) {
-            try printErrResetPrompt("Error: Invalid step.", .{});
+        const isValid = try step.isValid(allocator);
+        if (!isValid) {
+            isInvalidStep = true;
             continue;
         }
 

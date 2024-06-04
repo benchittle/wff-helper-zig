@@ -5,7 +5,6 @@ const debug = std.debug;
 
 const ProofError = error {
     ProofMethodError,
-    InferenceRuleError,
 };
 
 
@@ -148,6 +147,21 @@ test "EquivalenceRule.canTransform: ((y <=> z) ^ (w v x)) to (((y <=> z) ^ w) v 
     try std.testing.expect(try e13.canTransform(allocator, to, from));
 }
 
+test "!EquivalenceRule.canTransform: (T ^ ~T) to F using ~~a  = a" {
+    const allocator = std.testing.allocator;
+    var from = try wfflib.old_wff_parser.parse(allocator, "(T ^ ~T)");
+    defer from.deinit();
+    var to = try wfflib.old_wff_parser.parse(allocator, "F");
+    defer to.deinit();
+
+    const rules = initEquivalenceRules(allocator);
+    defer for (rules) |r| r.deinit();
+    const e15 = rules[14];
+
+    try std.testing.expect(!try e15.canTransform(allocator, from, to));
+    try std.testing.expect(!try e15.canTransform(allocator, to, from));
+}
+
 pub fn initEquivalenceRules(allocator: std.mem.Allocator) [22]EquivalenceRule {
     // Helper struct
     const Maker = struct {
@@ -229,7 +243,9 @@ const InferenceRule = struct {
 
     // TODO: Why does this use nodes and stuff?
     pub fn canTransform(self: Self, allocator: std.mem.Allocator, from: []const Wff, to: Wff) !bool {
-        if (from.len != self.conditions.getSlice().len) return ProofError.InferenceRuleError;
+        if (from.len != self.conditions.getSlice().len) {
+            return false;
+        }
         var all_matches = wfflib.Wff.MatchHashMap.init(allocator);
         defer all_matches.deinit();
 
@@ -618,7 +634,7 @@ pub const Proof = struct {
                             while (array[1] != &self.steps.items[step_num2]) {
                                 step_num2 += 1;
                             }
-                            justification_string = try std.fmt.allocPrint(allocator, "{d}, {d}, I{d}\n", .{step_num1, step_num2, inf.rule.num});
+                            justification_string = try std.fmt.allocPrint(allocator, "{d}, {d}, I{d}\n", .{step_num1 + 1, step_num2 + 1, inf.rule.num});
                         }
                     }
                 },

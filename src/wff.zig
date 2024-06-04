@@ -563,11 +563,7 @@ pub const WffTree = struct {
             }
             const next_node: ?*Node = ret: {
                 if (self.skipNext) {
-                    if (self.current_node) |node| {
-                        break :ret self.backtrack_next(node);
-                    } else {
-                        return null;
-                    }
+                    break :ret self.current_node;
                 } else {
                     if (self.current_node == null) {
                         break :ret self.start;
@@ -615,6 +611,12 @@ pub const WffTree = struct {
 
         pub fn skipChildren(self: *PreOrderIterator) void {
             self.skipNext = true;
+
+            if (self.current_node) |node| {
+                self.current_node = self.backtrack_next(node);
+            } else {
+                self.isExhausted = true;
+            }
         }
     };
 
@@ -1209,6 +1211,7 @@ test "WffTree.PreOrderIterator: ((a v b) ^ ~c)" {
     try std.testing.expectEqual(&right_branch, it.next().?);
     try std.testing.expectEqual(&c, it.next().?);
     try std.testing.expectEqual(null, it.next());
+    try std.testing.expectEqual(null, it.next());
 
     try std.testing.expectEqual(&c, it.previous().?);
     try std.testing.expectEqual(&right_branch, it.previous().?);
@@ -1217,6 +1220,30 @@ test "WffTree.PreOrderIterator: ((a v b) ^ ~c)" {
     try std.testing.expectEqual(&left_branch, it.previous().?);
     try std.testing.expectEqual(&root, it.previous().?);
     try std.testing.expectEqual(null, it.previous());
+    try std.testing.expectEqual(null, it.previous());
+
+    // Call skipChildren before starting iteration. Should skip entire tree.
+    it = root.iterPreOrder();
+    it.skipChildren();
+    try std.testing.expectEqual(null, it.next());
+    try std.testing.expectEqual(null, it.next());
+
+    // Call skipChildren on root. Should skip entire tree.
+    it = root.iterPreOrder();
+    _ = it.next();
+    it.skipChildren();
+    try std.testing.expectEqual(null, it.next());
+    try std.testing.expectEqual(null, it.next());
+
+    // Call skipChildren on left branch. Should skip only (a v b).
+    it = root.iterPreOrder();
+    _ = it.next();
+    _ = it.next();
+    it.skipChildren();
+    try std.testing.expectEqual(&right_branch, it.next());
+    try std.testing.expectEqual(&c, it.next());
+    try std.testing.expectEqual(null, it.next());
+    try std.testing.expectEqual(null, it.next());
 }
 
 test "WffTree.PostOrderIterator: ((a v b) ^ ~c)" {
@@ -1705,7 +1732,7 @@ test "Wff.replace: ((a ^ b) v (c ^ d)) using (p v p) to (p => q)" {
     try std.testing.expect(try wff.match(allocator, pattern) == null);
 }
 
-test "Wff.replace: ((a ^ b) v (c ^ d)) using (p ^ q) to (q ^ p)" {
+test "Wff.replace: ((a ^ b) v (c ^ d)) to ((a ^ b) v (d ^ c)) using (p ^ q) to (q ^ p)" {
     const allocator = std.testing.allocator;
 
     var wff = try old_wff_parser.parse(allocator, "((a ^ b) v (c ^ d))");
@@ -1727,6 +1754,33 @@ test "Wff.replace: ((a ^ b) v (c ^ d)) using (p ^ q) to (q ^ p)" {
     var expected = try old_wff_parser.parse(allocator, "((a ^ b) v (d ^ c))");
     defer expected.deinit();
     var new = (try right.replace(allocator, replace));
+    defer new.deinit();
+
+    try std.testing.expect(expected.eql(new));
+}
+
+test "Wff.replace: (T ^ ~T) using (a ^ ~a) to F [E15]" {
+    const allocator = std.testing.allocator;
+
+    var wff = try old_wff_parser.parse(allocator, "(T ^ ~T)");
+    defer wff.deinit();
+    var pattern = try old_wff_parser.parse(allocator, "(a ^ ~a)");
+    defer pattern.deinit();
+    var replace = try old_wff_parser.parse(allocator, "F");
+    defer replace.deinit();
+
+    var matches = (try wff.matchAll(allocator, pattern)).?;
+    defer {
+        for (matches.items) |*m| m.deinit();
+        matches.deinit();
+    }
+    try std.testing.expect(matches.items.len == 1);
+
+    const match = matches.items[0];
+
+    var expected = try old_wff_parser.parse(allocator, "F");
+    defer expected.deinit();
+    var new = (try match.replace(allocator, replace));
     defer new.deinit();
 
     try std.testing.expect(expected.eql(new));
