@@ -3,8 +3,6 @@ const debug = std.debug;
 
 const stdout = std.io.getStdOut().writer();
 
-const lex = @import("wff-lexing.zig");
-
 pub const TableGeneratorError = error{
     shiftShiftError,
     shiftReduceError,

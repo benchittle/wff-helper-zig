@@ -1,5 +1,5 @@
 const std = @import("std");
-const parsing = @import("wff-parsing.zig");
+const wff_parsing = @import("wff-parsing.zig");
 const wfflib = @import("wff.zig");
 const proofs = @import("proof.zig");
 const step_parse = @import("step-parsing.zig");
@@ -8,11 +8,6 @@ const stdout = std.io.getStdOut().writer();
 const stdin = std.io.getStdIn().reader();
 
 var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-
-const Token = parsing.TestToken;
-const Wff = wfflib.Wff;
-const Proof = proofs.Proof;
-const WffParser = wfflib.OldWffParser;
 
 /// Prompt the user for a number. Invalid input will be ignored and the user will
 /// be prompted again.
@@ -42,7 +37,7 @@ fn getNumber(comptime T: type) !?T {
     }
 }
 
-pub fn getWff(allocator: std.mem.Allocator, parser: WffParser) !?Wff {
+pub fn getWff(allocator: std.mem.Allocator, parser: wfflib.WffParser) !?wfflib.Wff {
     //try resetPrompt();
 
     var buf: [1024]u8 = undefined;
@@ -67,7 +62,7 @@ pub fn getWff(allocator: std.mem.Allocator, parser: WffParser) !?Wff {
     }
 }
 
-pub fn getStep(allocator: std.mem.Allocator, wff_parser: WffParser, proof: Proof) !?Proof.Step {
+pub fn getStep(allocator: std.mem.Allocator, wff_parser: wfflib.WffParser, proof: proofs.Proof) !?proofs.Proof.Step {
     var buf: [1024]u8 = undefined;
 
     while (true) {
@@ -153,33 +148,33 @@ fn printErrResetPrompt(comptime format: []const u8, args: anytype) !void {
 }
 
 pub fn main() !void {
-    const wff_parser = wfflib.old_wff_parser;
+    const wff_parser = wfflib.wff_parser;
     var allocator = gpa.allocator();
 
     try clearScreen();
     try moveCursorTopLeft();
     try stdout.print("Welcome to wff-helper!\n\n", .{});
 
-    var equivalence_rules = proofs.initEquivalenceRules(allocator);
-    var inference_rules = proofs.initInferenceRules(allocator);
+    var equivalence_rules = proofs.initEquivalenceRules(allocator, wff_parser);
+    var inference_rules = proofs.initInferenceRules(allocator, wff_parser);
 
     try stdout.print("Start by entering a wff to prove", .{});
     try resetPromptClearError();
     var wff = try getWff(allocator, wff_parser) orelse return;
     defer wff.deinit();
 
-    var proof_methods: [4]Proof.Method = undefined;
-    var available_methods: []Proof.Method = undefined;
+    var proof_methods: [4]proofs.Proof.Method = undefined;
+    var available_methods: []proofs.Proof.Method = undefined;
     {
         var implication_form = try wff_parser.parse(allocator, "(p => q)");
         defer implication_form.deinit();
         if (try wff.match(allocator, implication_form)) |match| {
             var m = match;
             m.deinit();
-            proof_methods = .{ Proof.Method.None, Proof.Method.Direct, Proof.Method.Indirect, Proof.Method.Contradiction };
+            proof_methods = .{ proofs.Proof.Method.None, proofs.Proof.Method.Direct, proofs.Proof.Method.Indirect, proofs.Proof.Method.Contradiction };
             available_methods = proof_methods[0..4];
         } else {
-            proof_methods = .{ Proof.Method.None, Proof.Method.Contradiction, undefined, undefined };
+            proof_methods = .{ proofs.Proof.Method.None, proofs.Proof.Method.Contradiction, undefined, undefined };
             available_methods = proof_methods[0..2];
         }
     }
@@ -199,8 +194,9 @@ pub fn main() !void {
         choice = try getNumber(u32) orelse return;
     }
 
-    var proof = try Proof.init(
+    var proof = try proofs.Proof.init(
         allocator,
+        wff_parser,
         &wff,
         available_methods[choice - 1],
         null,

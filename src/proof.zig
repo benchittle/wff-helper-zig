@@ -1,6 +1,5 @@
 const std = @import("std");
 const wfflib = @import("wff.zig");
-const parsing = @import("wff-parsing.zig");
 const debug = std.debug;
 
 const ProofError = error {
@@ -162,22 +161,23 @@ test "!EquivalenceRule.canTransform: (T ^ ~T) to F using ~~a  = a" {
     try std.testing.expect(!try e15.canTransform(allocator, to, from));
 }
 
-pub fn initEquivalenceRules(allocator: std.mem.Allocator) [22]EquivalenceRule {
+pub fn initEquivalenceRules(allocator: std.mem.Allocator, wff_parser: wfflib.WffParser) [22]EquivalenceRule {
     // Helper struct
     const Maker = struct {
         const Self = @This();
 
         allocator: std.mem.Allocator,
+        wff_parser: wfflib.WffParser,
         count: usize = 0,
 
         fn makeRule(self: *Self, comptime lhs: []const u8, comptime rhs: []const u8) EquivalenceRule {
             self.count += 1;
             return EquivalenceRule{
-                .lhs = wfflib.old_wff_parser.parse(self.allocator, lhs)
+                .lhs = self.wff_parser.parse(self.allocator, lhs)
                     catch {
                 std.debug.panic("Failed to initialize equivalence rules!\n", .{});
                 }, 
-                .rhs = wfflib.old_wff_parser.parse(self.allocator, rhs)
+                .rhs = self.wff_parser.parse(self.allocator, rhs)
                     catch {
                 std.debug.panic("Failed to initialize equivalence rules!\n", .{});
                 },
@@ -185,7 +185,7 @@ pub fn initEquivalenceRules(allocator: std.mem.Allocator) [22]EquivalenceRule {
             };
         }
     };
-    var maker = Maker{.allocator = allocator};
+    var maker = Maker{.allocator = allocator, .wff_parser = wff_parser};
     return [_]EquivalenceRule {
         maker.makeRule("(a v ~a)",      "T"),
         maker.makeRule("(a ^ ~a)",      "F"),
@@ -351,12 +351,13 @@ test "InferenceRule.canTransform: (a ^ b), ((a ^ b) => ~x) to ~x using I3" {
     try std.testing.expect(try infer3.canTransform(allocator, &conds, result));
 }
 
-pub fn initInferenceRules(allocator: std.mem.Allocator) [6]InferenceRule {
+pub fn initInferenceRules(allocator: std.mem.Allocator, wff_parser: wfflib.WffParser) [6]InferenceRule {
     // Helper struct
     const Maker = struct {
         const Self = @This();
 
         allocator: std.mem.Allocator,
+        wff_parser: wfflib.WffParser,
         count: usize = 0,
 
         fn makeRule(self: *Self, comptime cond1: []const u8, comptime cond2: []const u8, comptime result: []const u8) InferenceRule {
@@ -365,16 +366,16 @@ pub fn initInferenceRules(allocator: std.mem.Allocator) [6]InferenceRule {
                 if (cond2.len == 0) {
                     break :ret InferenceRule.Conditions {
                         .one = [1]wfflib.Wff {
-                            wfflib.old_wff_parser.parse(self.allocator, cond1)
+                            self.wff_parser.parse(self.allocator, cond1)
                                 catch std.debug.panic("Failed to initialize inference rules!\n", .{}),
                         }
                     };
                 } else {
                     break :ret InferenceRule.Conditions {
                         .two = [2]wfflib.Wff {
-                            wfflib.old_wff_parser.parse(self.allocator, cond1)
+                            self.wff_parser.parse(self.allocator, cond1)
                                 catch std.debug.panic("Failed to initialize inference rules!\n", .{}),
-                            wfflib.old_wff_parser.parse(self.allocator, cond2)
+                            self.wff_parser.parse(self.allocator, cond2)
                                 catch std.debug.panic("Failed to initialize inference rules!\n", .{}),  
                         }
                     };
@@ -384,13 +385,13 @@ pub fn initInferenceRules(allocator: std.mem.Allocator) [6]InferenceRule {
             return InferenceRule{
                 .allocator = self.allocator,
                 .conditions = conditions,
-                .result = wfflib.old_wff_parser.parse(self.allocator, result) 
+                .result = self.wff_parser.parse(self.allocator, result) 
                     catch std.debug.panic("Failed to initialize inference rules!\n", .{}),
                 .num = self.count,
             };
         }
     };
-    var maker = Maker{.allocator = allocator};
+    var maker = Maker{.allocator = allocator, .wff_parser = wff_parser};
     return [_]InferenceRule {
         maker.makeRule("p",         "",         "(p v q)"),
         maker.makeRule("(p ^ q)",   "",         "p"),
@@ -403,8 +404,6 @@ pub fn initInferenceRules(allocator: std.mem.Allocator) [6]InferenceRule {
 
 pub const Proof = struct {
     const Self = @This();
-    const Wff = wfflib.Wff;
-    const wff_parser = wfflib.old_wff_parser;
 
     pub const Method = enum {
         None,
@@ -447,12 +446,12 @@ pub const Proof = struct {
         //     wff: *w.Wff,
         //     from: ?*Step,
         // },
-        Assumption: []const Wff,
+        Assumption: []const wfflib.Wff,
         True, // is True needed?
     };
 
     pub const Step = struct {
-        wff: Wff,
+        wff: wfflib.Wff,
         how: Justification, 
 
         pub fn isValid(self: Step, allocator: std.mem.Allocator) !bool {
@@ -463,11 +462,11 @@ pub const Proof = struct {
                 .Inference => |i| {
                     switch(i.from) {
                         .one => |one| {
-                            const conditions: []const Wff = &[1]Wff {one[0].wff};
+                            const conditions: []const wfflib.Wff = &[1]wfflib.Wff {one[0].wff};
                             return try i.rule.canTransform(allocator, conditions, self.wff);
                         },
                         .two => |two| {
-                            const conditions: []const Wff = &[2]Wff {two[0].wff, two[1].wff};
+                            const conditions: []const wfflib.Wff = &[2]wfflib.Wff {two[0].wff, two[1].wff};
                             return try i.rule.canTransform(allocator, conditions, self.wff);
                         }
                     }
@@ -488,14 +487,14 @@ pub const Proof = struct {
     allocator: std.mem.Allocator,
     equivalence_rules: []EquivalenceRule,
     inference_rules: []InferenceRule,
-    proving_wff: *Wff,
+    proving_wff: *wfflib.Wff,
     method: Method,
-    assumptions: std.ArrayList(Wff),
-    goal: Wff,
+    assumptions: std.ArrayList(wfflib.Wff),
+    goal: wfflib.Wff,
     steps: std.ArrayList(Step),
 
-    pub fn init(allocator: std.mem.Allocator, wff: *Wff, method: Method, assumption_wff_strings: ?[][]const u8, equivalence_rules: []EquivalenceRule, inference_rules: []InferenceRule) !Self {
-        var assumptions = std.ArrayList(Wff).init(allocator);
+    pub fn init(allocator: std.mem.Allocator, wff_parser: wfflib.WffParser, wff: *wfflib.Wff, method: Method, assumption_wff_strings: ?[][]const u8, equivalence_rules: []EquivalenceRule, inference_rules: []InferenceRule) !Self {
+        var assumptions = std.ArrayList(wfflib.Wff).init(allocator);
         errdefer {
             for (assumptions.items) |*a| {
                 a.deinit();

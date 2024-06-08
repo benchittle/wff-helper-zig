@@ -1,17 +1,116 @@
 const std = @import("std");
 const debug = std.debug;
 
-const lex = @import("wff-lexing.zig");
 const slr = @import("slr-table-generator.zig");
+
+const LexError = error{
+    UnexpectedToken,
+    NoTokensFound,
+};
 
 pub const ParseError = error{
     InvalidSyntax,
     UnexpectedToken,
 };
 
+// Tokenize a string containing a WFF. Returns an ArrayList of Tokens if a valid
+// string is passed, else a LexError. Caller must free the returned ArrayList.
+fn testTokenize(allocator: std.mem.Allocator, wff_string: []const u8) !std.ArrayList(TestToken) {
+    const State = enum {
+        None,
+        Cond,
+        BicondBegin,
+        BicondEnd,
+    };
 
-//#####################################
+    var tokens = std.ArrayList(TestToken).init(allocator);
+    errdefer {
+        for (tokens.items) |tok| switch (tok) {
+            .Proposition => |prop| allocator.free(prop.string),
+            else => {},
+        };
+        tokens.deinit();
+    }
 
+    var state: State = State.None;
+    for (wff_string) |c| {
+        // errdefer {
+        //     debug.print("\n\tInvalid token: {c}\n\tProcessed tokens: {any}\n", .{ c, tokens.items });
+        // }
+
+        if (std.ascii.isWhitespace(c)) {
+            continue;
+        }
+
+        // This is the main tokenizing logic. There are 3 outcomes of this
+        // block:
+        // (1) A token is correctly processed => a lex.Token struct is assigned to
+        //     tok, code flow continues normally
+        // (2) An intermediate token is processed (e.g. '=' in the "<=>"
+        //     operator) => state is changed appropriately (e.g. to BicondEnd)
+        //     and we continue right away to the next loop iteration without
+        //     assigning a value to tok.
+        // (3) An unexpected token is encountered => we return an error.
+        const tok = try switch (state) {
+            .None => switch (c) {
+                '~' => TestToken{ .Operator = TestToken.WffOperator.Not },
+                'v' => TestToken{ .Operator = TestToken.WffOperator.Or },
+                '^' => TestToken{ .Operator = TestToken.WffOperator.And },
+                '=' => {
+                    state = State.Cond;
+                    continue;
+                },
+                '<' => {
+                    state = State.BicondBegin;
+                    continue;
+                },
+
+                '(' => TestToken.LParen,
+                ')' => TestToken.RParen,
+
+                'T' => TestToken.True,
+                'F' => TestToken.False,
+
+                // TODO: Include v, T, F as an allowable variable name (currently it
+                // conflicts with OR operator, True, False tokens).
+                'a'...'u', 'w'...'z', 'A'...'E', 'G'...'S', 'U'...'Z' => |val| ret: {
+                    var str = try allocator.alloc(u8, 1);
+                    str[0] = val;
+                    break :ret TestToken{ .Proposition = TestToken.PropositionVar{ .string = str } };
+                },
+
+                else => LexError.UnexpectedToken,
+            },
+            .Cond => switch (c) {
+                '>' => ret: {
+                    state = State.None;
+                    break :ret TestToken{ .Operator = TestToken.WffOperator.Cond };
+                },
+                else => LexError.UnexpectedToken,
+            },
+            .BicondBegin => switch (c) {
+                '=' => {
+                    state = State.BicondEnd;
+                    continue;
+                },
+                else => LexError.UnexpectedToken,
+            },
+            .BicondEnd => switch (c) {
+                '>' => ret: {
+                    state = State.None;
+                    break :ret TestToken{ .Operator = TestToken.WffOperator.Bicond };
+                },
+                else => LexError.UnexpectedToken,
+            },
+        };
+
+        try tokens.append(tok);
+    }
+    if (tokens.items.len == 0) {
+        return LexError.NoTokensFound;
+    }
+    return tokens;
+}
 
 const TestVariable = struct {
     const Self = @This();
@@ -31,7 +130,90 @@ const TestVariable = struct {
     }
 };
 
-const TestToken = lex.Token;
+const TestToken = union(enum) {
+    pub const PropositionVar = struct {
+        string: []const u8,
+
+        pub fn equals(self: PropositionVar, other: PropositionVar) bool {
+            return self.string[0] == other.string[0];
+        }
+    };
+
+    pub const WffOperator = enum {
+        Not, // '~'
+        And, // '^'
+        Or, // 'v'
+        Cond, // Conditional: "=>"
+        Bicond, // Biconditional: "<=>"
+
+        pub fn getString(self: WffOperator) []const u8 {
+            return switch (self) {
+                .Not => "~",
+                .And => "^",
+                .Or => "v",
+                .Cond => "=>",
+                .Bicond => "<=>",
+            };
+        }
+    };
+
+    LParen,
+    RParen,
+    True,
+    False,
+    Proposition: PropositionVar,
+    Operator: WffOperator,
+
+    pub fn copy(self: TestToken, allocator: std.mem.Allocator) !TestToken {
+        return switch (self) {
+            .Proposition => |prop| TestToken{ .Proposition = PropositionVar{ .string = try allocator.dupe(u8, prop.string) } },
+            else => self,
+        };
+    }
+
+    /// Compare two Token instances. They are equal if they are of the same
+    /// sub-type, and in the case of Proposition and Operator, if their stored
+    /// values are equivalent.
+    pub fn eql(self: TestToken, other: TestToken) bool {
+        return switch (self) {
+            .LParen => switch (other) {
+                .LParen => true,
+                else => false,
+            },
+            .RParen => switch (other) {
+                .RParen => true,
+                else => false,
+            },
+            .True => switch(other) {
+                .True => true,
+                else => false,
+            },
+            .False => switch(other) {
+                .False => true,
+                else => false,
+            },
+            .Proposition => |prop| switch (other) {
+                .Proposition => |other_prop| prop.equals(other_prop),
+                else => false,
+            },
+            .Operator => |op| switch (other) {
+                .Operator => |other_op| op == other_op,
+                else => false,
+            },
+        };
+    }
+
+    pub fn getString(self: TestToken) []const u8 {
+        return switch (self) {
+            .LParen => "(",
+            .RParen => ")",
+            .Proposition => |prop| prop.string,
+            .Operator => |op| op.getString(),
+            .True => "T",
+            .False => "F",
+        };
+    }
+};
 const TestTerminal = enum {
     const Self = @This();
 
@@ -102,7 +284,7 @@ const TestParser = Parser(
     TestVariable,
     TestTerminal,
     TestToken,
-    lex.tokenize,
+    testTokenize,
     oldTokenToTestTerminal,
 );
 
@@ -279,13 +461,13 @@ test "ParseTreePostOrderIterator" {
 
     var it = tree.root.iterPostOrder();
 
-    var t1 = TestParseTree.Kind{ .leaf = lex.Token.LParen };
-    var t2 = TestParseTree.Kind{ .leaf = lex.Token{ .Proposition = lex.PropositionVar{ .string = try std.testing.allocator.dupe(u8, "p") } } };
+    var t1 = TestParseTree.Kind{ .leaf = TestToken.LParen };
+    var t2 = TestParseTree.Kind{ .leaf = TestToken{ .Proposition = TestToken.PropositionVar{ .string = try std.testing.allocator.dupe(u8, "p") } } };
     defer std.testing.allocator.free(t2.leaf.Proposition.string);
-    var t3 = TestParseTree.Kind{ .leaf = lex.Token{ .Operator = lex.WffOperator.Or } };
-    var t4 = TestParseTree.Kind{ .leaf = lex.Token{ .Proposition = lex.PropositionVar{ .string = try std.testing.allocator.dupe(u8, "q") } } };
+    var t3 = TestParseTree.Kind{ .leaf = TestToken{ .Operator = TestToken.WffOperator.Or } };
+    var t4 = TestParseTree.Kind{ .leaf = TestToken{ .Proposition = TestToken.PropositionVar{ .string = try std.testing.allocator.dupe(u8, "q") } } };
     defer std.testing.allocator.free(t4.leaf.Proposition.string);
-    var t5 = TestParseTree.Kind{ .leaf = lex.Token.RParen };
+    var t5 = TestParseTree.Kind{ .leaf = TestToken.RParen };
 
     try std.testing.expect(t1.leaf.eql(it.nextUnchecked().kind.leaf));
     try std.testing.expect(t2.leaf.eql(it.nextUnchecked().kind.leaf));
@@ -556,6 +738,10 @@ pub fn Parser(
             return Self{ .table = try ParseTable.init(allocator, grammar) };
         }
 
+        pub fn initComptime(grammar: Grammar) Self {
+            return Self{ .table = ParseTable.initComptime(grammar) };
+        }
+
         /// Note: Does NOT free the memory associated with the grammar it was
         /// initialized with.
         pub fn deinit(self: Self) void {
@@ -697,7 +883,7 @@ test "Parser.parse: ''" {
     const parser = try TestParser.init(std.testing.allocator, test_grammar_old);
     defer parser.deinit();
 
-    try std.testing.expectError(lex.LexError.NoTokensFound, parser.parse(std.testing.allocator, ""));
+    try std.testing.expectError(LexError.NoTokensFound, parser.parse(std.testing.allocator, ""));
 }
 
 test "Parser.parse: '~)q p v('" {
@@ -717,7 +903,7 @@ test "Parser.parse: '(p v q)'" {
     defer tree.deinit();
 
     // Build the expected tree manually... it's pretty messy
-    const ParseTreeType = ParseTree(lex.Token);
+    const ParseTreeType = ParseTree(TestToken);
 
     var wff1: ParseTreeType.Node = undefined;
     var wff2: ParseTreeType.Node = undefined;
@@ -730,11 +916,11 @@ test "Parser.parse: '(p v q)'" {
     var root_children = try allocator.alloc(ParseTreeType.Node, 5);
     defer allocator.free(root_children);
 
-    var t1 = ParseTreeType.Node{ .parent = &root, .kind = .{ .leaf = lex.Token{ .LParen = {} } } };
-    var t2 = ParseTreeType.Node{ .parent = &(root_children[1]), .kind = .{ .leaf = lex.Token{ .Proposition = lex.PropositionVar{ .string = try std.testing.allocator.dupe(u8, "p") } } } };
-    var t3 = ParseTreeType.Node{ .parent = &root, .kind = .{ .leaf = lex.Token{ .Operator = lex.WffOperator.Or } } };
-    var t4 = ParseTreeType.Node{ .parent = &(root_children[3]), .kind = .{ .leaf = lex.Token{ .Proposition = lex.PropositionVar{ .string = try std.testing.allocator.dupe(u8, "q") } } } };
-    var t5 = ParseTreeType.Node{ .parent = &root, .kind = .{ .leaf = lex.Token{ .RParen = {} } } };
+    var t1 = ParseTreeType.Node{ .parent = &root, .kind = .{ .leaf = TestToken{ .LParen = {} } } };
+    var t2 = ParseTreeType.Node{ .parent = &(root_children[1]), .kind = .{ .leaf = TestToken{ .Proposition = TestToken.PropositionVar{ .string = try std.testing.allocator.dupe(u8, "p") } } } };
+    var t3 = ParseTreeType.Node{ .parent = &root, .kind = .{ .leaf = TestToken{ .Operator = TestToken.WffOperator.Or } } };
+    var t4 = ParseTreeType.Node{ .parent = &(root_children[3]), .kind = .{ .leaf = TestToken{ .Proposition = TestToken.PropositionVar{ .string = try std.testing.allocator.dupe(u8, "q") } } } };
+    var t5 = ParseTreeType.Node{ .parent = &root, .kind = .{ .leaf = TestToken{ .RParen = {} } } };
     defer allocator.free(t2.kind.leaf.Proposition.string);
     defer allocator.free(t4.kind.leaf.Proposition.string);
 
@@ -770,8 +956,8 @@ test "ParseTree: ~p" {
     const tree = try parser.parse(allocator, "~p");
     defer tree.deinit();
 
-    var t1 = lex.Token{ .Operator = lex.WffOperator.Not };
-    var t2 = lex.Token{ .Proposition = lex.PropositionVar{ .string = try std.testing.allocator.dupe(u8, "p") } };
+    var t1 = TestToken{ .Operator = TestToken.WffOperator.Not };
+    var t2 = TestToken{ .Proposition = TestToken.PropositionVar{ .string = try std.testing.allocator.dupe(u8, "p") } };
     defer std.testing.allocator.free(t2.Proposition.string);
 
     var it = tree.iterPreOrder();

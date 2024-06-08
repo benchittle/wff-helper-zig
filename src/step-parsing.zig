@@ -16,8 +16,6 @@ const StepParsingError = error {
     TooManySteps,
 };
 
-const WffParser = wfflib.OldWffParser;
-
 /// Remove leading and trailing whitespace from a string.
 fn strStrip(ascii_string: []const u8) []const u8 {
     var start: usize = 0;
@@ -71,7 +69,7 @@ pub fn tokenizeJustification(string: []const u8) !StepToken {
 }
 
 
-pub fn tokenizeStep(allocator: std.mem.Allocator, wff_parser: WffParser, step_string: []const u8) !std.ArrayList(StepToken) {
+pub fn tokenizeStep(allocator: std.mem.Allocator, wff_parser: wfflib.WffParser, step_string: []const u8) !std.ArrayList(StepToken) {
     if (step_string.len == 0) {
         return StepParsingError.EmptyString;
     }    
@@ -115,7 +113,7 @@ pub fn tokenizeStep(allocator: std.mem.Allocator, wff_parser: WffParser, step_st
 }
 
 
-pub fn parseStep(allocator: std.mem.Allocator, wff_parser: WffParser, step_string: []const u8, proof: proofs.Proof) !proofs.Proof.Step {
+pub fn parseStep(allocator: std.mem.Allocator, wff_parser: wfflib.WffParser, step_string: []const u8, proof: proofs.Proof) !proofs.Proof.Step {
     var tokens = try tokenizeStep(allocator, wff_parser, step_string);
     defer tokens.deinit();
     errdefer for (tokens.items) |tok| {

@@ -408,3 +408,13 @@ test "arena alloc" {
 
     //allocator.free(s);
 }
+
+const tmp = struct {
+    test "testing" {
+        std.debug.print("hi\n", .{});
+    }
+};
+
+test "tmp" {
+    _ = tmp{};
+}
