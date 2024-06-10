@@ -1,13 +1,13 @@
 const std = @import("std");
 
-pub const WffParser = @import("wff-parsing.zig").OldParsing.WffParser;
-pub const wff_parser = @import("wff-parsing.zig").OldParsing.wff_parser;
+const ParsingKit = @import("wff-parsing.zig").NewParsing;
+pub const WffParser = ParsingKit.WffParser;
+pub const wff_parser = ParsingKit.wff_parser;
 
 pub const WffError = error{
     SubOutOfBounds,
     BadSubstitution,
 };
-
 
 pub const WffTree = struct {
     const Self = @This();
@@ -59,7 +59,7 @@ pub const WffTree = struct {
 
         pub fn next(self: *PreOrderIterator) ?*Node {
             const next_node = self.peek();
-            
+
             if (self.skipNext) {
                 self.skipNext = false;
             }
@@ -84,7 +84,7 @@ pub const WffTree = struct {
                     if (self.current_node == null) {
                         break :ret self.start;
                     } else {
-                        break :ret switch(self.current_node.?.kind) {
+                        break :ret switch (self.current_node.?.kind) {
                             .unary_operator => |op| op.arg,
                             .binary_operator => |op| op.arg1,
                             .proposition_variable, .logical_constant => self.backtrack_next(self.current_node.?),

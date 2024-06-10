@@ -271,23 +271,12 @@ For v in grammar.variables:
                 else (if at end):
                     add rule.lhs to stack 
 
-            
-TODO: document and refactor to make code easier to follow
-
-Idea: make a ComptimeArrayList with basic functionality to clean up comptime code
-
-TODO: Rename wff-parsing.zig to parser.zig
 
 Idea: Make match/replace a bit simpler (maybe)
     - Create a function to perform a substitution for a single variable eg 
     substitute(allocator, prop_var_to_replace, new_wff)
 
-
 Check out adjacency matrix or edge list for tree internals
-
-Notes for new parse tree to wff tree:
-- iterate terminals and find first common ancestor
-- iterate deepest terminals first and "fold" up the tree
 
 Todo: rename step-parsing.zig to step-lexing.zig
 
@@ -298,4 +287,11 @@ Idea: add uninitialised mode to WffTree.Node
 Remove `anyerror` from wff-parsing comptime function parameters 
 
 Issue: E1 going from (A v ~A) to T cannot be done using E1 since T requires no justification normally
+Also token type must have deinit method
+
+Website: 
+    - show history of failed / invalid input
+    - allow user to scroll through history of input (like a terminal)
+    - allow user to enable / disable unnecessary brackets
+    
 

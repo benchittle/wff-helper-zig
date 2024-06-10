@@ -1741,23 +1741,23 @@ test "Create parse table [grammar2.0]" {
     const G = Grammar(TestVariable, TestTerminal);
     const grammar = comptime G.initFromTuples(
         .{
-            .{ V("S"), .{V("wff1")} },
+            .{ V("S"), .{ V("wff1")} },
 
-            .{ V("wff1"), .{V("wff2")} },
+            .{ V("wff1"), .{ V("wff2")} },
             .{ V("wff1"), .{ V("wff1"), TestTerminal.Bicond, V("wff2") } },
 
-            .{ V("wff2"), .{V("wff3")} },
+            .{ V("wff2"), .{ V("wff3")} },
             .{ V("wff2"), .{ V("wff2"), TestTerminal.Cond, V("wff3") } },
 
-            .{ V("wff3"), .{V("wff4")} },
+            .{ V("wff3"), .{ V("wff4")} },
             .{ V("wff3"), .{ V("wff3"), TestTerminal.Or, V("wff4") } },
             .{ V("wff3"), .{ V("wff3"), TestTerminal.And, V("wff4") } },
 
-            .{ V("wff4"), .{V("prop")} },
+            .{ V("wff4"), .{ V("prop")} },
             .{ V("wff4"), .{ TestTerminal.Not, V("wff4") } },
 
             .{ V("prop"), .{ TestTerminal.LParen, V("wff1"), TestTerminal.RParen } },
-            .{ V("prop"), .{TestTerminal.Proposition} },
+            .{ V("prop"), .{ TestTerminal.Proposition} },
         },
         V("S"),
         TestTerminal.End,

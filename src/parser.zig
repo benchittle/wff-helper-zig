@@ -164,6 +164,13 @@ const TestToken = union(enum) {
     Proposition: PropositionVar,
     Operator: WffOperator,
 
+    fn deinit(self: TestToken, allocator: std.mem.Allocator) void {
+        switch (self) {
+            .Proposition => |prop| allocator.free(prop.string),
+            else => {},
+        }
+    }
+
     pub fn copy(self: TestToken, allocator: std.mem.Allocator) !TestToken {
         return switch (self) {
             .Proposition => |prop| TestToken{ .Proposition = PropositionVar{ .string = try allocator.dupe(u8, prop.string) } },
@@ -583,10 +590,7 @@ pub fn ParseTree(comptime Token: type) type {
             while (it.next()) |node| {
                 const n = node;
                 switch (n.kind) {
-                    .leaf => |tok| switch (tok) {
-                        .Proposition => |prop| self.allocator.free(prop.string),
-                        else => {},
-                    },
+                    .leaf => |tok| tok.deinit(self.allocator),
                     .nonleaf => |children| self.allocator.free(children),
                 }
             }
@@ -611,6 +615,46 @@ pub fn ParseTree(comptime Token: type) type {
 
         pub fn iterPostOrder(self: Self) ParseTreePostOrderIterator(Token) {
             return self.root.iterPostOrder();
+        }
+
+        pub fn debugPrint(self: Self) !void {
+            const allocator = std.testing.allocator;
+            var stack = std.ArrayList(std.ArrayList(Node)).init(allocator);
+            try stack.append(std.ArrayList(Node).init(allocator));
+            defer {
+                for (stack.items) |layer| {
+                    layer.deinit();
+                }
+                stack.deinit();
+            }
+            try stack.items[0].append(self.root.*);
+
+            debug.print("\n", .{});
+            while (stack.popOrNull()) |layer| {
+                var next_layer = std.ArrayList(Node).init(allocator);
+                var previous_parent: ?*Node = layer.items[0].parent;
+                for (layer.items) |node| {
+                    if (node.parent != previous_parent) {
+                        debug.print("| ", .{});
+                    }
+                    switch(node.kind) {
+                        .leaf => |token| debug.print("{s} ", .{token.getString()}),
+                        .nonleaf => |children| {
+                            try next_layer.appendSlice(children);
+
+                            debug.print("var ", .{});
+                        },
+                    }       
+                    previous_parent = node.parent;             
+                }
+                debug.print("\n", .{});
+                layer.deinit();
+                if (next_layer.items.len == 0) {
+                    next_layer.deinit();
+                    break;
+                }
+                try stack.append(next_layer);
+            }
         }
 
         pub fn toString(self: Self, allocator: std.mem.Allocator) ![]u8 {
@@ -651,6 +695,14 @@ pub fn ParseTree(comptime Token: type) type {
 }
 
 // TODO: fn to build trees more easily for testing larger expressions
+
+// test "ParseTree.debugPrint: (p v q)" {
+//     const allocator = std.testing.allocator;
+//     const tree = try test_parser.parse(allocator, "(p v q)");
+//     defer tree.deinit();
+
+//     try tree.debugPrint();
+// }
 
 test "ParseTree.toString: (p v q)" {
     const allocator = std.testing.allocator;
@@ -809,11 +861,7 @@ pub fn Parser(
             defer tokens.deinit();
             errdefer {
                 for (tokens.items) |tok| {
-                    // tok.deinit();
-                    switch (tok) {
-                        .Proposition => |s| allocator.free(s.string),
-                        else => {},
-                    }
+                    tok.deinit(allocator);
                 }
             }
 
