@@ -1,0 +1,146 @@
+{
+    "equivalence_rules": [
+        {
+            "name": "E1",
+            "lhs": "(a v ~a)",
+            "rhs": "T"
+        },
+        {
+            "name": "E2",
+            "lhs": "(a ^ ~a)",
+            "rhs": "F"
+        },
+        {
+            "name": "E3",
+            "lhs": "(a ^ a)",
+            "rhs": "a"
+        },
+        {
+            "name": "E4",
+            "lhs": "(a v a)",
+            "rhs": "a"
+        },
+        {
+            "name": "E5",
+            "lhs": "(a ^ T)",
+            "rhs": "a"
+        },
+        {
+            "name": "E6",
+            "lhs": "(a v F)",
+            "rhs": "a"
+        },
+        {
+            "name": "E7",
+            "lhs": "(a ^ F)",
+            "rhs": "F"
+        },
+        {
+            "name": "E8",
+            "lhs": "(a v T)",
+            "rhs": "T"
+        },
+        {
+            "name": "E9",
+            "lhs": "(a ^ b)",
+            "rhs": "(b ^ a)"
+        },
+        {
+            "name": "E10",
+            "lhs": "(a v b)",
+            "rhs": "(b v a)"
+        },
+        {
+            "name": "E11",
+            "lhs": "((a ^ b) ^ c)",
+            "rhs": "(a ^ (b ^ c))"
+        },
+        {
+            "name": "E12",
+            "lhs": "((a v b) v c)",
+            "rhs": "(a v (b v c))"
+        },
+        {
+            "name": "E13",
+            "lhs": "(a ^ (b v c))",
+            "rhs": "((a ^ b) v (a ^ c))"
+        },
+        {
+            "name": "E14",
+            "lhs": "(a v (b ^ c))",
+            "rhs": "((a v b) ^ (a v c))"
+        },
+        {
+            "name": "E15",
+            "lhs": "~~a",
+            "rhs": "a"
+        },
+        {
+            "name": "E16",
+            "lhs": "~(a ^ b)",
+            "rhs": "(~a v ~b)"
+        },
+        {
+            "name": "E17",
+            "lhs": "~(a v b)",
+            "rhs": "(~a ^ ~b)"
+        },
+        {
+            "name": "E18",
+            "lhs": "(a => b)",
+            "rhs": "(~a v b)"
+        },
+        {
+            "name": "E19",
+            "lhs": "(a => b)",
+            "rhs": "(~b => ~a)"
+        },
+        {
+            "name": "E20",
+            "lhs": "((a => b) ^ (b => a))",
+            "rhs": "(a <=> b)"
+        },
+        {
+            "name": "ET",
+            "lhs": "T",
+            "rhs": "~F"
+        },
+        {
+            "name": "EF",
+            "lhs": "F",
+            "rhs": "~T"
+        }
+    ],
+    "inference_rules": [
+        {
+            "name": "I1",
+            "conditions": ["p"],
+            "result": "(p v q)"
+        },
+        {
+            "name": "I2",
+            "conditions": ["(p ^ q)"],
+            "result": "p"
+        },
+        {
+            "name": "I3",
+            "conditions": ["p", "(p => q)"],
+            "result": "q"
+        },
+        {
+            "name": "I4",
+            "conditions": ["~q", "(p => q)"],
+            "result": "~p"
+        },
+        {
+            "name": "I5",
+            "conditions": ["(p => q)", "(q => r)"],
+            "result": "(p => r)"
+        },
+        {
+            "name": "I6",
+            "conditions": ["p", "q"],
+            "result": "(p ^ q)"
+        }
+    ]
+}
