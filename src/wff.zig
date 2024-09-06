@@ -1,8 +1,8 @@
 const std = @import("std");
 
-const ParsingKit = @import("wff-parsing.zig").NewParsing;
-pub const WffParser = ParsingKit.WffParser;
-pub const wff_parser = ParsingKit.wff_parser;
+const ParsingConfig = @import("wff-parsing.zig").NewParsing;
+pub const WffParser = ParsingConfig.WffParser;
+pub const wff_parser = ParsingConfig.wff_parser;
 
 pub const WffError = error{
     SubOutOfBounds,
@@ -1070,8 +1070,9 @@ pub const Wff = struct {
         source_subtree_root: *WffTree.Node,
         map: MatchHashMap,
 
-        pub fn deinit(self: *Match) void {
-            self.map.deinit();
+        pub fn deinit(self: Match) void {
+            var m = self.map;
+            m.deinit();
         }
 
         /// Lookup a match in the hashmap and build a new Wff for it if it exists

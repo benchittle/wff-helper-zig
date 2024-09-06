@@ -206,7 +206,7 @@ pub fn main() !void {
 
     try clearScreen();
     var isInvalidStep = false;
-    while (!(try proof.verify(allocator))) {
+    while (!(try proof.isComplete(allocator))) {
         try moveCursorTopLeft();
         const proof_str = try proof.toString(allocator);
         defer allocator.free(proof_str);
