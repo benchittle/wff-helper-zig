@@ -13,37 +13,30 @@
     <div id="home-container">
         <h1>Wff Helper</h1>
         <div id="proof-start-info">
-            Prove
-            <span>
-                <input type="text" id="proof-wff-input" placeholder="Enter a wff..." accept="">
-            </span>
-            <label for="proof-method-select"> using </label>
-            <select id="proof-method-select">
-                <option value="none">No Proof Method</option>
-                <option value="direct">Direct Proof</option>
-                <option value="indirect">Indirect Proof</option>
-                <option value="contradiction">Contradiction</option>
-            </select> 
-            
+            <div id="wff-and-method">
+                Prove
+                <span>
+                    <input type="text" id="proof-wff-input" placeholder="Enter a wff" accept="">
+                </span>
+                <label for="proof-method-select"> using </label>
+                <select id="proof-method-select">
+                    <option value="none">No Proof Method</option>
+                    <option value="direct">Direct Proof</option>
+                    <option value="indirect">Indirect Proof</option>
+                    <option value="contradiction">Contradiction</option>
+                </select> 
+            </div>
+            <!-- <div id="home-error-text" hidden>Invalid WFF</div> -->
+            <div id="assumptions">
+                <label for="assumptions-input">Assumptions</label>
+                <textarea id="assumptions-input" placeholder="Enter a list of line separated wffs">
+                    test
+                </textarea>
+            </div>
             <button id="proof-start-button" onclick="startProof()">Start Proof</button>
-            <div id="home-error-text" hidden>Invalid WFF</div>
         </div>
     </div>
     
-    <script>
-        function startProof() {
-            let wff = document.getElementById("proof-wff-input").value;
-            wff = wff.replace(/\s+/g, "");
-            if (wff.length == 0) {
-                document.getElementById("home-error-text").hidden = false;
-                console.log("Invalid wff");
-                return;
-            }
-            let method = document.getElementById("proof-method-select").value;
-
-            window.location.href = `proof.html?wff=${encodeURIComponent(wff)}&method=${encodeURIComponent(method)}` ;
-        }
-    
-    </script>
+    <script src="script.js"></script> 
 </body>
 </html>

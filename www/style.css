@@ -56,7 +56,59 @@ body {
     display: inline-block;
 }
 #proof-start-info {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
+}
 
+#proof-wff-input {
+    background-color: var(--input-background-colour);
+    border: none;
+    outline: none;
+    color: inherit;
+    border-radius: 4px;
+    padding: 4px;
+    font-family: var(--wff-font);
+}
+
+#proof-method-select {
+    background-color: var(--input-background-colour);
+    border: none;
+    outline: none;
+    color: inherit;
+    border-radius: 4px;
+    padding: 4px;
+}
+
+#assumptions {
+    width: 100%;
+}
+
+#assumptions-input {
+    display: block;
+    width: 100%;
+    height: 4rem;
+    resize: vertical;
+    background-color: var(--input-background-colour);
+    border: none;
+    /* border-radius: ; */
+    outline: none;
+    color: inherit;
+    padding: 8px;
+}
+
+#proof-start-button {
+    background-color: var(--input-button-background-colour);
+    color: inherit;
+    border: none;
+    border-radius: 8px;
+    padding: 8px;
+}
+#proof-start-button:hover {
+    cursor: pointer;
+    background-color: var(--input-button-background-colour-hover);
 }
 
 /* Proof Page */
@@ -76,9 +128,9 @@ body {
     margin: 0
 }
 
-.proof-header #proof-start-info {
+/* .proof-header #proof-start-info {
     
-}
+} */
 
 .box {
     background-color: var(--box-colour);
