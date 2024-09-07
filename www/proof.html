@@ -95,46 +95,56 @@
         let proofPtr;
 
         document.addEventListener("DOMContentLoaded", () => {
-            fetch("rules.json")
+            fetch("http://localhost:8000/www/rules.json")
                 .then(response => response.json())
                 .then(data => populateRules(data))
                 .catch(error => console.error("Error loading the JSON file:", error));
         });
         document.addEventListener("DOMContentLoaded", () => {
-            fetch("../zig-out/bin/wff-helper.wasm", {
+            fetch("http://localhost:8000/zig-out/bin/wff-helper.wasm", {
                 headers: {
                     "Content-Type": "application/wasm",
                 },
+            }).then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! Status: ${response.status}`);
+                }
+                return response.arrayBuffer();
+            }).then(array => {
+                if (array.length == 0) {
+                    throw new Error(`WASM Binary Buffer is Empty`);
+                }
+                return WebAssembly.instantiate(array, {})
+            }).then(wasm => {
+                wasmInstance = wasm.instance;
+                memory = wasmInstance.exports.memory;
+                exports = wasmInstance.exports;
 
-            }).then(response => response.arrayBuffer())
-                .then(array => WebAssembly.instantiate(array, {}))
-                .then(wasm => {
-                    wasmInstance = wasm.instance;
-                    memory = wasmInstance.exports.memory;
-                    exports = wasmInstance.exports;
+                if (!wasmInstance.exports.init()) {
+                    throw new Error("Failed to initialize wff-helper");
+                }
 
-                    if (!wasmInstance.exports.init()) {
-                        throw new Error("Failed to initialize wff-helper");
-                    }
+                const urlParams = new URLSearchParams(window.location.search);
+                const wffString = urlParams.get("wff");
+                const proofMethod = urlParams.get("method");
 
-                    const urlParams = new URLSearchParams(window.location.search);
-                    const wffString = urlParams.get("wff");
-                    const proofMethod = urlParams.get("method");
 
-                    const wffStringPtr = checkPtr(encodeStringSlice(wffString));
-                    const wffPtr = checkPtr(exports.wffParse(wffStringPtr));
+                const wffStringPtr = checkPtr(encodeStringSlice(wffString));
+                const wffPtr = checkPtr(exports.wffParse(wffStringPtr));
 
-                    document.getElementById("proof-wff").textContent = checkPtr(wffGetString(wffPtr));
-                    document.getElementById("proof-method").textContent = proofMethod;
 
-                    const proofMethodStringPtr = checkPtr(encodeStringSlice(proofMethod));
-                    proofPtr = checkPtr(exports.proofInit(wffPtr, proofMethodStringPtr));
+                document.getElementById("proof-wff").textContent = checkPtr(wffGetString(wffPtr));
+                document.getElementById("proof-method").textContent = proofMethod;
 
-                    exports.freeStringSlice(proofMethodStringPtr);
-                    // exports.wffDeinit(wffPtr);
-                    exports.freeStringSlice(wffStringPtr);
+                const proofMethodStringPtr = checkPtr(encodeStringSlice(proofMethod));
+                proofPtr = checkPtr(exports.proofInit(wffPtr, proofMethodStringPtr));
 
-                })
+                exports.freeStringSlice(proofMethodStringPtr);
+                // exports.wffDeinit(wffPtr);
+                exports.freeStringSlice(wffStringPtr);
+
+
+            })
                 .catch(error => console.error("Error loading the WASM:", error));
         });
 
@@ -274,6 +284,7 @@
 
             if (checkInt(exports.proofIsFinished(proofPtr))) {
                 console.log("Proof complete!");
+                addStep("QED", "");
             }
 
             exports.freeStringSlice(justificationStringPtr);
