@@ -411,7 +411,7 @@ pub const WffTree = struct {
                         .logical_constant => |constant| pattern_constant == constant,
                         else => false,
                     },
-                    .proposition_variable => |variable| {
+                    .proposition_variable => |variable| ret: {
                         it.skipChildren();
 
                         // In a case where the same pattern variable is used
@@ -420,7 +420,8 @@ pub const WffTree = struct {
                         // not a match.
                         if (map.get(variable)) |existing_match| {
                             if (!existing_match.eql(node)) {
-                                _ = map.remove(variable);
+                                // _ = map.remove(variable);
+                                break :ret false;
                             }
                         } else {
                             try map.put(variable, node);
@@ -435,12 +436,13 @@ pub const WffTree = struct {
                     return null;
                 }
             }
-            if (map.count() > 0) {
-                return map;
-            } else {
-                map.deinit();
-                return null;
-            }
+            return map;
+            // if (map.count() > 0) {
+            //     return map;
+            // } else {
+            //     map.deinit();
+            //     return null;
+            // }
         }
 
         /// When called on a nonleaf node, make a copy of the entire tree but
@@ -1016,7 +1018,7 @@ test "WffTree.Node.match: (p v q) with pattern (p v p)" {
     const pattern_wff = try wff_parser.parse(allocator, "(p v p)");
     defer pattern_wff.deinit();
 
-    try std.testing.expect(try wff.tree.root.match(allocator, pattern_wff.tree.root) == null);
+    try std.testing.expectEqual(null, try wff.tree.root.match(allocator, pattern_wff.tree.root));
 }
 
 test "WffTree.Node.match: ((a ^ b) => (a ^ b)) with pattern (p => p)" {
@@ -1194,7 +1196,31 @@ pub const Wff = struct {
             return null;
         }
     }
+
+    pub fn isTrue(self: Self) bool {
+        return std.mem.eql(u8, self.string, "T");
+    }
+
+    pub fn isFalse(self: Self) bool {
+        return std.mem.eql(u8, self.string, "F");
+    }
+
+    pub fn isConstant(self: Self) bool {
+        return self.isTrue() or self.isFalse();
+    }
 };
+
+test "Wff.isTrue" {
+    const allocator = std.testing.allocator;
+    
+    var wff1 = try wff_parser.parse(allocator, "T");
+    defer wff1.deinit();
+    var wff2 = try wff_parser.parse(allocator, "F");
+    defer wff2.deinit();
+
+    try std.testing.expect(wff1.isTrue());
+    try std.testing.expect(!wff2.isTrue());
+}
 
 test "Wff.equals" {
     const allocator = std.testing.allocator;

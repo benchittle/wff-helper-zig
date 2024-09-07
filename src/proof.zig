@@ -24,9 +24,13 @@ pub const EquivalenceRule = struct {
     /// Returns true if a single application of the equivalence rule can 
     /// transform `from` to `to`.
     pub fn canTransform(self: Self, allocator: std.mem.Allocator, from: Wff, to: Wff) !bool {
+        // if (self.lhs.isConstant() or self.rhs.isConstant()) {
+        //     return true;
+        // }
+
         if (try from.matchAll(allocator, self.lhs)) |left_to_right| {
             defer {
-                for (left_to_right.items) |*m| m.deinit();
+                for (left_to_right.items) |m| m.deinit();
                 left_to_right.deinit();
             }
             for (left_to_right.items) |match| {
@@ -39,7 +43,7 @@ pub const EquivalenceRule = struct {
         }
         if (try from.matchAll(allocator, self.rhs)) |right_to_left| {
             defer {
-                for (right_to_left.items) |*m| m.deinit();
+                for (right_to_left.items) |m| m.deinit();
                 right_to_left.deinit();
             }
             for (right_to_left.items) |match| {
@@ -71,6 +75,30 @@ pub const EquivalenceRule = struct {
 //     //try std.testing.expectError(try rule.canTransform(allocator, from, to));
 //     _ = try rule.canTransform(allocator, from, to);
 // }
+
+test "EquivalenceRule.canTransform: T to (a v ~a) using (a v ~a) = T" {
+    const allocator = std.testing.allocator;
+    
+    var from = try wfflib.wff_parser.parse(allocator, "T");
+    defer from.deinit();
+    var to = try wfflib.wff_parser.parse(allocator, "(a v ~a)");
+    defer to.deinit();
+    // var wrong = try wfflib.wff_parser.parse(
+    //     allocator,
+    //     "(~q v p)");
+    // defer wrong.deinit();
+
+    var rule = EquivalenceRule {
+        .lhs = try wfflib.wff_parser.parse(allocator, "(a v ~a)"),
+        .rhs = try wfflib.wff_parser.parse(allocator, "T"),
+        .num = undefined,
+    };
+    defer rule.deinit();
+    try std.testing.expect(try rule.canTransform(allocator, from, to));
+    try std.testing.expect(try rule.canTransform(allocator, to, from));
+    // try std.testing.expect(!(try rule.canTransform(allocator, from, wrong)));
+    // try std.testing.expect(!(try rule.canTransform(allocator, wrong, to)));
+}
 
 test "EquivalenceRule.canTransform: (~p v q) to (p => q) using (~a v b) = (a => b)" {
     const allocator = std.testing.allocator;
@@ -147,7 +175,7 @@ test "EquivalenceRule.canTransform: ((y <=> z) ^ (w v x)) to (((y <=> z) ^ w) v 
     try std.testing.expect(try e13.canTransform(allocator, to, from));
 }
 
-test "!EquivalenceRule.canTransform: (T ^ ~T) to F using ~~a  = a" {
+test "!EquivalenceRule.canTransform: (T ^ ~T) to F using ~~a = a" {
     const allocator = std.testing.allocator;
     var from = try wfflib.wff_parser.parse(allocator, "(T ^ ~T)");
     defer from.deinit();
@@ -556,22 +584,18 @@ pub const Proof = struct {
     goal: wfflib.Wff,
     steps: std.ArrayList(Step),
 
-    pub fn init(allocator: std.mem.Allocator, wff_parser: wfflib.WffParser, wff: *wfflib.Wff, method: Method, assumption_wff_strings: ?[][]const u8, equivalence_rules: []const EquivalenceRule, inference_rules: []const InferenceRule) !Self {
+    // Copies assumption Wffs to a new ArrayList
+    pub fn init(allocator: std.mem.Allocator, wff_parser: wfflib.WffParser, wff: *wfflib.Wff, method: Method, assumption_wffs: ?[]wfflib.Wff, equivalence_rules: []const EquivalenceRule, inference_rules: []const InferenceRule) !Self {
         var assumptions = std.ArrayList(wfflib.Wff).init(allocator);
         errdefer {
-            for (assumptions.items) |*a| {
+            for (assumptions.items) |a| {
                 a.deinit();
             }
             assumptions.deinit();
         }
 
-        if (assumption_wff_strings) |strings| {
-            try assumptions.ensureTotalCapacityPrecise(strings.len + 1);
-            for (strings) |assumption_string| {
-                assumptions.appendAssumeCapacity(try wff_parser.parse(allocator, assumption_string));
-            }
-        } else {
-            try assumptions.ensureTotalCapacityPrecise(1);
+        if (assumption_wffs) |wffs| {
+            try assumptions.appendSlice(wffs);
         }
 
         var goal = switch(method) {

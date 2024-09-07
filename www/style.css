@@ -13,18 +13,25 @@
 :root {
     --default-font: Arial, Helvetica, sans-serif;
     --wff-font: 'Courier New', Courier, monospace;
-    --background: #f9f9f9;
+
+    --header-background-colour: #252525;
+    --page-background-colour: #303030;
+    --box-colour: #404040;
+    --input-background-colour: #404040;
+    --input-button-background-colour: #505050;
+    --input-button-background-colour-hover: #606060;
+    --table-row-alternate-colour: #555555;
+    --font-colour: white;
 }
    
 body {
-    font-family: var(--default-font);
     margin: 0;
+    color: var(--font-colour);
+    font-family: var(--default-font);
+    background-color: var(--page-background-colour);
     display: flex;
     flex-direction: column;
     max-height: 100vh;
-    height: calc(100vh - 16px);  
-    background-color: #555555;
-    color: lightgrey;
 }
 
 /* Home Page */
@@ -43,7 +50,6 @@ body {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    height: 80%;
 }
 
 #home-container span {
@@ -56,13 +62,14 @@ body {
 /* Proof Page */
 
 .proof-header {
-    display: grid;
+    display: grid; 
     align-items: center;
     grid-template-columns: 1fr 1fr 1fr;
-    background-color: #333333;
+    background-color: var(--header-background-colour);
     margin: 0;
-    margin-bottom: 8px;
+    /* margin-bottom: 8px; */
     padding: 8px;
+    /* height: 20%; */
 }
 
 .proof-header h1 {
@@ -73,9 +80,17 @@ body {
     
 }
 
+.box {
+    background-color: var(--box-colour);
+    border-radius: 8px;
+}
+
 #container {
+    flex: 1 1 auto;
     display: flex;
-    height: 100%;
+    min-height: 100px; /* without this everything breaks lol */ 
+    margin: 8px;
+    gap: 8px;
 }
 
 #proof-container {
@@ -84,7 +99,7 @@ body {
     justify-content: start;
     gap: 8px;
     flex: 2 0 auto;
-    margin: 0 8px;
+    /* margin: 0 8px; */
 }
 
 #proof-container > h2 {
@@ -92,16 +107,17 @@ body {
 }
 
 #proof-info {
-    border: 1px solid black;
+    flex: 0 auto;
+    /* border: 1px solid black; */
     padding: 0 8px;
 }
 
 #steps-container {
-    flex: 1 1 0;
-    border: 1px solid black;
+    flex: auto;
+    /* border: 1px solid black; */
     /* background-color: var(--background); */
-    min-height: 300px;
-    overflow-y: scroll;   
+    min-height: 100px;
+    overflow-y: auto;   
 }
 #steps-container > p {
     margin: 8px;
@@ -123,72 +139,89 @@ body {
 .steps-justification {
     padding: 0 2rem;
 }
+
 #input-container {
     flex: 0 0 auto;
-    border: 1px solid black;
-    border-radius: 5px;
-    height: 3rem;
+    /* border: 1px solid black; */
+    /* border-radius: 5px; */
+    /* height: 28px; */
     display: flex;
-    flex-direction: row;
+    /* flex-direction: row; */
+    /* padding: 12px; */
+    background-color: var(--input-background-colour);
 }
 #input-wff-entry {
     flex-grow: 1;
+    color: inherit;
+    background-color: var(--input-background-colour);
+    border: none;
+    padding: 12px;
+    border-radius: 12px;
 }
+#input-wff-entry:focus {
+    outline: none;
+}
+
+#button-check-step {
+    background-color: var(--input-button-background-colour);
+    color: inherit;
+    border: inherit;
+    border-radius: 12px;
+}
+#button-check-step:hover {
+    cursor: pointer;
+    background-color: var(--input-button-background-colour-hover);
+}
+
 
 /* TODO: On small displays, resource container should appear under the input 
 rather than beside it */
 #resource-container {
     display: flex;
     flex-direction: column;
-    margin: 0 8px;
+    justify-content: start;
     gap: 8px;
+    overflow: auto;
+    /* min-height: 1000px; */
 }
 
 .resource {
-    flex: 1;
+    flex: 0 1 auto;
     display: flex;
     flex-direction: column;
-    border: 1px solid black;
-    padding: 0;    
+    min-height: 100px;
 }
 
 .resource > h3 {
-    flex-shrink: 0;
     text-align: center;
-    /* background-color: var(--background); */
     padding: 0.5rem;
     margin: 0;
 }
 .table-container {
-    flex: 1 1 0;
-    overflow-y: scroll;
-    padding: 0 0.5rem;
+    flex: 0 1 auto; 
+    overflow-y: auto;
 }
 .table-container table {
     font-family: var(--wff-font);
     border-collapse: collapse;
-    /* border-spacing: 50px; */
     width: 100%;
 }
 .table-container table tr td {
     padding: 0.25rem 1rem;
-    /* text-align: left; */
 }
 .table-container table tr td:first-child {
-    padding-left: 0px;
     text-align: right;
 }
 .table-container table tr td:last-child {
-    padding-right: 0px;
+    text-align: left;
 }
 
 .table-container tr:nth-child(odd) {
-    background-color: #444444;
-    /* color: #111; */
+    background-color: var(--table-row-alternate-colour);
   }
 
 #operators-container {
-    flex: 0 0 auto;
+    flex: none;
 }
 #operators {
     display: grid;

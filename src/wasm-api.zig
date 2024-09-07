@@ -27,6 +27,7 @@ fn copyAllocOrNull(comptime T: type, allocator: std.mem.Allocator, object: T) ?*
     return &copy[0];
 }
 
+
 // Utility functions //
 
 export fn init() bool {
@@ -83,6 +84,7 @@ export fn getByte(ptr: [*]u8) u8 {
     return ptr[0];
 }
 
+
 // Misc //
 
 export fn getAvailableProofMethodsJson(wff: *wfflib.Wff) ?*[]const u8 {
@@ -109,6 +111,9 @@ export fn parseStep(step_string: *const []const u8, proof: *prooflib.Proof) ?*pr
     return copyAllocOrNull(prooflib.Proof.Step, api_allocator, step);
 }
 
+// export fn proofMethodGetString()
+
+
 // Wff Interface //
 
 export fn wffParse(wff_string: *const []const u8) ?*wfflib.Wff {
@@ -124,6 +129,7 @@ export fn wffDeinit(wff: *wfflib.Wff) void {
 export fn wffGetString(wff: *wfflib.Wff) ?*[]const u8 {
     return &wff.string;
 }
+
 
 // Proof Interface //
 
@@ -147,6 +153,11 @@ export fn proofDeinit(proof: *prooflib.Proof, deinit_proving_wff: bool) void {
     api_allocator.destroy(proof);
 }
 
+export fn proofAddAssumption(proof: *prooflib.Proof, wff: *wfflib.Wff) i32 {
+    proof.assumptions.append(wff.*) catch return -1;
+    return 1;
+}
+
 export fn proofAddStep(proof: *prooflib.Proof, step: *prooflib.Proof.Step) i32 {
     proof.appendStep(step.*) catch return -1;
     return 1;
@@ -154,6 +165,22 @@ export fn proofAddStep(proof: *prooflib.Proof, step: *prooflib.Proof.Step) i32 {
 
 export fn proofToString(proof: *prooflib.Proof) ?*[]const u8 {
     const string = proof.toString(api_allocator) catch return null;
+    return copyAllocOrNull([]const u8, api_allocator, string);
+}
+
+export fn proofIsFinished(proof: *prooflib.Proof) i32 {
+    return @intFromBool(proof.isComplete(api_allocator) catch return -1);
+}
+
+export fn proofGetProvingWff(proof: *prooflib.Proof) *wfflib.Wff {
+    return proof.proving_wff;
+}
+
+
+// Proof.Step Interface //
+
+export fn proofStepGetJustificationString(step: *prooflib.Proof.Step, proof: *prooflib.Proof) ?*[]const u8 {
+    const string = step.how.getString(api_allocator, proof.*) catch return null;
     return copyAllocOrNull([]const u8, api_allocator, string);
 }
 
@@ -166,31 +193,10 @@ export fn proofStepGetWff(step: *prooflib.Proof.Step) ?*wfflib.Wff {
     return &step.wff;
 }
 
-export fn proofIsFinished(proof: *prooflib.Proof) i32 {
-    return @intFromBool(proof.isComplete(api_allocator) catch return -1);
+export fn proofStepIsValid(step: *prooflib.Proof.Step) i32 {
+    const is_valid = step.isValid(api_allocator) catch return -1;
+    return @intFromBool(is_valid);
 }
-
-
-// Proof.Step Interface //
-
-export fn proofStepGetJustificationString(step: *prooflib.Proof.Step, proof: *prooflib.Proof) ?*[]const u8 {
-    const string = step.how.getString(api_allocator, proof.*) catch return null;
-    return copyAllocOrNull([]const u8, api_allocator, string);
-}
-
-
-// test "check" {
-//     const s1 = "hello";
-//     const s2 = "from";
-//     const s3 = "zig";
-//     const map = [_][]const u8 {s1, s2, s3};
-//     const s = try std.json.stringifyAlloc(api_allocator, map, .{});
-//     defer api_allocator.free(s);
-
-//     std.json.
-
-//     debug.print("{s}\n", .{s});
-// }
 
 test "parseStep: a v b, 1, I1" {
     if (!init()) {
