@@ -3,7 +3,7 @@ import * as utils from "./utils.js";
 
 
 const wasmApi = new WasmApi();
-await wasmApi.init("../zig-out/bin/wff-helper.wasm");
+await wasmApi.init("./bin/wff-helper.wasm");
 utils.updateProofMethods(wasmApi);
 
 document.getElementById("proof-start-button").addEventListener("click", () => utils.startProof(wasmApi));
