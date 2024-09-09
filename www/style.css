@@ -331,11 +331,10 @@ rather than beside it */
 
 .table-container tr:nth-child(odd) {
     background-color: var(--table-row-alternate-colour);
-  }
+}
 
 #operators-container {
     flex: none;
-    padding: 4px;
 }
 #operators {
     display: grid;
