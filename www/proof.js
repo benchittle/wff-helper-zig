@@ -4,7 +4,7 @@ import * as utils from "./utils.js";
 document.addEventListener("DOMContentLoaded", fetchRules);
 
 const wasmApi = new WasmApi();
-await wasmApi.init("../zig-out/bin/wff-helper.wasm");
+await wasmApi.init("./bin/wff-helper.wasm");
 
 const proofPtr = await initPage();
 

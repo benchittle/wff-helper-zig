@@ -1,4 +1,5 @@
 .zig-cache/*
-# zig-out/*
+zig-out/*
 .vscode/*
 notes.txt
+www/bin/
