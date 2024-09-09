@@ -31,6 +31,7 @@
     --input-button-background-colour-hover: #606060;
     --proof-button-background-colour: #606060;
     --proof-button-background-colour-hover: #707070;
+    --proof-button-background-colour-disabled: #505050;
     /* --input-button-background-colour-disabled: #454545; */
     --table-row-alternate-colour: #555555;
     --font-colour: white;
@@ -48,7 +49,7 @@ body {
 }
 
 .wff-text {
-    font: var(--wff-font);
+    font-family: var(--wff-font);
 }
 
 /* Home Page */
@@ -131,7 +132,8 @@ body {
 .proof-header {
     display: grid; 
     align-items: center;
-    grid-template-columns: 1fr 2fr 1fr;
+    /* justify-items: center; */
+    grid-template-columns: 1fr 3fr 1fr;
     background-color: var(--header-background-colour);
     margin: 0;
     padding: 8px;
@@ -148,6 +150,19 @@ body {
 
 #wff-and-method {
     justify-self: center;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.proof-header > a {
+    justify-self: right;
+    text-decoration: none;
+    color: inherit;
+    margin-right: 8px;
+}
+.proof-header > a:hover {
+    text-decoration: underline;
 }
 
 .box {
@@ -206,9 +221,13 @@ body {
     border-radius: 8px;
     color: inherit;
 }
-.proof-button:hover {
+.proof-button:enabled:hover {
     cursor: pointer;
     background-color: var(--proof-button-background-colour-hover);
+}
+.proof-button:disabled {
+    background-color: var(--proof-button-background-colour-disabled);
+    color: var(--font-colour-disabled);
 }
 
 #steps-table {
@@ -237,6 +256,7 @@ body {
     flex-grow: 1;
     color: inherit;
     background-color: var(--input-background-colour);
+    font-family: var(--wff-font);
     border: none;
     padding: 12px;
     border-radius: 8px;
@@ -315,6 +335,7 @@ rather than beside it */
 
 #operators-container {
     flex: none;
+    padding: 4px;
 }
 #operators {
     display: grid;

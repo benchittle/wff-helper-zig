@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Wff Helper</title>
     <link rel="stylesheet" href="style.css">
+    <link rel="icon" type="image/x-icon" href="favicon.ico"/>
 </head>
 <body>
     <header class="proof-header">
@@ -15,7 +16,7 @@
                 <input type="text" id="proof-wff-input" placeholder="Enter a wff...">
             </span>
             <label for="proof-method-select"> using </label>
-            <select id="proof-method-select">
+            <select id="proof-method-select" class="wff-text">
                 <option value="none">No Proof Method</option>
                 <option value="direct">Direct Proof</option>
                 <option value="indirect">Indirect Proof</option>
@@ -23,24 +24,25 @@
             </select> 
             <button id="proof-start-button">Start Proof</button>
         </div>
+        <a href="https://github.com/benchittle/wff-helper-zig/issues" target="_blank"><i class="fab fa-github"></i> Found a bug? Open an issue!</a>
     </header>
     <div id="container">
         <div id="proof-container">
             <!-- <h2>Proof</h2> -->
             <div id="proof-info" class="box">
                 <p>
-                    Proving: <span id="assumptions"></span> &vdash; <span id="proof-wff" class="wff-text"></span>
+                    Proving: <span id="assumptions" class="wff-text"></span> &vdash; <span id="proof-wff" class="wff-text"></span>
                 </p>
                 <p>
-                    Method: <span id="proof-method"></span>
+                    Method: <span id="proof-method" class="wff-text"></span>
                 </p>
             </div>
             
             <div id="steps-container" class="box">
                 <div id="proof-controls">
                     <p>Proof:</p>
-                    <!-- <button id="button-remove-step" class="proof-button">Remove Last Step</button>
-                    <button id="button-clear-proof" class="proof-button">Clear Proof</button> -->
+                    <button id="button-remove-step" class="proof-button" disabled>Remove Last Step</button>
+                    <button id="button-clear-proof" class="proof-button" disabled>Clear Proof</button>
                 </div>
                 <table id="steps-table"></table> 
                 <p id="proof-conclusion"></p>
@@ -57,11 +59,11 @@
             <div class="resource box" id="operators-container">
                 <h3>Operators</h3>
                 <div id="operators">
-                    <p>Not: ~ (tilde)</p>
-                    <p>And: ^ (caret)</p>
-                    <p>Or: v (the letter)</p>
-                    <p>Conditional: =&gt;</p>
-                    <p>Biconditional: &lt;=&gt;</p>
+                    <p>Not: <span class="wff-text">~</span> (tilde)</p>
+                    <p>And: <span class="wff-text">^</span> (caret)</p>
+                    <p>Or: <span class="wff-text">v</span> (the letter v)</p>
+                    <p>Conditional: <span class="wff-text">=&gt;</span></p>
+                    <p>Biconditional: <span class="wff-text">&lt;=&gt;</span></p>
                 </div>
             </div>
             <div class="resource box">
@@ -78,7 +80,7 @@
             </div>
         </div>
     </div>
-
+    <script src="https://kit.fontawesome.com/7ed51d461e.js" crossorigin="anonymous"></script>
     <script src="proof.js" type="module"></script>
     <script type="module">
         import * as proof from "./proof.js";

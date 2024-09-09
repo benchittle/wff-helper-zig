@@ -167,6 +167,14 @@ export fn proofAddStep(proof: *prooflib.Proof, step: *prooflib.Proof.Step) i32 {
     return 1;
 }
 
+export fn proofRemoveLastStep(proof: *prooflib.Proof) i32 {
+    if (proof.steps.popOrNull()) |lastStep| {
+        lastStep.wff.deinit();
+        return 1;
+    }
+    return 0;
+}
+
 export fn proofToString(proof: *prooflib.Proof) ?*[]const u8 {
     const string = proof.toString(api_allocator) catch return null;
     return copyAllocOrNull([]const u8, api_allocator, string);

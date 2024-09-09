@@ -11,6 +11,8 @@ const proofPtr = await initPage();
 document.getElementById("proof-start-button").addEventListener("click", () => utils.startProof(wasmApi));
 document.getElementById("proof-wff-input").addEventListener("input", () => utils.updateProofMethods(wasmApi));
 document.getElementById("button-check-step").addEventListener("click", checkStep);
+document.getElementById("button-remove-step").addEventListener("click", removeLastStep);
+document.getElementById("button-clear-proof").addEventListener("click", clearProof);
 document.getElementById("input-wff-entry").addEventListener("keypress", event => {
     // If the user presses the "Enter" key on the keyboard
     if (event.key === "Enter") {
@@ -22,8 +24,10 @@ document.getElementById("input-wff-entry").addEventListener("keypress", event =>
 });
 
 window.addEventListener("beforeunload", function (e) {
-    // Cancel the event
-    e.preventDefault(); // If you prevent default behavior in Mozilla Firefox prompt will always be shown
+    const stepsTable = document.getElementById("steps-table");
+    if (stepsTable.lastChild) {
+        e.preventDefault(); // If you prevent default behavior in Mozilla Firefox prompt will always be shown
+    }
 });
 
 async function initPage() {
@@ -149,10 +153,26 @@ function checkStep() {
 }
 
 function addStep(wffString, justificationString) {
+    document.getElementById("button-remove-step").disabled = false;
+    document.getElementById("button-clear-proof").disabled = false;
     const stepsTable = document.getElementById("steps-table");
     const tr = document.createElement("tr");
     tr.innerHTML = `<td>${wffString}</td><td class="steps-justification">${justificationString}</td>`
     stepsTable.appendChild(tr);
+}
+
+function removeLastStep() {
+    const stepsTable = document.getElementById("steps-table");
+    if (stepsTable.lastChild) {
+        stepsTable.removeChild(stepsTable.lastChild);
+
+        if (!stepsTable.lastChild) {
+            document.getElementById("button-remove-step").disabled = true;
+            document.getElementById("button-clear-proof").disabled = true;
+        }
+        return utils.errorCheckInt(wasmApi.exports.proofRemoveLastStep(proofPtr));
+    }
+    return false;
 }
 
 function completeProof() {
@@ -161,4 +181,10 @@ function completeProof() {
     document.getElementById("proof-conclusion").textContent = "QED";
     document.getElementById("input-wff-entry").disabled = true;
     document.getElementById("button-check-step").disabled = true;
+    document.getElementById("button-remove-step").disabled = true;
+    document.getElementById("bu tton-clear-proof").disabled = true;
+}
+
+function clearProof() {
+    while (removeLastStep());
 }
