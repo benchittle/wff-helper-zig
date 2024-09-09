@@ -1,4 +1,4 @@
-name: Build wff-helper.wasm and deploy to GH pages
+name: Build deploy to GH pages
 
 on:
   push:
@@ -20,22 +20,20 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - uses: goto-bus-stop/setup-zig@v2
-      - run: |
-          zig build
-          cp zig-out/bin/wff-helper.wasm www 
-  deploy:
+  build-and-deploy:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout 
         uses: actions/checkout@v4
+      - name: Install Zig
+        uses: goto-bus-stop/setup-zig@v2
+      - name: build
+        run: |
+          zig build
+          mv ./zig-out/bin/wff-helper.wasm ./www 
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Upload artifact
