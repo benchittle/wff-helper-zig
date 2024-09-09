@@ -3,24 +3,25 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Propositional Logic Proof Checker</title>
+    <title>Wff Helper</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <header class="proof-header">
-        <h1>Wff Helper</h1>
+        <h1><a href="index.html">Wff Helper</a></h1>
         <div id="wff-and-method">
             Prove
             <span>
-                <input type="text" id="proof-wff-input" placeholder="Enter a wff..." accept="">
+                <input type="text" id="proof-wff-input" placeholder="Enter a wff...">
             </span>
             <label for="proof-method-select"> using </label>
             <select id="proof-method-select">
                 <option value="none">No Proof Method</option>
                 <option value="direct">Direct Proof</option>
                 <option value="indirect">Indirect Proof</option>
-                <option value="contradiction">Contradiction</option>
+                <option value="contradiction">Proof by Contradiction</option>
             </select> 
+            <button id="proof-start-button">Start Proof</button>
         </div>
     </header>
     <div id="container">
@@ -28,34 +29,26 @@
             <!-- <h2>Proof</h2> -->
             <div id="proof-info" class="box">
                 <p>
-                    Proving: <span id="proof-wff"></span>
+                    Proving: <span id="assumptions"></span> &vdash; <span id="proof-wff" class="wff-text"></span>
                 </p>
                 <p>
                     Method: <span id="proof-method"></span>
                 </p>
             </div>
+            
             <div id="steps-container" class="box">
-                <p>Proof:</p>
-                <table id="steps-table">
-                    <!-- <tr>
-                        <td>(a v b)</td>
-                        <td class="steps-justification">Assumption</td>
-                    </tr>
-                    <tr>
-                        <td>(b v a)</td>
-                        <td class="steps-justification">1, E10</td>
-                    </tr>
-                    <tr>
-                        <td>((a v b) ^ (b v a))</td>
-                        <td class="steps-justification">1, E10</td>
-                    </tr> -->
-                </table> 
+                <div id="proof-controls">
+                    <p>Proof:</p>
+                    <!-- <button id="button-remove-step" class="proof-button">Remove Last Step</button>
+                    <button id="button-clear-proof" class="proof-button">Clear Proof</button> -->
+                </div>
+                <table id="steps-table"></table> 
                 <p id="proof-conclusion"></p>
             </div>
-            <div id="input-container" class="box">
-                <input type="text" id="input-wff-entry" placeholder="Enter next step..." accept="">
+            <div id="input-container">
+                <input type="text" id="input-wff-entry" placeholder="Enter next step...">
                 <!-- <input type="text" id="input-justification-entry" placeholder="Enter justification..." accept=""> -->
-                <button id="button-check-step" onclick="checkStep();">Try Step</button>
+                <button id="button-check-step">Try Step</button>
             </div>
         </div>
         <div id="resource-container">
@@ -85,6 +78,11 @@
             </div>
         </div>
     </div>
-    <script src="script.js"></script>
+
+    <script src="proof.js" type="module"></script>
+    <script type="module">
+        import * as proof from "./proof.js";
+        window.proof = proof;
+    </script>
 </body>
 </html>

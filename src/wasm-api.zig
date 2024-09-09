@@ -126,6 +126,10 @@ export fn wffDeinit(wff: *wfflib.Wff) void {
     api_allocator.destroy(wff);
 }
 
+export fn wffFree(wff: *wfflib.Wff) void {
+    api_allocator.destroy(wff);
+}
+
 export fn wffGetString(wff: *wfflib.Wff) ?*[]const u8 {
     return &wff.string;
 }

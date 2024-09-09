@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Propositional Logic Proof Checker</title>
+    <title>Wff Helper</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -16,27 +16,25 @@
             <div id="wff-and-method">
                 Prove
                 <span>
-                    <input type="text" id="proof-wff-input" placeholder="Enter a wff" accept="">
+                    <input type="text" id="proof-wff-input" placeholder="Enter a wff">
                 </span>
                 <label for="proof-method-select"> using </label>
                 <select id="proof-method-select">
                     <option value="none">No Proof Method</option>
-                    <option value="direct">Direct Proof</option>
-                    <option value="indirect">Indirect Proof</option>
-                    <option value="contradiction">Contradiction</option>
+                    <!-- <option value="direct">Direct Proof</option> -->
+                    <!-- <option value="indirect">Indirect Proof</option> -->
+                    <option value="contradiction">Proof by Contradiction</option>
                 </select> 
             </div>
             <!-- <div id="home-error-text" hidden>Invalid WFF</div> -->
-            <div id="assumptions">
+            <div id="assumptions-input-container">
                 <label for="assumptions-input">Assumptions</label>
-                <textarea id="assumptions-input" placeholder="Enter a list of line separated wffs">
-                    test
-                </textarea>
+                <textarea id="assumptions-input" placeholder="Enter a list of line separated wffs"></textarea>
             </div>
-            <button id="proof-start-button" onclick="startProof()">Start Proof</button>
+            <button id="proof-start-button">Start Proof</button>
         </div>
     </div>
     
-    <script src="script.js"></script> 
+    <script src="index.js" type="module"></script> 
 </body>
 </html>
