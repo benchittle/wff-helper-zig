@@ -33,9 +33,7 @@ jobs:
         with:
           version: 0.13.0
       - name: build
-        run: |
-          zig build
-          mv ./zig-out/bin/wff-helper.wasm ./www 
+        run: zig build -p ./www/ 
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Upload artifact
