@@ -56,14 +56,82 @@
         <div id="resource-container">
             <!-- <h2>Resources</h2> -->
 
-            <div class="resource box" id="operators-container">
-                <h3>Operators</h3>
-                <div id="operators">
-                    <p>Not: <span class="wff-text">~</span> (tilde)</p>
-                    <p>And: <span class="wff-text">^</span> (caret)</p>
-                    <p>Or: <span class="wff-text">v</span> (the letter v)</p>
-                    <p>Conditional: <span class="wff-text">=&gt;</span></p>
-                    <p>Biconditional: <span class="wff-text">&lt;=&gt;</span></p>
+            <div id="operators-container" class="resource box">
+                <div class="resource-tab-bar">
+                    <button id="operators-tab" class="resource-tab"><h3>Operators</h3></button>
+                    <button id="help-tab" class="resource-tab" disabled><h3>Help</h3></button>
+                    <!-- <p>hi</p>
+                    <p>there</p> -->
+                </div>
+                <div id="operators-tab-content">
+                    <div id="operators"> 
+                        <p>Not: <span class="wff-text">~</span> (tilde)</p>
+                        <p>And: <span class="wff-text">^</span> (caret)</p>
+                        <p>Or: <span class="wff-text">v</span> (the letter v)</p>
+                        <p>Conditional: <span class="wff-text">=&gt;</span></p>
+                        <p>Biconditional: <span class="wff-text">&lt;=&gt;</span></p>
+                    </div>
+                </div>
+                <div id="help-tab-content">
+                    <div id="help">
+                        <h4>Welcome to Wff Helper!</h4>
+                        <p>
+                            This is a tool to verify and format proofs in 
+                            propositional logic. You can start a new proof 
+                            at the top of the page or by clicking the logo in
+                            the top left.
+                        </p>
+                        <p>
+                            This tool does NOT solve proofs for you. It DOES verify the steps you 
+                            input are logically valid, and it DOES verify once
+                            you have finished the proof. 
+                        </p>
+                        <h4>Example Usage</h4>
+                        <p>
+                            Example 1: Suppose we are proving 
+                            <span class="wff-example-text">&vdash; (a => (a v b))</span> 
+                            using <span class="wff-example-text">Direct Proof</span>. 
+                            <ul>
+                                <li>First, enter <span class="wff-example-text">a, assumption</span></li>
+                                <li>Then, enter <span class="wff-example-text">a v b, 1, I1</span></li>
+                                <li>
+                                    You should see <span class="wff-example-text">QED</span> 
+                                    automatically appended to your proof to signify it is complete
+                                </li>
+                            </ul>
+                        </p>
+                        <p>
+                            Example 2: Proving 
+                            <span class="wff-example-text">&vdash; (x => x)</span> 
+                            using <span class="wff-example-text">No Proof Method</span>. 
+                            <ul>
+                                <li>First, enter <span class="wff-example-text">x v ~x, axiom</span></li>
+                                <li>Then, enter <span class="wff-example-text">~x v x, 1, E10</span></li>
+                                <li>Then, enter <span class="wff-example-text">x => x, 2, E18</span></li>
+                                <li><span class="wff-example-text">QED</span></li>
+                            </ul>
+                        </p>
+                        <p>
+                            Example 3: Proving 
+                            <span class="wff-example-text">&vdash; (x => x)</span> 
+                            using <span class="wff-example-text">Proof by Contradiction</span>. 
+                            <ul>
+                                <li>First, enter <span class="wff-example-text">~(x => x), Assumption</span></li>
+                                <li>Then, enter <span class="wff-example-text">~(~x v x), 1, E18</span></li>
+                                <li>Then, enter <span class="wff-example-text">~~x ^ ~x, 2, E17</span></li>
+                                <li>Then, enter <span class="wff-example-text">x ^ ~x, 3, E15</span></li>
+                                <li>Then, enter <span class="wff-example-text">F, 4, E15</span></li>
+                                <li><span class="wff-example-text">QED</span></li>
+                            </ul>
+                        </p>
+                        <!-- <h4>Other Info</h4>
+                        <p>
+                            <ul>
+                                <li></li>
+                                
+                            </ul>
+                        </p> -->
+                    </div>
                 </div>
             </div>
             <div class="resource box">
@@ -82,9 +150,9 @@
     </div>
     <script src="https://kit.fontawesome.com/7ed51d461e.js" crossorigin="anonymous"></script>
     <script src="proof.js" type="module"></script>
-    <script type="module">
+    <!-- <script type="module">
         import * as proof from "./proof.js";
         window.proof = proof;
-    </script>
+    </script> -->
 </body>
 </html>

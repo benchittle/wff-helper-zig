@@ -22,6 +22,25 @@ document.getElementById("input-wff-entry").addEventListener("keypress", event =>
         document.getElementById("button-check-step").click();
     }
 });
+document.querySelectorAll(".resource-tab").forEach(element => {
+    element.addEventListener("click", () => {
+        if (element.disabled) {
+            return;
+        }
+        element.disabled = true;
+        if (element.id === "operators-tab") {
+            document.getElementById("operators-container").style.flex = "0 0 auto";
+            document.getElementById("help-tab").disabled = false;
+            document.getElementById("operators-tab-content").style.display = "block";
+            document.getElementById("help-tab-content").style.display = "none";
+        } else if (element.id === "help-tab") {
+            document.getElementById("operators-container").style.flex = "0 1 auto";
+            document.getElementById("operators-tab").disabled = false;
+            document.getElementById("operators-tab-content").style.display = "none";
+            document.getElementById("help-tab-content").style.display = "block";
+        }
+    });
+})
 
 window.addEventListener("beforeunload", function (e) {
     const stepsTable = document.getElementById("steps-table");
@@ -102,7 +121,7 @@ function populateRules(data) {
     data["equivalence_rules"].forEach(rule => {
         var tr = document.createElement("tr");
         tr.innerHTML = "<td>" + rule.name + "</td>" +
-            "<td>" + rule.lhs + " ≡ " + rule.rhs + "</td>"
+            "<td>" + rule.lhs + " &equiv; " + rule.rhs + "</td>"
         equivalence_table.appendChild(tr);
     });
 
@@ -182,7 +201,7 @@ function completeProof() {
     document.getElementById("input-wff-entry").disabled = true;
     document.getElementById("button-check-step").disabled = true;
     document.getElementById("button-remove-step").disabled = true;
-    document.getElementById("bu tton-clear-proof").disabled = true;
+    document.getElementById("button-clear-proof").disabled = true;
 }
 
 function clearProof() {

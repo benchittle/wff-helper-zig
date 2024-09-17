@@ -52,6 +52,11 @@ body {
     font-family: var(--wff-font);
 }
 
+.wff-example-text {
+    font-family: var(--wff-font);
+    background-color: var(--input-background-colour);
+}
+
 /* Home Page */
 
 .home-header {
@@ -288,8 +293,9 @@ body {
 /* TODO: On small displays, resource container should appear under the input 
 rather than beside it */
 #resource-container {
-    flex: 0 0 auto;
-    min-width: fit-content;
+    flex: 1 1 0;
+    /* min-width: 100px; */
+    min-width: min-content;
     display: flex;
     flex-direction: column;
     justify-content: start;
@@ -298,21 +304,84 @@ rather than beside it */
     /* min-height: 1000px; */
 }
 
+.resource-tab-bar {
+    display: flex;
+    width: 100%;
+    justify-items: center;
+    background-color: var(--input-background-colour-disabled);
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+}
+
+.resource-tab {
+    /* justify-self: center; */
+    /* background-color: white; */
+    width: 100%;
+    border: none;
+    padding: 8px;
+    color: inherit;
+}
+
+.resource-tab:disabled {
+    background-color: var(--box-colour);
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+}
+.resource-tab:enabled {
+    border-radius: inherit;
+    background-color: var(--input-background-colour-disabled);
+    color: var(--font-colour-disabled);
+}
+.resource-tab:enabled:hover {
+    cursor: pointer;
+}
+.resource-tab h3 {
+    margin: 0;
+}
+
 .resource {
     flex: 0 1 auto;
     display: flex;
     flex-direction: column;
+    height: auto;
     min-height: 100px;
 }
-
 .resource > h3 {
     text-align: center;
     padding: 0.5rem;
     margin: 0;
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    /* background-color: var(--input-background-colour-disabled); */
 }
+
+#operators-container {
+    display: flex;
+    flex-direction: column;
+}
+
+#operators-tab-content {
+    display: none;
+}
+
+#help-tab-content {
+    max-width: inherit;
+    overflow-y: auto;
+    padding: 8px;
+}
+
+#operators {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+}
+#operators > p {
+    margin: 4px 8px;
+}
+
 .table-container {
     flex: 0 1 auto; 
     overflow-y: auto;
+    /* resize: vertical; */
 }
 .table-container table {
     font-family: var(--wff-font);
@@ -331,15 +400,4 @@ rather than beside it */
 
 .table-container tr:nth-child(odd) {
     background-color: var(--table-row-alternate-colour);
-}
-
-#operators-container {
-    flex: none;
-}
-#operators {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-}
-#operators > p {
-    margin: 4px 8px;
 }
