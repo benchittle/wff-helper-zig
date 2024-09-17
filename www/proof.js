@@ -55,6 +55,17 @@ async function initPage() {
     const urlParams = new URLSearchParams(window.location.search);
     const wffString = urlParams.get("wff");
     const proofMethod = urlParams.get("method");
+
+    if (wffString == null) {
+        alert("Missing 'wff' URL parameter");
+        window.location = "index.html";
+        return;
+    }
+    if (proofMethod == null) {
+        alert("Missing 'method' URL parameter");
+        window.location = "index.html";
+        return;
+    }
     
     if (wffString.length == 0 || proofMethod.length == 0) {
         throw new Error("Empty or missing URL arg");
