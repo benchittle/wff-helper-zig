@@ -1,6 +1,6 @@
 const std = @import("std");
 
-const ParsingConfig = @import("wff-parsing.zig").NewParsing;
+const ParsingConfig = @import("../wff-parsing.zig").NewParsing;
 pub const WffParser = ParsingConfig.WffParser;
 pub const wff_parser = ParsingConfig.wff_parser;
 

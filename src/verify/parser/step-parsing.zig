@@ -1,8 +1,7 @@
 const std = @import("std");
-const wfflib = @import("wff.zig");
-const proofs = @import("proof.zig");
+const wfflib = @import("wff/wff.zig");
 
-const StepParsingError = error{
+pub const StepParsingError = error{
     EmptyString,
     InvalidWff,
     UnexpectedToken,
@@ -35,27 +34,25 @@ fn strStrip(ascii_string: []const u8) []const u8 {
     return ascii_string[start..end];
 }
 
+const Justification = union(enum) {
+    Equivalence: usize, // an integer indicating whihc equivelence rule this is
+    Inference: usize, // an integer indicating whihc inference rule this is
+    Assumption,
+};
+
 // a union holding an individual component of a step
 const StepToken = union(enum) {
-    Wff: wfflib.Wff,
+    Wff: wfflib.Wff, //
     StepNumber: usize,
-    Justification: union(enum) {
-        Equivalence: usize,
-        Inference: usize,
-        Assumption,
-    },
+    Justification: Justification,
 };
 
 // a struct containing the step that was inputted
-const ParsedStep = struct {
+pub const ParsedStep = struct {
     Wff: wfflib.Wff, // this is the wff being presented
     FirstArgument: ?usize, // this is the first argument used for the justifications
     SecondArgument: ?usize, // the is the second argument (used in some inference rules)
-    Justification: ?union(enum) { // TODO: Justifiation should always be present
-        Equivalence: usize, // an integer indicating whihc equivelence rule this is
-        Inference: usize, // an integer indicating whihc inference rule this is
-        Assumption,
-    },
+    Justification: ?Justification, // TODO: should not be optional
 };
 
 // returns a StepToken with the justification set
@@ -136,7 +133,7 @@ fn parseWff(wffToken: StepToken) !wfflib.Wff {
 }
 
 // helper function to parse the Justification out of the step
-fn parseJustification(justToken: StepToken) !StepToken.Justifiation {
+fn parseJustification(justToken: StepToken) !Justification {
     return switch (justToken) {
         .Justification => |data| data,
         else => return StepParsingError.InvalidFormat,
@@ -144,7 +141,7 @@ fn parseJustification(justToken: StepToken) !StepToken.Justifiation {
 }
 
 // helper function to parse the step given
-fn parseStepNumber(argToken: StepToken) !StepToken.StepNumber {
+fn parseStepNumber(argToken: StepToken) !usize {
     return switch (argToken) {
         .StepNumber => |arg| arg,
         else => return StepParsingError.InvalidFormat,
@@ -152,7 +149,7 @@ fn parseStepNumber(argToken: StepToken) !StepToken.StepNumber {
 }
 
 // returns true if the justification provided if an inference rule
-fn isInference(justification: ParsedStep.Justifiation) bool {
+fn isInference(justification: Justification) bool {
     return switch (justification) {
         .Inference => true,
         else => false,
@@ -160,7 +157,7 @@ fn isInference(justification: ParsedStep.Justifiation) bool {
 }
 
 // returns true if the justification provided if an inference rule
-fn isAssumption(justification: ParsedStep.Justifiation) bool {
+fn isAssumption(justification: Justification) bool {
     return switch (justification) {
         .Assumption => true,
         else => false,
@@ -170,13 +167,15 @@ fn isAssumption(justification: ParsedStep.Justifiation) bool {
 // helper function to parse the steps used in the justification out of the step
 // assumes parsedStep's justification field is populated
 fn parseStepNumbers(parsedStep: ParsedStep, tokens: std.ArrayList(StepToken)) !ParsedStep {
+    var completeParsed = parsedStep;
+
     if (tokens.items.len > 2) { // if there are more than 2 tokens we can expect line numbers
-        parsedStep.FirstArgument = try parseStepNumber(tokens[1]);
+        completeParsed.FirstArgument = try parseStepNumber(tokens.items[1]);
     }
 
-    if (tokens.items.len > 3 and isInference(parseStep.Justifiation)) {
-        if (parseStep.Justifiation >= 3 and parseStep.Justifiation <= 6) { // I3-I6 have 2 arguments
-            parsedStep.SecondArgument = try parseStepNumber(tokens[2]);
+    if (tokens.items.len > 3 and isInference(completeParsed.Justification.?)) {
+        if (completeParsed.Justification.?.Inference >= 3 and completeParsed.Justification.?.Inference <= 6) { // I3-I6 have 2 arguments
+            completeParsed.SecondArgument = try parseStepNumber(tokens.items[2]);
         } else {
             // only inference rules I3-I6 have 2 arguments
             return StepParsingError.InvalidFormat;
@@ -186,7 +185,7 @@ fn parseStepNumbers(parsedStep: ParsedStep, tokens: std.ArrayList(StepToken)) !P
         return StepParsingError.InvalidFormat;
     }
 
-    return parsedStep;
+    return completeParsed;
 }
 
 pub fn parseStep(allocator: std.mem.Allocator, wff_parser: wfflib.WffParser, step_string: []const u8) !ParsedStep {
@@ -199,14 +198,17 @@ pub fn parseStep(allocator: std.mem.Allocator, wff_parser: wfflib.WffParser, ste
         }
     };
 
-    var parsedStep = ParsedStep{}; // this is the return value
-
     // First token must be wff
-    if (tokens.len > 0) {
-        parsedStep.Wff = try parseWff(tokens[0]);
-    } else {
+    if (tokens.items.len <= 0) {
         return StepParsingError.NoTokensFound;
     }
+
+    var parsedStep = ParsedStep{
+        .Wff = try parseWff(tokens.items[0]),
+        .FirstArgument = null, //
+        .SecondArgument = null,
+        .Justification = null,
+    };
 
     // TODO: this is not 2310 Compliant see page 21 for example or derivation definition
     // If wff is T, then there should be no other tokens.
@@ -227,7 +229,7 @@ pub fn parseStep(allocator: std.mem.Allocator, wff_parser: wfflib.WffParser, ste
     }
 
     // the rest must be line numbers
-    if (isAssumption(parsedStep.Justification)) {
+    if (isAssumption(parsedStep.Justification.?)) {
         if (tokens.items.len > 2) { // too many tokens for an assumption line
             return StepParsingError.InvalidFormat;
         }
