@@ -1,7 +1,7 @@
 const std = @import("std");
 const slr = @import("slr-table-generator.zig");
 const parser = @import("parser.zig");
-const wfflib = @import("wff.zig");
+const wfflib = @import("wff/wff.zig");
 
 const wff_parsing = @This();
 
@@ -10,7 +10,7 @@ pub const LexError = error{
     NoTokensFound,
 };
 
-// === PARSING USING OLD GRAMMAR === 
+// === PARSING USING OLD GRAMMAR ===
 
 pub const OldParsing = struct {
     const GrammarTerminal = enum {
@@ -139,11 +139,11 @@ pub const OldParsing = struct {
                     .RParen => true,
                     else => false,
                 },
-                .True => switch(other) {
+                .True => switch (other) {
                     .True => true,
                     else => false,
                 },
-                .False => switch(other) {
+                .False => switch (other) {
                     .False => true,
                     else => false,
                 },
@@ -180,9 +180,9 @@ pub const OldParsing = struct {
         Token.getTerminal,
         parseTreeToWffTree,
     );
-    
+
     const grammar = ret: {
-        const V = GrammarVariable.fromString; 
+        const V = GrammarVariable.fromString;
         break :ret Grammar.initFromTuples(
             .{
                 .{ V("S"), .{V("wff")} },
@@ -631,8 +631,7 @@ test "OldParsing.parseTreeToWffTree: (~T <=> (a ^ F))" {
     try std.testing.expectEqualStrings("(~T <=> (a ^ F))", wff_string);
 }
 
-
-// === PARSING USING NEW GRAMMAR === 
+// === PARSING USING NEW GRAMMAR ===
 
 pub const NewParsing = struct {
     const GrammarTerminal = enum {
@@ -703,7 +702,7 @@ pub const NewParsing = struct {
         end: void,
 
         pub fn deinit(self: Token, allocator: std.mem.Allocator) void {
-            switch(self) {
+            switch (self) {
                 .proposition => |prop| allocator.free(prop),
                 else => {},
             }
@@ -713,7 +712,7 @@ pub const NewParsing = struct {
             if (!@as(GrammarTerminal, self).eql(other)) {
                 return false;
             }
-            return switch(self) {
+            return switch (self) {
                 .proposition => |s| std.mem.eql(u8, s, other.proposition),
                 else => true,
             };
@@ -738,7 +737,7 @@ pub const NewParsing = struct {
                 .end => "$",
             };
         }
-    };  
+    };
 
     const ParseTree = parser.ParseTree(Token);
 
@@ -752,28 +751,28 @@ pub const NewParsing = struct {
     );
 
     const grammar = ret: {
-        const V = GrammarVariable.fromString; 
+        const V = GrammarVariable.fromString;
         break :ret Grammar.initFromTuples(
             .{
-                .{ V("S"), .{ V("wff1")} },
+                .{ V("S"), .{V("wff1")} },
 
-                .{ V("wff1"), .{ V("wff2")} },
+                .{ V("wff1"), .{V("wff2")} },
                 .{ V("wff1"), .{ V("wff1"), GrammarTerminal.bicond, V("wff2") } },
 
-                .{ V("wff2"), .{ V("wff3")} },
+                .{ V("wff2"), .{V("wff3")} },
                 .{ V("wff2"), .{ V("wff2"), GrammarTerminal.cond, V("wff3") } },
 
-                .{ V("wff3"), .{ V("wff4")} },
+                .{ V("wff3"), .{V("wff4")} },
                 .{ V("wff3"), .{ V("wff3"), GrammarTerminal.or_, V("wff4") } },
                 .{ V("wff3"), .{ V("wff3"), GrammarTerminal.and_, V("wff4") } },
 
-                .{ V("wff4"), .{ V("prop")} },
+                .{ V("wff4"), .{V("prop")} },
                 .{ V("wff4"), .{ GrammarTerminal.not, V("wff4") } },
 
                 .{ V("prop"), .{ GrammarTerminal.lparen, V("wff1"), GrammarTerminal.rparen } },
-                .{ V("prop"), .{ GrammarTerminal.proposition} },
-                .{ V("prop"), .{ GrammarTerminal.true} },
-                .{ V("prop"), .{ GrammarTerminal.false} },
+                .{ V("prop"), .{GrammarTerminal.proposition} },
+                .{ V("prop"), .{GrammarTerminal.true} },
+                .{ V("prop"), .{GrammarTerminal.false} },
             },
             V("S"),
             GrammarTerminal.end,
@@ -905,28 +904,26 @@ pub const NewParsing = struct {
 
         var it = parse_tree.iterPreOrder();
         while (it.next()) |node| {
-            switch(node.kind) {
+            switch (node.kind) {
                 .leaf => {},
                 .nonleaf => |children| {
                     if (children.len == 3) {
                         // Ignore parentheses: the order of operations for the
                         // wff is already captured in the structure of the tree.
-                        switch(children[1].kind) {
+                        switch (children[1].kind) {
                             .nonleaf => continue,
                             .leaf => {},
                         }
 
-                        // If we pass the previous switch, then this node is the 
-                        // parent of a binary operation. Create a wff tree node 
+                        // If we pass the previous switch, then this node is the
+                        // parent of a binary operation. Create a wff tree node
                         // for it.
                         var top = stack.pop();
-                        top.kind = .{  
-                            .binary_operator = .{
-                                .operator = tokenOperatorToWffBinaryOperator(children[1].kind.leaf),
-                                .arg1 = try wfflib.WffTree.Node.initKindUndefined(allocator, top),
-                                .arg2 = try wfflib.WffTree.Node.initKindUndefined(allocator, top),
-                            }
-                        };
+                        top.kind = .{ .binary_operator = .{
+                            .operator = tokenOperatorToWffBinaryOperator(children[1].kind.leaf),
+                            .arg1 = try wfflib.WffTree.Node.initKindUndefined(allocator, top),
+                            .arg2 = try wfflib.WffTree.Node.initKindUndefined(allocator, top),
+                        } };
                         // Append backwards so we get arg1 (left arg) first.
                         try stack.append(top.kind.binary_operator.arg2);
                         try stack.append(top.kind.binary_operator.arg1);
@@ -934,37 +931,35 @@ pub const NewParsing = struct {
                         // This node is the parent of a unary operation. Create
                         // a wff tree node for it.
                         var top = stack.pop();
-                        top.kind = .{
-                            .unary_operator = .{
-                                .operator = .not,
-                                .arg = try wfflib.WffTree.Node.initKindUndefined(allocator, top),
-                            }
-                        };
+                        top.kind = .{ .unary_operator = .{
+                            .operator = .not,
+                            .arg = try wfflib.WffTree.Node.initKindUndefined(allocator, top),
+                        } };
                         try stack.append(top.kind.unary_operator.arg);
                     } else if (children.len == 1) {
                         // Ignore nonterminal nodes
-                        switch(children[0].kind) {
+                        switch (children[0].kind) {
                             .nonleaf => continue,
                             .leaf => {},
                         }
 
                         // If we pass the previous switch, then this node is the
-                        // parent of a propositional variable or logical 
+                        // parent of a propositional variable or logical
                         // constant. Assign it to the top wff tree node.
                         var top = stack.pop();
-                        switch(children[0].kind.leaf) {
+                        switch (children[0].kind.leaf) {
                             .proposition => |s| top.kind = .{ .proposition_variable = try allocator.dupe(u8, s) },
                             .true => top.kind = .{ .logical_constant = .t },
                             .false => top.kind = .{ .logical_constant = .f },
-                            else => std.debug.panic("Invalid parse tree", .{})
+                            else => std.debug.panic("Invalid parse tree", .{}),
                         }
                     } else {
                         std.debug.panic("Invalid parse tree", .{});
                     }
-                }
+                },
             }
         }
-        return wfflib.WffTree {
+        return wfflib.WffTree{
             .allocator = allocator,
             .root = wff_tree_root,
         };
@@ -1100,7 +1095,7 @@ test "NewParsing.parseTreeToWffTree: ((a v b) ^ ~c)" {
 
     const parse_tree = try NewParsing.wff_parser.internal_parser.parse(allocator, "a v b ^ ~c");
     defer parse_tree.deinit();
-    
+
     const actual_tree = try NewParsing.parseTreeToWffTree(allocator, parse_tree);
     defer actual_tree.deinit();
 
@@ -1232,11 +1227,7 @@ test "NewParsing.parseTreeToWffTree: (~T <=> (a ^ F))" {
     try std.testing.expectEqualStrings("(~T <=> (a ^ F))", wff_string);
 }
 
-
 //#####################################
-
-
-
 
 fn WffParser(
     comptime Variable: type,
@@ -1244,7 +1235,7 @@ fn WffParser(
     comptime Token: type,
     comptime tokenize: fn (std.mem.Allocator, []const u8) anyerror!std.ArrayList(Token),
     comptime terminalFromToken: fn (Token) ?Terminal,
-    comptime parseTreeToWffTree: fn(std.mem.Allocator, parser.ParseTree(Token)) anyerror!wfflib.WffTree,
+    comptime parseTreeToWffTree: fn (std.mem.Allocator, parser.ParseTree(Token)) anyerror!wfflib.WffTree,
 ) type {
     return struct {
         const Self = @This();
@@ -1260,7 +1251,7 @@ fn WffParser(
             return Self{ .internal_parser = InternalParser.initComptime(grammar) };
         }
 
-        /// Does not free the memory associated with the grammar it was 
+        /// Does not free the memory associated with the grammar it was
         /// initialized with.
         pub fn deinit(self: Self) void {
             self.internal_parser.deinit();
@@ -1278,7 +1269,7 @@ fn WffParser(
                 .tree = wff_tree,
                 .string = try wff_tree.makeString(allocator),
             };
-        }        
+        }
     };
 }
 
