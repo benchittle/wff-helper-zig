@@ -414,10 +414,10 @@ pub const Proof = struct {
 
         pub fn getString(self: Method) []const u8 {
             return switch (self) {
-                .None => "None",
-                .Direct => "Direct",
-                .Indirect => "Indirect",
-                .Contradiction => "Contradiction",
+                .None => "none",
+                .Direct => "direct",
+                .Indirect => "indirect",
+                .Contradiction => "contradiction",
             };
         }
 
