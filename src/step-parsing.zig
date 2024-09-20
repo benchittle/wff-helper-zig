@@ -1,5 +1,5 @@
 const std = @import("std");
-const wfflib = @import("wff/wff.zig");
+const wfflib = @import("../wff/wff.zig");
 
 pub const StepParsingError = error{
     EmptyString,

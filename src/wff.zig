@@ -1,9 +1,5 @@
 const std = @import("std");
 
-const ParsingConfig = @import("../wff-parsing.zig").NewParsing;
-pub const WffParser = ParsingConfig.WffParser;
-pub const wff_parser = ParsingConfig.wff_parser;
-
 pub const WffError = error{
     SubOutOfBounds,
     BadSubstitution,
@@ -892,6 +888,8 @@ test "WffTree.InOrderIterator: ((a v b) ^ ~c)" {
 }
 
 test "WffTree.makeString: ((avb)^~   c)" {
+    const ParsingConfig = @import("wff-parsing.zig").NewParsing;
+    const wff_parser = ParsingConfig.wff_parser;
     const allocator = std.testing.allocator;
 
     const wff = try wff_parser.parse(allocator, "((avb)^~   c)");
@@ -901,7 +899,10 @@ test "WffTree.makeString: ((avb)^~   c)" {
 }
 
 test "WffTree.makeString: (a => (b => (a ^ b)))" {
+    const ParsingConfig = @import("wff-parsing.zig").NewParsing;
+    const wff_parser = ParsingConfig.wff_parser;
     const allocator = std.testing.allocator;
+
     const string = "(a => (b => (a ^ b)))";
 
     const wff = try wff_parser.parse(allocator, string);
@@ -911,7 +912,10 @@ test "WffTree.makeString: (a => (b => (a ^ b)))" {
 }
 
 test "WffTree.makeString: ~~((~~a => (b ^ (a v b))) <=> ~b)" {
+    const ParsingConfig = @import("wff-parsing.zig").NewParsing;
+    const wff_parser = ParsingConfig.wff_parser;
     const allocator = std.testing.allocator;
+
     const string = "~~((~~a => (b ^ (a v b))) <=> ~b)";
 
     const wff = try wff_parser.parse(allocator, string);
@@ -921,7 +925,10 @@ test "WffTree.makeString: ~~((~~a => (b ^ (a v b))) <=> ~b)" {
 }
 
 test "WffTree.makeString: b" {
+    const ParsingConfig = @import("wff-parsing.zig").NewParsing;
+    const wff_parser = ParsingConfig.wff_parser;
     const allocator = std.testing.allocator;
+
     const string = "b";
 
     const wff = try wff_parser.parse(allocator, string);
@@ -931,7 +938,10 @@ test "WffTree.makeString: b" {
 }
 
 test "WffTree.makeString: ~x" {
+    const ParsingConfig = @import("wff-parsing.zig").NewParsing;
+    const wff_parser = ParsingConfig.wff_parser;
     const allocator = std.testing.allocator;
+
     const string = "~x";
 
     const wff = try wff_parser.parse(allocator, string);
@@ -941,6 +951,8 @@ test "WffTree.makeString: ~x" {
 }
 
 test "WffTree.copy: (p v q), ((a ^ b) v (c ^ d)), and p" {
+    const ParsingConfig = @import("wff-parsing.zig").NewParsing;
+    const wff_parser = ParsingConfig.wff_parser;
     const allocator = std.testing.allocator;
 
     const wff1 = try wff_parser.parse(allocator, "(p v q)");
@@ -964,6 +976,8 @@ test "WffTree.copy: (p v q), ((a ^ b) v (c ^ d)), and p" {
 }
 
 test "WffTree.Node.match: (p v q) with pattern (p v q)" {
+    const ParsingConfig = @import("wff-parsing.zig").NewParsing;
+    const wff_parser = ParsingConfig.wff_parser;
     const allocator = std.testing.allocator;
 
     const wff = try wff_parser.parse(allocator, "(p v q)");
@@ -980,6 +994,8 @@ test "WffTree.Node.match: (p v q) with pattern (p v q)" {
 }
 
 test "WffTree.Node.match: ((a ^ b) v (c ^ d)) with pattern (p v q)" {
+    const ParsingConfig = @import("wff-parsing.zig").NewParsing;
+    const wff_parser = ParsingConfig.wff_parser;
     const allocator = std.testing.allocator;
 
     const wff = try wff_parser.parse(allocator, "((a ^ b) v (c ^ d))");
@@ -996,6 +1012,8 @@ test "WffTree.Node.match: ((a ^ b) v (c ^ d)) with pattern (p v q)" {
 }
 
 test "WffTree.Node.match: (p v p) with pattern (p v p)" {
+    const ParsingConfig = @import("wff-parsing.zig").NewParsing;
+    const wff_parser = ParsingConfig.wff_parser;
     const allocator = std.testing.allocator;
 
     const wff = try wff_parser.parse(allocator, "(p v p)");
@@ -1011,6 +1029,8 @@ test "WffTree.Node.match: (p v p) with pattern (p v p)" {
 }
 
 test "WffTree.Node.match: (p v q) with pattern (p v p)" {
+    const ParsingConfig = @import("wff-parsing.zig").NewParsing;
+    const wff_parser = ParsingConfig.wff_parser;
     const allocator = std.testing.allocator;
 
     const wff = try wff_parser.parse(allocator, "(p v q)");
@@ -1022,6 +1042,8 @@ test "WffTree.Node.match: (p v q) with pattern (p v p)" {
 }
 
 test "WffTree.Node.match: ((a ^ b) => (a ^ b)) with pattern (p => p)" {
+    const ParsingConfig = @import("wff-parsing.zig").NewParsing;
+    const wff_parser = ParsingConfig.wff_parser;
     const allocator = std.testing.allocator;
 
     const wff = try wff_parser.parse(allocator, "((a ^ b) => (a ^ b))");
@@ -1037,6 +1059,8 @@ test "WffTree.Node.match: ((a ^ b) => (a ^ b)) with pattern (p => p)" {
 }
 
 test "ParseTree.Node.match: ((a ^ b) => (a ^ a)) with pattern (p => p)" {
+    const ParsingConfig = @import("wff-parsing.zig").NewParsing;
+    const wff_parser = ParsingConfig.wff_parser;
     const allocator = std.testing.allocator;
 
     const wff = try wff_parser.parse(allocator, "((a ^ b) => (a ^ a))");
@@ -1048,6 +1072,8 @@ test "ParseTree.Node.match: ((a ^ b) => (a ^ a)) with pattern (p => p)" {
 }
 
 test "WffTree.Node.match: (x <=> x) with pattern (p <=> q)" {
+    const ParsingConfig = @import("wff-parsing.zig").NewParsing;
+    const wff_parser = ParsingConfig.wff_parser;
     const allocator = std.testing.allocator;
 
     const wff = try wff_parser.parse(allocator, "(x <=> x)");
@@ -1211,6 +1237,8 @@ pub const Wff = struct {
 };
 
 test "Wff.isTrue" {
+    const ParsingConfig = @import("wff-parsing.zig").NewParsing;
+    const wff_parser = ParsingConfig.wff_parser;
     const allocator = std.testing.allocator;
     
     var wff1 = try wff_parser.parse(allocator, "T");
@@ -1223,6 +1251,8 @@ test "Wff.isTrue" {
 }
 
 test "Wff.equals" {
+    const ParsingConfig = @import("wff-parsing.zig").NewParsing;
+    const wff_parser = ParsingConfig.wff_parser;
     const allocator = std.testing.allocator;
 
     var wff1 = try wff_parser.parse(allocator, "((a ^ b) => (c ^ d))");
@@ -1240,6 +1270,8 @@ test "Wff.equals" {
 }
 
 test "Wff.replace: ((a ^ b) v (c ^ d)) using (p v q) to (p => q)" {
+    const ParsingConfig = @import("wff-parsing.zig").NewParsing;
+    const wff_parser = ParsingConfig.wff_parser;
     const allocator = std.testing.allocator;
 
     var wff = try wff_parser.parse(allocator, "((a ^ b) v (c ^ d))");
@@ -1262,6 +1294,8 @@ test "Wff.replace: ((a ^ b) v (c ^ d)) using (p v q) to (p => q)" {
 }
 
 test "Wff.replace: ((a ^ b) v (c ^ d)) using (p v p) to (p => q)" {
+    const ParsingConfig = @import("wff-parsing.zig").NewParsing;
+    const wff_parser = ParsingConfig.wff_parser;
     const allocator = std.testing.allocator;
 
     var wff = try wff_parser.parse(allocator, "((a ^ b) v (c ^ d))");
@@ -1275,6 +1309,8 @@ test "Wff.replace: ((a ^ b) v (c ^ d)) using (p v p) to (p => q)" {
 }
 
 test "Wff.replace: ((a ^ b) v (c ^ d)) to ((a ^ b) v (d ^ c)) using (p ^ q) to (q ^ p)" {
+    const ParsingConfig = @import("wff-parsing.zig").NewParsing;
+    const wff_parser = ParsingConfig.wff_parser;
     const allocator = std.testing.allocator;
 
     var wff = try wff_parser.parse(allocator, "((a ^ b) v (c ^ d))");
@@ -1302,6 +1338,8 @@ test "Wff.replace: ((a ^ b) v (c ^ d)) to ((a ^ b) v (d ^ c)) using (p ^ q) to (
 }
 
 test "Wff.replace: (T ^ ~T) using (a ^ ~a) to F [E15]" {
+    const ParsingConfig = @import("wff-parsing.zig").NewParsing;
+    const wff_parser = ParsingConfig.wff_parser;
     const allocator = std.testing.allocator;
 
     var wff = try wff_parser.parse(allocator, "(T ^ ~T)");

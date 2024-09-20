@@ -2,9 +2,9 @@ const std = @import("std");
 const builtin = @import("builtin");
 const debug = std.debug;
 
-const wfflib = @import("verify/parser/wff/wff.zig");
-const prooflib = @import("verify/proof.zig");
-const step_parsing = @import("verify/parser/step-parsing.zig");
+const wfflib = @import("wff/wff.zig");
+const prooflib = @import("proof/proof.zig");
+const step_parsing = @import("proof/step-parsing.zig");
 
 const wff_parser = wfflib.wff_parser;
 

@@ -1,7 +1,6 @@
 const std = @import("std");
-const slr = @import("slr-table-generator.zig");
-const parser = @import("parser.zig");
-const wfflib = @import("wff/wff.zig");
+const slr = @import("slr-parser-generator/zig-slr.zig");
+const wfflib = @import("wff.zig");
 
 const wff_parsing = @This();
 
@@ -170,7 +169,7 @@ pub const OldParsing = struct {
         }
     };
 
-    const ParseTree = parser.ParseTree(Token);
+    const ParseTree = slr.ParseTree(Token);
 
     pub const WffParser = wff_parsing.WffParser(
         GrammarVariable,
@@ -739,7 +738,7 @@ pub const NewParsing = struct {
         }
     };
 
-    const ParseTree = parser.ParseTree(Token);
+    const ParseTree = slr.ParseTree(Token);
 
     pub const WffParser = wff_parsing.WffParser(
         GrammarVariable,
@@ -1235,11 +1234,11 @@ fn WffParser(
     comptime Token: type,
     comptime tokenize: fn (std.mem.Allocator, []const u8) anyerror!std.ArrayList(Token),
     comptime terminalFromToken: fn (Token) ?Terminal,
-    comptime parseTreeToWffTree: fn (std.mem.Allocator, parser.ParseTree(Token)) anyerror!wfflib.WffTree,
+    comptime parseTreeToWffTree: fn (std.mem.Allocator, slr.ParseTree(Token)) anyerror!wfflib.WffTree,
 ) type {
     return struct {
         const Self = @This();
-        const InternalParser = parser.Parser(Variable, Terminal, Token, tokenize, terminalFromToken);
+        const InternalParser = slr.Parser(Variable, Terminal, Token, tokenize, terminalFromToken);
 
         internal_parser: InternalParser,
 

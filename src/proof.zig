@@ -1,6 +1,9 @@
 const std = @import("std");
-const wfflib = @import("parser/wff/wff.zig");
 const debug = std.debug;
+
+const wfflib = @import("wff.zig");
+const ParsingConfig = @import("wff-parsing.zig").NewParsing;
+const WffParser = ParsingConfig.WffParser;
 
 const ProofError = error{
     ProofMethodError,
@@ -72,18 +75,19 @@ pub const EquivalenceRule = struct {
 // }
 
 test "EquivalenceRule.canTransform: (~p v q) to (p => q) using (~a v b) = (a => b)" {
+    const wff_parser = ParsingConfig.wff_parser;
     const allocator = std.testing.allocator;
 
-    var from = try wfflib.wff_parser.parse(allocator, "(~p v q)");
+    var from = try wff_parser.parse(allocator, "(~p v q)");
     defer from.deinit();
-    var to = try wfflib.wff_parser.parse(allocator, "(p => q)");
+    var to = try wff_parser.parse(allocator, "(p => q)");
     defer to.deinit();
-    var wrong = try wfflib.wff_parser.parse(allocator, "(~q v p)");
+    var wrong = try wff_parser.parse(allocator, "(~q v p)");
     defer wrong.deinit();
 
     var rule = EquivalenceRule{
-        .lhs = try wfflib.wff_parser.parse(allocator, "(~a v b)"),
-        .rhs = try wfflib.wff_parser.parse(allocator, "(a => b)"),
+        .lhs = try wff_parser.parse(allocator, "(~a v b)"),
+        .rhs = try wff_parser.parse(allocator, "(a => b)"),
         .num = undefined,
     };
     defer rule.deinit();
@@ -94,16 +98,17 @@ test "EquivalenceRule.canTransform: (~p v q) to (p => q) using (~a v b) = (a => 
 }
 
 test "EquivalenceRule.canTransform: ((w v x) ^ (y => z)) to ((w v x) ^ (~y v z)) using (~a v b) = (a => b)" {
+    const wff_parser = ParsingConfig.wff_parser;
     const allocator = std.testing.allocator;
 
-    var from = try wfflib.wff_parser.parse(allocator, "((w v x) ^ (y => z))");
+    var from = try wff_parser.parse(allocator, "((w v x) ^ (y => z))");
     defer from.deinit();
-    var to = try wfflib.wff_parser.parse(allocator, "((w v x) ^ (~y v z))");
+    var to = try wff_parser.parse(allocator, "((w v x) ^ (~y v z))");
     defer to.deinit();
 
     var rule = EquivalenceRule{
-        .lhs = try wfflib.wff_parser.parse(allocator, "(~a v b)"),
-        .rhs = try wfflib.wff_parser.parse(allocator, "(a => b)"),
+        .lhs = try wff_parser.parse(allocator, "(~a v b)"),
+        .rhs = try wff_parser.parse(allocator, "(a => b)"),
         .num = undefined,
     };
     defer rule.deinit();
@@ -112,16 +117,17 @@ test "EquivalenceRule.canTransform: ((w v x) ^ (y => z)) to ((w v x) ^ (~y v z))
 }
 
 test "EquivalenceRule.canTransform: ((w v x) ^ (y => z)) to ((y => z) ^ (w v x)) using (a ^ b) = (b ^ a)" {
+    const wff_parser = ParsingConfig.wff_parser;
     const allocator = std.testing.allocator;
 
-    var from = try wfflib.wff_parser.parse(allocator, "((w v x) ^ (y => z))");
+    var from = try wff_parser.parse(allocator, "((w v x) ^ (y => z))");
     defer from.deinit();
-    var to = try wfflib.wff_parser.parse(allocator, "((y => z) ^ (w v x))");
+    var to = try wff_parser.parse(allocator, "((y => z) ^ (w v x))");
     defer to.deinit();
 
     var rule = EquivalenceRule{
-        .lhs = try wfflib.wff_parser.parse(allocator, "(a ^ b)"),
-        .rhs = try wfflib.wff_parser.parse(allocator, "(b ^ a)"),
+        .lhs = try wff_parser.parse(allocator, "(a ^ b)"),
+        .rhs = try wff_parser.parse(allocator, "(b ^ a)"),
         .num = undefined,
     };
     defer rule.deinit();
@@ -130,13 +136,15 @@ test "EquivalenceRule.canTransform: ((w v x) ^ (y => z)) to ((y => z) ^ (w v x))
 }
 
 test "EquivalenceRule.canTransform: ((y <=> z) ^ (w v x)) to (((y <=> z) ^ w) v ((y <=> z) ^ x)) using (a ^ (b v c)) = ((a ^ b) v (a ^ c))" {
+    const wff_parser = ParsingConfig.wff_parser;
     const allocator = std.testing.allocator;
-    var from = try wfflib.wff_parser.parse(allocator, "((y <=> z) ^ (w v x))");
+
+    var from = try wff_parser.parse(allocator, "((y <=> z) ^ (w v x))");
     defer from.deinit();
-    var to = try wfflib.wff_parser.parse(allocator, "(((y <=> z) ^ w) v ((y <=> z) ^ x))");
+    var to = try wff_parser.parse(allocator, "(((y <=> z) ^ w) v ((y <=> z) ^ x))");
     defer to.deinit();
 
-    const rules = initEquivalenceRules(allocator, wfflib.wff_parser);
+    const rules = initEquivalenceRules(allocator, wff_parser);
     defer for (rules) |r| r.deinit();
     const e13 = rules[12];
 
@@ -145,13 +153,15 @@ test "EquivalenceRule.canTransform: ((y <=> z) ^ (w v x)) to (((y <=> z) ^ w) v 
 }
 
 test "!EquivalenceRule.canTransform: (T ^ ~T) to F using ~~a  = a" {
+    const wff_parser = ParsingConfig.wff_parser;
     const allocator = std.testing.allocator;
-    var from = try wfflib.wff_parser.parse(allocator, "(T ^ ~T)");
+
+    var from = try wff_parser.parse(allocator, "(T ^ ~T)");
     defer from.deinit();
-    var to = try wfflib.wff_parser.parse(allocator, "F");
+    var to = try wff_parser.parse(allocator, "F");
     defer to.deinit();
 
-    const rules = initEquivalenceRules(allocator, wfflib.wff_parser);
+    const rules = initEquivalenceRules(allocator, wff_parser);
     defer for (rules) |r| r.deinit();
     const e15 = rules[14];
 
@@ -159,13 +169,13 @@ test "!EquivalenceRule.canTransform: (T ^ ~T) to F using ~~a  = a" {
     try std.testing.expect(!try e15.canTransform(allocator, to, from));
 }
 
-pub fn initEquivalenceRules(allocator: std.mem.Allocator, wff_parser: wfflib.WffParser) [22]EquivalenceRule {
+pub fn initEquivalenceRules(allocator: std.mem.Allocator, wff_parser: WffParser) [22]EquivalenceRule {
     // Helper struct
     const Maker = struct {
         const Self = @This();
 
         allocator: std.mem.Allocator,
-        wff_parser: wfflib.WffParser,
+        wff_parser: WffParser,
         count: usize = 0,
 
         fn makeRule(self: *Self, comptime lhs: []const u8, comptime rhs: []const u8) EquivalenceRule {
@@ -274,17 +284,18 @@ pub const InferenceRule = struct {
 };
 
 test "InferenceRule.canTransform: p to (p v q) using I1" {
+    const wff_parser = ParsingConfig.wff_parser;
     const allocator = std.testing.allocator;
 
-    var cond1 = try wfflib.wff_parser.parse(allocator, "p");
+    var cond1 = try wff_parser.parse(allocator, "p");
     defer cond1.deinit();
     var conds = [_]wfflib.Wff{cond1};
-    var result = try wfflib.wff_parser.parse(allocator, "(p v q)");
+    var result = try wff_parser.parse(allocator, "(p v q)");
     defer result.deinit();
-    var wrong = try wfflib.wff_parser.parse(allocator, "(q v p)");
+    var wrong = try wff_parser.parse(allocator, "(q v p)");
     defer wrong.deinit();
 
-    const rules = initInferenceRules(allocator, wfflib.wff_parser);
+    const rules = initInferenceRules(allocator, wff_parser);
     defer {
         for (rules) |r| {
             r.deinit();
@@ -297,15 +308,16 @@ test "InferenceRule.canTransform: p to (p v q) using I1" {
 }
 
 test "InferenceRule.canTransform: p to (p v (p => q)) using I1" {
+    const wff_parser = ParsingConfig.wff_parser;
     const allocator = std.testing.allocator;
 
-    var cond1 = try wfflib.wff_parser.parse(allocator, "p");
+    var cond1 = try wff_parser.parse(allocator, "p");
     defer cond1.deinit();
     var conds = [_]wfflib.Wff{cond1};
-    var result = try wfflib.wff_parser.parse(allocator, "(p v (p => q))");
+    var result = try wff_parser.parse(allocator, "(p v (p => q))");
     defer result.deinit();
 
-    const rules = initInferenceRules(allocator, wfflib.wff_parser);
+    const rules = initInferenceRules(allocator, wff_parser);
     defer for (rules) |r| r.deinit();
     const infer1 = rules[0];
 
@@ -313,15 +325,16 @@ test "InferenceRule.canTransform: p to (p v (p => q)) using I1" {
 }
 
 test "InferenceRule.canTransform: (a ^ b) to ((a ^ b) v ~(a ^ b)) using I1" {
+    const wff_parser = ParsingConfig.wff_parser;
     const allocator = std.testing.allocator;
 
-    var cond1 = try wfflib.wff_parser.parse(allocator, "(a ^ b)");
+    var cond1 = try wff_parser.parse(allocator, "(a ^ b)");
     defer cond1.deinit();
     var conds = [_]wfflib.Wff{cond1};
-    var result = try wfflib.wff_parser.parse(allocator, "((a ^ b) v ~(a ^ b))");
+    var result = try wff_parser.parse(allocator, "((a ^ b) v ~(a ^ b))");
     defer result.deinit();
 
-    const rules = initInferenceRules(allocator, wfflib.wff_parser);
+    const rules = initInferenceRules(allocator, wff_parser);
     defer for (rules) |r| r.deinit();
     const infer1 = rules[0];
 
@@ -329,29 +342,31 @@ test "InferenceRule.canTransform: (a ^ b) to ((a ^ b) v ~(a ^ b)) using I1" {
 }
 
 test "InferenceRule.canTransform: (a ^ b), ((a ^ b) => ~x) to ~x using I3" {
+    const wff_parser = ParsingConfig.wff_parser;
     const allocator = std.testing.allocator;
-    var cond1 = try wfflib.wff_parser.parse(allocator, "(a ^ b)");
+
+    var cond1 = try wff_parser.parse(allocator, "(a ^ b)");
     defer cond1.deinit();
-    var cond2 = try wfflib.wff_parser.parse(allocator, "((a ^ b) => ~x)");
+    var cond2 = try wff_parser.parse(allocator, "((a ^ b) => ~x)");
     defer cond2.deinit();
     var conds = [_]wfflib.Wff{ cond1, cond2 };
-    var result = try wfflib.wff_parser.parse(allocator, "~x");
+    var result = try wff_parser.parse(allocator, "~x");
     defer result.deinit();
 
-    const rules = initInferenceRules(allocator, wfflib.wff_parser);
+    const rules = initInferenceRules(allocator, wff_parser);
     defer for (rules) |r| r.deinit();
     const infer3 = rules[2];
 
     try std.testing.expect(try infer3.canTransform(allocator, &conds, result));
 }
 
-pub fn initInferenceRules(allocator: std.mem.Allocator, wff_parser: wfflib.WffParser) [6]InferenceRule {
+pub fn initInferenceRules(allocator: std.mem.Allocator, wff_parser: WffParser) [6]InferenceRule {
     // Helper struct
     const Maker = struct {
         const Self = @This();
 
         allocator: std.mem.Allocator,
-        wff_parser: wfflib.WffParser,
+        wff_parser: WffParser,
         count: usize = 0,
 
         fn makeRule(self: *Self, comptime cond1: []const u8, comptime cond2: []const u8, comptime result: []const u8) InferenceRule {
@@ -539,7 +554,7 @@ pub const Proof = struct {
     goal: wfflib.Wff,
     steps: std.ArrayList(Step),
 
-    pub fn init(allocator: std.mem.Allocator, wff_parser: wfflib.WffParser, wff: *wfflib.Wff, method: Method, assumption_wff_strings: ?[][]const u8, equivalence_rules: []const EquivalenceRule, inference_rules: []const InferenceRule) !Self {
+    pub fn init(allocator: std.mem.Allocator, wff_parser: WffParser, wff: *wfflib.Wff, method: Method, assumption_wff_strings: ?[][]const u8, equivalence_rules: []const EquivalenceRule, inference_rules: []const InferenceRule) !Self {
         var assumptions = std.ArrayList(wfflib.Wff).init(allocator);
         errdefer {
             for (assumptions.items) |*a| {
@@ -702,20 +717,21 @@ pub const Proof = struct {
 };
 
 test "Proof of (a => (b => a))" {
+    const wff_parser = ParsingConfig.wff_parser;
     const ProofType = Proof;
     const allocator = std.testing.allocator;
 
-    var equivalence_rules = initEquivalenceRules(allocator, wfflib.wff_parser);
+    var equivalence_rules = initEquivalenceRules(allocator, wff_parser);
     defer for (equivalence_rules) |e| e.deinit();
-    var inference_rules = initInferenceRules(allocator, wfflib.wff_parser);
+    var inference_rules = initInferenceRules(allocator, wff_parser);
     defer for (inference_rules) |i| i.deinit();
 
-    var wff = try wfflib.wff_parser.parse(allocator, "(a => (b => a))");
+    var wff = try wff_parser.parse(allocator, "(a => (b => a))");
     defer wff.deinit();
 
     var proof = try ProofType.init(
         allocator,
-        wfflib.wff_parser,
+        wff_parser,
         &wff,
         ProofType.Method.Direct,
         null,
@@ -725,22 +741,22 @@ test "Proof of (a => (b => a))" {
     defer proof.deinit(false);
 
     try std.testing.expect(proof.assumptions.items.len == 1);
-    var a1 = try wfflib.wff_parser.parse(allocator, "a");
+    var a1 = try wff_parser.parse(allocator, "a");
     defer a1.deinit();
     try std.testing.expect(a1.eql(proof.assumptions.items[0]));
 
-    var goal = try wfflib.wff_parser.parse(allocator, "(b => a)");
+    var goal = try wff_parser.parse(allocator, "(b => a)");
     defer goal.deinit();
     try std.testing.expect(goal.eql(proof.goal));
 
-    var step1 = ProofType.Step{ .wff = try wfflib.wff_parser.parse(allocator, "a"), .how = ProofType.Justification{
+    var step1 = ProofType.Step{ .wff = try wff_parser.parse(allocator, "a"), .how = ProofType.Justification{
         .Assumption = proof.assumptions.items,
     } };
     try proof.steps.append(step1);
     try std.testing.expect(try step1.isValid(allocator));
     try std.testing.expect(!try proof.isComplete(allocator));
 
-    var step2 = ProofType.Step{ .wff = try wfflib.wff_parser.parse(allocator, "(a v ~b)"), .how = ProofType.Justification{ .Inference = .{ .rule = inference_rules[0], .from = .{
+    var step2 = ProofType.Step{ .wff = try wff_parser.parse(allocator, "(a v ~b)"), .how = ProofType.Justification{ .Inference = .{ .rule = inference_rules[0], .from = .{
         .one = [1]*Proof.Step{&proof.steps.items[proof.steps.items.len - 1]},
     } } } };
     try proof.steps.append(step2);
@@ -748,7 +764,7 @@ test "Proof of (a => (b => a))" {
     try std.testing.expect(!try proof.isComplete(allocator));
 
     var step3 = ProofType.Step{
-        .wff = try wfflib.wff_parser.parse(allocator, "(~b v a)"),
+        .wff = try wff_parser.parse(allocator, "(~b v a)"),
         .how = ProofType.Justification{
             .Equivalence = .{
                 .rule = equivalence_rules[9], // E10
@@ -760,7 +776,7 @@ test "Proof of (a => (b => a))" {
     try std.testing.expect(try step3.isValid(allocator));
     try std.testing.expect(!try proof.isComplete(allocator));
 
-    var step4 = ProofType.Step{ .wff = try wfflib.wff_parser.parse(allocator, "(b => a)"), .how = ProofType.Justification{ .Equivalence = .{
+    var step4 = ProofType.Step{ .wff = try wff_parser.parse(allocator, "(b => a)"), .how = ProofType.Justification{ .Equivalence = .{
         .rule = equivalence_rules[17],
         .from = &proof.steps.items[proof.steps.items.len - 1],
     } } };
@@ -771,7 +787,9 @@ test "Proof of (a => (b => a))" {
 }
 
 test "equivalence rules" {
+    const wff_parser = ParsingConfig.wff_parser;
     const allocator = std.testing.allocator;
-    const equivalence_rules = initEquivalenceRules(allocator, wfflib.wff_parser);
+
+    const equivalence_rules = initEquivalenceRules(allocator, wff_parser);
     defer for (equivalence_rules) |rule| rule.deinit();
 }
