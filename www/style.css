@@ -201,10 +201,13 @@ body {
 }
 
 #steps-container {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
     flex: auto;
     min-height: 100px;
-    overflow-y: auto;   
-    overflow-x: auto;
+    /* overflow-y: auto;   
+    overflow-x: auto; */
     padding: 8px;
     /* width: 100%; */
 }
@@ -233,6 +236,10 @@ body {
 .proof-button:disabled {
     background-color: var(--proof-button-background-colour-disabled);
     color: var(--font-colour-disabled);
+}
+
+#steps-table-container {
+    overflow: auto;
 }
 
 #steps-table {

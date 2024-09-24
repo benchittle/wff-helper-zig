@@ -171,12 +171,14 @@ pub const OldParsing = struct {
 
     const ParseTree = slr.ParseTree(Token);
 
-    pub const WffParser = wff_parsing.WffParser(
+    pub const WffBuilder = wff_parsing.WffBuilder(
         GrammarVariable,
         GrammarTerminal,
         Token,
+        @typeInfo(@typeInfo(@TypeOf(tokenize)).Fn.return_type.?).ErrorUnion.error_set,
         tokenize,
         Token.getTerminal,
+        @typeInfo(@typeInfo(@TypeOf(parseTreeToWffTree)).Fn.return_type.?).ErrorUnion.error_set,
         parseTreeToWffTree,
     );
 
@@ -197,7 +199,7 @@ pub const OldParsing = struct {
         );
     };
 
-    pub const wff_parser = @This().WffParser.initComptime(grammar);
+    pub const wff_parser = @This().WffBuilder.initComptime(grammar);
 
     // Tokenize a string containing a WFF. Returns an ArrayList of Tokens if a valid
     // string is passed, else a LexError. Caller must free the returned ArrayList.
@@ -740,12 +742,14 @@ pub const NewParsing = struct {
 
     const ParseTree = slr.ParseTree(Token);
 
-    pub const WffParser = wff_parsing.WffParser(
+    pub const WffBuilder = wff_parsing.WffBuilder(
         GrammarVariable,
         GrammarTerminal,
         Token,
+        @typeInfo(@typeInfo(@TypeOf(tokenize)).Fn.return_type.?).ErrorUnion.error_set,
         tokenize,
         Token.getTerminal,
+        @typeInfo(@typeInfo(@TypeOf(parseTreeToWffTree)).Fn.return_type.?).ErrorUnion.error_set,
         parseTreeToWffTree,
     );
 
@@ -778,7 +782,7 @@ pub const NewParsing = struct {
         );
     };
 
-    pub const wff_parser = @This().WffParser.initComptime(grammar);
+    pub const wff_builder = @This().WffBuilder.initComptime(grammar);
 
     // Tokenize a string containing a WFF. Returns an ArrayList of Tokens if a valid
     // string is passed, else a LexError. Caller must free the returned ArrayList.
@@ -1092,7 +1096,7 @@ test "NewParsing.parseTreeToWffTree: ((a v b) ^ ~c)" {
         .arg2 = &right_branch,
     } };
 
-    const parse_tree = try NewParsing.wff_parser.internal_parser.parse(allocator, "a v b ^ ~c");
+    const parse_tree = try NewParsing.wff_builder.internal_parser.parse(allocator, "a v b ^ ~c");
     defer parse_tree.deinit();
 
     const actual_tree = try NewParsing.parseTreeToWffTree(allocator, parse_tree);
@@ -1120,7 +1124,7 @@ test "NewParsing.parseTreeToWffTree: a" {
 
     const root = wfflib.WffTree.Node{ .parent = null, .kind = .{ .proposition_variable = "a" } };
 
-    const parse_tree = try NewParsing.wff_parser.internal_parser.parse(allocator, "a");
+    const parse_tree = try NewParsing.wff_builder.internal_parser.parse(allocator, "a");
     defer parse_tree.deinit();
     const actual_tree = try NewParsing.parseTreeToWffTree(allocator, parse_tree);
     defer actual_tree.deinit();
@@ -1139,7 +1143,7 @@ test "NewParsing.parseTreeToWffTree: T" {
         .logical_constant = .t,
     } };
 
-    const parse_tree = try NewParsing.wff_parser.internal_parser.parse(allocator, "T");
+    const parse_tree = try NewParsing.wff_builder.internal_parser.parse(allocator, "T");
     defer parse_tree.deinit();
     const actual_tree = try NewParsing.parseTreeToWffTree(allocator, parse_tree);
     defer actual_tree.deinit();
@@ -1203,7 +1207,7 @@ test "NewParsing.parseTreeToWffTree: (~T <=> (a ^ F))" {
         .arg2 = &right_branch,
     } };
 
-    const parse_tree = try NewParsing.wff_parser.internal_parser.parse(allocator, "(~T <=> (a ^ F))");
+    const parse_tree = try NewParsing.wff_builder.internal_parser.parse(allocator, "(~T <=> (a ^ F))");
     defer parse_tree.deinit();
     const actual_tree = try NewParsing.parseTreeToWffTree(allocator, parse_tree);
     defer actual_tree.deinit();
@@ -1228,17 +1232,19 @@ test "NewParsing.parseTreeToWffTree: (~T <=> (a ^ F))" {
 
 //#####################################
 
-fn WffParser(
+fn WffBuilder(
     comptime Variable: type,
     comptime Terminal: type,
     comptime Token: type,
-    comptime tokenize: fn (std.mem.Allocator, []const u8) anyerror!std.ArrayList(Token),
+    comptime TokenizeErrorSet: type,
+    comptime tokenize: fn (std.mem.Allocator, []const u8) TokenizeErrorSet!std.ArrayList(Token),
     comptime terminalFromToken: fn (Token) ?Terminal,
-    comptime parseTreeToWffTree: fn (std.mem.Allocator, slr.ParseTree(Token)) anyerror!wfflib.WffTree,
+    comptime parseTreeToWffTreeErrorSet: type,
+    comptime parseTreeToWffTree: fn (std.mem.Allocator, slr.ParseTree(Token)) parseTreeToWffTreeErrorSet!wfflib.WffTree,
 ) type {
     return struct {
         const Self = @This();
-        const InternalParser = slr.Parser(Variable, Terminal, Token, tokenize, terminalFromToken);
+        const InternalParser = slr.Parser(Variable, Terminal, Token, TokenizeErrorSet, tokenize, terminalFromToken);
 
         internal_parser: InternalParser,
 
@@ -1256,7 +1262,7 @@ fn WffParser(
             self.internal_parser.deinit();
         }
 
-        pub fn parse(self: Self, allocator: std.mem.Allocator, wff_string: []const u8) !wfflib.Wff {
+        pub fn buildWff(self: Self, allocator: std.mem.Allocator, wff_string: []const u8) !wfflib.Wff {
             const parse_tree = try self.internal_parser.parse(allocator, wff_string);
             defer parse_tree.deinit();
 
@@ -1282,7 +1288,7 @@ test "WffParser.parse: ((a v b) ^ ~c)" {
 
     const wff_parser = OldParsing.wff_parser;
     defer wff_parser.deinit();
-    const actual_wff = try wff_parser.parse(allocator, "((a v b) ^ ~c)");
+    const actual_wff = try wff_parser.buildWff(allocator, "((a v b) ^ ~c)");
     defer actual_wff.deinit();
 
     var expected_it = expected_tree.iterPreOrder();

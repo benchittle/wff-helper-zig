@@ -2,11 +2,11 @@ const std = @import("std");
 const builtin = @import("builtin");
 const debug = std.debug;
 
-const wfflib = @import("wff/wff.zig");
-const prooflib = @import("proof/proof.zig");
-const step_parsing = @import("proof/step-parsing.zig");
-
-const wff_parser = wfflib.wff_parser;
+const wfflib = @import("wff.zig");
+const ParsingConfig = @import("wff-parsing.zig").NewParsing;
+const rules = @import("rules.zig");
+const prooflib = @import("proof.zig");
+const step_processing = @import("step-processing.zig");
 
 var gpa = std.heap.GeneralPurposeAllocator(.{}){};
 const api_allocator = ret: {
@@ -19,20 +19,21 @@ const api_allocator = ret: {
     }
 };
 
-var equivalence_rules: []const prooflib.EquivalenceRule = undefined;
-var inference_rules: []const prooflib.InferenceRule = undefined;
+var wff_builder: ParsingConfig.WffBuilder = undefined;
+var equivalence_rules: []const rules.EquivalenceRule = undefined;
+var inference_rules: []const rules.InferenceRule = undefined;
 
 fn copyAllocOrNull(comptime T: type, allocator: std.mem.Allocator, object: T) ?*T {
     const copy = allocator.dupe(T, &[_]T{object}) catch return null;
     return &copy[0];
 }
 
-
 // Utility functions //
 
 export fn init() bool {
-    equivalence_rules = api_allocator.dupe(prooflib.EquivalenceRule, &prooflib.initEquivalenceRules(api_allocator, wfflib.wff_parser)) catch return false; //([22]prooflib.EquivalenceRule, api_allocator, prooflib.initEquivalenceRules(api_allocator, wfflib.wff_parser));
-    inference_rules = api_allocator.dupe(prooflib.InferenceRule, &prooflib.initInferenceRules(api_allocator, wfflib.wff_parser)) catch return false;
+    wff_builder = ParsingConfig.wff_builder;
+    equivalence_rules = api_allocator.dupe(rules.EquivalenceRule, &rules.initEquivalenceRules(api_allocator, wff_builder)) catch return false; //([22]prooflib.EquivalenceRule, api_allocator, prooflib.initEquivalenceRules(api_allocator, wfflib.wff_parser));
+    inference_rules = api_allocator.dupe(rules.InferenceRule, &rules.initInferenceRules(api_allocator, wff_builder)) catch return false;
 
     return true;
 }
@@ -84,17 +85,16 @@ export fn getByte(ptr: [*]u8) u8 {
     return ptr[0];
 }
 
-
 // Misc //
 
 export fn getAvailableProofMethodsJson(wff: *wfflib.Wff) ?*[]const u8 {
-    const implication_form = wff_parser.parse(api_allocator, "(p => q)") catch return null;
+    const implication_form = wff_builder.buildWff(api_allocator, "(p => q)") catch return null;
     defer implication_form.deinit();
-    const proof_methods: []const prooflib.Proof.Method = if (wff.match(api_allocator, implication_form) catch return null) |match| ret: {
+    const proof_methods: []const prooflib.Proof.MethodType = if (wff.match(api_allocator, implication_form) catch return null) |match| ret: {
         match.deinit();
-        break :ret &[_]prooflib.Proof.Method{ prooflib.Proof.Method.None, prooflib.Proof.Method.Direct, prooflib.Proof.Method.Indirect, prooflib.Proof.Method.Contradiction };
+        break :ret &[_]prooflib.Proof.MethodType{ prooflib.Proof.MethodType.none, prooflib.Proof.MethodType.direct, prooflib.Proof.MethodType.indirect, prooflib.Proof.MethodType.contradiction };
     } else ret: {
-        break :ret &[_]prooflib.Proof.Method{ prooflib.Proof.Method.None, prooflib.Proof.Method.Contradiction };
+        break :ret &[_]prooflib.Proof.MethodType{ prooflib.Proof.MethodType.none, prooflib.Proof.MethodType.contradiction };
     };
 
     var method_names = api_allocator.alloc([]const u8, proof_methods.len) catch return null;
@@ -106,86 +106,23 @@ export fn getAvailableProofMethodsJson(wff: *wfflib.Wff) ?*[]const u8 {
     return copyAllocOrNull([]u8, api_allocator, json);
 }
 
-fn proofJustification(parsedStep: step_parsing.ParsedStep, proof: *prooflib.Proof) prooflib.Proof.Justification {
-    const justification = switch (parsedStep.Justification.?) {
-        .Equivalence => |rule_num| ret: {
-            if (rule_num < 1 or rule_num > proof.equivalence_rules.len) {
-                return step_parsing.StepParsingError.InvalidEquivalenceRule;
-            }
+export fn buildStep(step_string: *const []const u8) ?*prooflib.Proof.Step {
+    const step = step_processing.buildStep(api_allocator, wff_builder, step_string.*) catch return null;
 
-            // check if stepNumber is within range
-            if (parsedStep.FirstArgument < 1 or parsedStep.FirstArgument > proof.steps.items.len) {
-                return step_parsing.StepParsingError.InvalidStepNumber;
-            }
+    // const proofStep = prooflib.Proof.Step{
+    //     .wff = step.wff,
+    //     .justification = try proofJustification(step, proof),
+    // };
 
-            // get reference to the step being cited
-            const step = &proof.steps.items[parsedStep.FirstArgument - 1];
-
-            break :ret prooflib.Proof.Justification{ .Equivalence = .{
-                .rule = proof.equivalence_rules[rule_num - 1],
-                .from = step,
-            } };
-        },
-        .Inference => |rule_num| ret: {
-            if (rule_num < 1 or rule_num > proof.inference_rules.len) {
-                return step_parsing.StepParsingError.InvalidInferenceRule;
-            }
-
-            var fromSteps: prooflib.Proof.Justification.InferenceSource = undefined;
-
-            // check if stepNumber is within range
-            if (parsedStep.FirstArgument < 1 or parsedStep.FirstArgument > proof.steps.items.len) {
-                return step_parsing.StepParsingError.InvalidStepNumber;
-            }
-
-            // get reference to the first step being cited
-            const step1 = &proof.steps.items[parsedStep.FirstArgument - 1];
-
-            fromSteps = .{
-                .one = [1]*prooflib.Proof.Step{step1},
-            };
-            if (parsedStep.SecondArgument != null) {
-                // check if stepNumber is within range
-                if (parsedStep.SecondArgument < 1 or parsedStep.SecondArgument > proof.steps.items.len) {
-                    return step_parsing.StepParsingError.InvalidStepNumber;
-                }
-
-                // get reference to the first step being cited
-                const step2 = &proof.steps.items[parsedStep.FirstArgument - 1];
-
-                fromSteps = .{
-                    .two = [2]*prooflib.Proof.Step{ step1, step2 },
-                };
-            }
-
-            break :ret prooflib.Proof.Justification{ .Inference = .{
-                .rule = proof.inference_rules[rule_num - 1],
-                .from = fromSteps,
-            } };
-        },
-        .Assumption => ret: {
-            break :ret prooflib.Proof.Justification{ .Assumption = proof.assumptions.items };
-        },
-    };
-
-    return justification;
-}
-
-export fn parseStep(step_string: *const []const u8, proof: *prooflib.Proof) ?*prooflib.Proof.Step {
-    const step = step_parsing.parseStep(api_allocator, wff_parser, step_string.*) catch return null;
-
-    const proofStep = prooflib.Proof.Step{ .wff = step.Wff, .how = proofJustification(step, proof) };
-
-    return copyAllocOrNull(prooflib.Proof.Step, api_allocator, proofStep);
+    return copyAllocOrNull(prooflib.Proof.Step, api_allocator, step);
 }
 
 // export fn proofMethodGetString()
 
-
 // Wff Interface //
 
 export fn wffParse(wff_string: *const []const u8) ?*wfflib.Wff {
-    const wff = wff_parser.parse(api_allocator, wff_string.*) catch return null;
+    const wff = wff_builder.buildWff(api_allocator, wff_string.*) catch return null;
     return copyAllocOrNull(wfflib.Wff, api_allocator, wff);
 }
 
@@ -202,12 +139,11 @@ export fn wffGetString(wff: *wfflib.Wff) ?*[]const u8 {
     return &wff.string;
 }
 
-
 // Proof Interface //
 
 export fn proofInit(wff: *wfflib.Wff, method_string: *const []const u8) ?*prooflib.Proof {
-    const proof_method = prooflib.Proof.Method.fromString(method_string.*) orelse return null;
-    const proof = prooflib.Proof.init(api_allocator, wff_parser, wff, proof_method, null, equivalence_rules, inference_rules) catch return null;
+    const proof_method = prooflib.Proof.MethodType.fromString(method_string.*) orelse return null;
+    const proof = prooflib.Proof.init(api_allocator, wff_builder, wff, proof_method, null, equivalence_rules, inference_rules) catch return null;
 
     return copyAllocOrNull(prooflib.Proof, api_allocator, proof);
 }
@@ -222,8 +158,8 @@ export fn proofAddAssumption(proof: *prooflib.Proof, wff: *wfflib.Wff) i32 {
     return 1;
 }
 
-export fn proofAddStep(proof: *prooflib.Proof, step: *prooflib.Proof.Step) i32 {
-    proof.appendStep(step.*) catch return -1;
+export fn proofAppendStepUnchecked(proof: *prooflib.Proof, step: *prooflib.Proof.Step) i32 {
+    proof.appendStepUnchecked(step.*) catch return -1;
     return 1;
 }
 
@@ -236,7 +172,7 @@ export fn proofRemoveLastStep(proof: *prooflib.Proof) i32 {
 }
 
 export fn proofToString(proof: *prooflib.Proof) ?*[]const u8 {
-    const string = proof.toString(api_allocator) catch return null;
+    const string = proof.buildString(api_allocator) catch return null;
     return copyAllocOrNull([]const u8, api_allocator, string);
 }
 
@@ -248,11 +184,15 @@ export fn proofGetProvingWff(proof: *prooflib.Proof) *wfflib.Wff {
     return proof.proving_wff;
 }
 
+export fn proofCheckNewStep(proof: *prooflib.Proof, step: *prooflib.Proof.Step) i32 {
+    const is_valid = proof.checkNewStep(api_allocator, step.*) catch return -1;
+    return @intFromBool(is_valid);
+}
 
 // Proof.Step Interface //
 
-export fn proofStepGetJustificationString(step: *prooflib.Proof.Step, proof: *prooflib.Proof) ?*[]const u8 {
-    const string = step.how.getString(api_allocator, proof.*) catch return null;
+export fn proofStepGetJustificationString(step: *prooflib.Proof.Step) ?*[]const u8 {
+    const string = step.justification.buildString(api_allocator) catch return null;
     return copyAllocOrNull([]const u8, api_allocator, string);
 }
 
@@ -265,10 +205,6 @@ export fn proofStepGetWff(step: *prooflib.Proof.Step) ?*wfflib.Wff {
     return &step.wff;
 }
 
-export fn proofStepIsValid(step: *prooflib.Proof.Step) i32 {
-    const is_valid = step.isValid(api_allocator) catch return -1;
-    return @intFromBool(is_valid);
-}
 
 test "parseStep: a v b, 1, I1" {
     if (!init()) {
@@ -287,19 +223,19 @@ test "parseStep: a v b, 1, I1" {
     //     @panic("");
     // }
 
-    const step1 = parseStep(&"a, assumption", proof).?;
+    const step1 = buildStep(&"a, assumption", proof).?;
     defer api_allocator.destroy(step1);
-    try std.testing.expectEqual(1, proofAddStep(proof, step1));
+    try std.testing.expectEqual(1, proofAppendStepUnchecked(proof, step1));
 
     try std.testing.expect(!try proof.isComplete(api_allocator));
 
-    const step2 = parseStep(&"a v b, 1, I1", proof).?;
+    const step2 = buildStep(&"a v b, 1, I1", proof).?;
     defer api_allocator.destroy(step2);
-    try std.testing.expectEqual(1, proofAddStep(proof, step2));
+    try std.testing.expectEqual(1, proofAppendStepUnchecked(proof, step2));
 
     try std.testing.expect(try proof.isComplete(api_allocator));
 
-    const s = try proof.toString(api_allocator);
+    const s = try proof.buildString(api_allocator);
     defer api_allocator.free(s);
     debug.print("{s}\n", .{s});
 }

@@ -147,25 +147,25 @@ function populateRules(data) {
 
 function checkStep() {
     const inputBox = document.getElementById("input-wff-entry");
-    const input = inputBox.value.replace(/\s+/g, "");
-    if (input.length == 0) {
+    const input = inputBox.value;
+    if (input.replace(/\s+/g, "").length == 0) {
         return;
     }
-    
+
     // Try to parse. If invalid, display error
     const inputStringPtr = utils.errorCheckPtr(wasmApi.encodeStringSlice(input));
     
     // Check if valid step. If invalid, display error
-    const stepPtr = utils.errorCheckPtr(wasmApi.exports.parseStep(inputStringPtr, proofPtr));
+    const stepPtr = utils.errorCheckPtr(wasmApi.exports.buildStep(inputStringPtr));
     const stepWffPtr = utils.errorCheckPtr(wasmApi.exports.proofStepGetWff(stepPtr));
-    const stepWffSlicePtr = utils.errorCheckPtr(wasmApi.exports.wffGetString(stepWffPtr));
-    const stepWffString = utils.errorCheckPtr(wasmApi.decodeStringSlice(stepWffSlicePtr));
+    const stepWffStringPtr = utils.errorCheckPtr(wasmApi.exports.wffGetString(stepWffPtr));
+    const stepWffString = utils.errorCheckPtr(wasmApi.decodeStringSlice(stepWffStringPtr));
 
     const justificationStringPtr = utils.errorCheckPtr(wasmApi.exports.proofStepGetJustificationString(stepPtr, proofPtr));
     const justificationString = wasmApi.decodeStringSlice(justificationStringPtr);
 
-    if (utils.errorCheckInt(wasmApi.exports.proofStepIsValid(stepPtr))) {
-        utils.errorCheckInt(wasmApi.exports.proofAddStep(proofPtr, stepPtr));
+    if (utils.errorCheckInt(wasmApi.exports.proofCheckNewStep(proofPtr, stepPtr))) {
+        utils.errorCheckInt(wasmApi.exports.proofAppendStepUnchecked(proofPtr, stepPtr));
         addStep(stepWffString, justificationString);
 
         inputBox.value = null;

@@ -99,17 +99,7 @@
             "name": "E20",
             "lhs": "((a => b) ^ (b => a))",
             "rhs": "(a <=> b)"
-        },
-        {
-            "name": "ET",
-            "lhs": "T",
-            "rhs": "~F"
-        },
-        {
-            "name": "EF",
-            "lhs": "F",
-            "rhs": "~T"
-        }
+        } 
     ],
     "inference_rules": [
         {

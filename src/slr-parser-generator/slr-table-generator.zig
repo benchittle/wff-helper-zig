@@ -1772,7 +1772,7 @@ test "Create parse table [grammar2.0]" {
     const table_comptime = comptime P.initComptime(grammar);
     defer table_comptime.deinit();
     
-    table.printDebugTable();
+    // table.printDebugTable();
     
     try std.testing.expectEqualDeep(table.action_table, table_comptime.action_table);
     try std.testing.expectEqualDeep(table.goto_table, table_comptime.goto_table);

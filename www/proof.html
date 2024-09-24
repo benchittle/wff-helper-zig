@@ -46,8 +46,10 @@
                     <button id="button-remove-step" class="proof-button" disabled>Remove Last Step</button>
                     <button id="button-clear-proof" class="proof-button" disabled>Clear Proof</button>
                 </div>
-                <table id="steps-table"></table> 
-                <p id="proof-conclusion"></p>
+                <div id="steps-table-container" class="box">
+                    <table id="steps-table"></table> 
+                    <p id="proof-conclusion"></p>
+                </div>
             </div>
             <div id="input-container">
                 <input type="text" id="input-wff-entry" placeholder="Enter next step...">
@@ -124,6 +126,17 @@
                                 <li>Then, enter <span class="wff-example-text">x ^ ~x, 3, E15</span></li>
                                 <li>Then, enter <span class="wff-example-text">F, 4, E15</span></li>
                                 <li><span class="wff-example-text">QED</span></li>
+                            </ul>
+                        </p>
+                        <h4>Syntax</h4>
+                        <p>
+                            Where <span class="wff-example-text">w</span> is a valid wff, <span class="wff-example-text">#</span> is a number, and anything in <span class="wff-example-text">[]</span> is optional
+                            <ul>
+                                <li>Axiom: <span class="wff-example-text">w v ~w, axiom</span></li>
+                                <li>Hypothesis: <span class="wff-example-text">w, hypothesis</span></li>
+                                <li>Assumption: <span class="wff-example-text">w, from gamma</span></li>
+                                <li>Equivalence rule: <span class="wff-example-text">w, #, E#</span></li>
+                                <li>Inference rule: <span class="wff-example-text">w, #, [#,] I#</span></li>
                             </ul>
                         </p>
                         <!-- <h4>Other Info</h4>

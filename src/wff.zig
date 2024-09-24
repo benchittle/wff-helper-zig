@@ -889,10 +889,10 @@ test "WffTree.InOrderIterator: ((a v b) ^ ~c)" {
 
 test "WffTree.makeString: ((avb)^~   c)" {
     const ParsingConfig = @import("wff-parsing.zig").NewParsing;
-    const wff_parser = ParsingConfig.wff_parser;
+    const wff_parser = ParsingConfig.wff_builder;
     const allocator = std.testing.allocator;
 
-    const wff = try wff_parser.parse(allocator, "((avb)^~   c)");
+    const wff = try wff_parser.buildWff(allocator, "((avb)^~   c)");
     defer wff.deinit();
 
     try std.testing.expectEqualStrings("((a v b) ^ ~c)", wff.string);
@@ -900,12 +900,12 @@ test "WffTree.makeString: ((avb)^~   c)" {
 
 test "WffTree.makeString: (a => (b => (a ^ b)))" {
     const ParsingConfig = @import("wff-parsing.zig").NewParsing;
-    const wff_parser = ParsingConfig.wff_parser;
+    const wff_parser = ParsingConfig.wff_builder;
     const allocator = std.testing.allocator;
 
     const string = "(a => (b => (a ^ b)))";
 
-    const wff = try wff_parser.parse(allocator, string);
+    const wff = try wff_parser.buildWff(allocator, string);
     defer wff.deinit();
 
     try std.testing.expectEqualStrings(string, wff.string);
@@ -913,12 +913,12 @@ test "WffTree.makeString: (a => (b => (a ^ b)))" {
 
 test "WffTree.makeString: ~~((~~a => (b ^ (a v b))) <=> ~b)" {
     const ParsingConfig = @import("wff-parsing.zig").NewParsing;
-    const wff_parser = ParsingConfig.wff_parser;
+    const wff_parser = ParsingConfig.wff_builder;
     const allocator = std.testing.allocator;
 
     const string = "~~((~~a => (b ^ (a v b))) <=> ~b)";
 
-    const wff = try wff_parser.parse(allocator, string);
+    const wff = try wff_parser.buildWff(allocator, string);
     defer wff.deinit();
 
     try std.testing.expectEqualStrings(string, wff.string);
@@ -926,12 +926,12 @@ test "WffTree.makeString: ~~((~~a => (b ^ (a v b))) <=> ~b)" {
 
 test "WffTree.makeString: b" {
     const ParsingConfig = @import("wff-parsing.zig").NewParsing;
-    const wff_parser = ParsingConfig.wff_parser;
+    const wff_parser = ParsingConfig.wff_builder;
     const allocator = std.testing.allocator;
 
     const string = "b";
 
-    const wff = try wff_parser.parse(allocator, string);
+    const wff = try wff_parser.buildWff(allocator, string);
     defer wff.deinit();
 
     try std.testing.expectEqualStrings(string, wff.string);
@@ -939,12 +939,12 @@ test "WffTree.makeString: b" {
 
 test "WffTree.makeString: ~x" {
     const ParsingConfig = @import("wff-parsing.zig").NewParsing;
-    const wff_parser = ParsingConfig.wff_parser;
+    const wff_parser = ParsingConfig.wff_builder;
     const allocator = std.testing.allocator;
 
     const string = "~x";
 
-    const wff = try wff_parser.parse(allocator, string);
+    const wff = try wff_parser.buildWff(allocator, string);
     defer wff.deinit();
 
     try std.testing.expectEqualStrings(string, wff.string);
@@ -952,20 +952,20 @@ test "WffTree.makeString: ~x" {
 
 test "WffTree.copy: (p v q), ((a ^ b) v (c ^ d)), and p" {
     const ParsingConfig = @import("wff-parsing.zig").NewParsing;
-    const wff_parser = ParsingConfig.wff_parser;
+    const wff_parser = ParsingConfig.wff_builder;
     const allocator = std.testing.allocator;
 
-    const wff1 = try wff_parser.parse(allocator, "(p v q)");
+    const wff1 = try wff_parser.buildWff(allocator, "(p v q)");
     defer wff1.deinit();
     var tree_copy1 = try wff1.tree.copy(allocator);
     defer tree_copy1.deinit();
 
-    const wff2 = try wff_parser.parse(allocator, "((a ^ b) v (c ^ d))");
+    const wff2 = try wff_parser.buildWff(allocator, "((a ^ b) v (c ^ d))");
     defer wff2.deinit();
     var tree_copy2 = try wff2.tree.copy(allocator);
     defer tree_copy2.deinit();
 
-    const wff3 = try wff_parser.parse(allocator, "p");
+    const wff3 = try wff_parser.buildWff(allocator, "p");
     defer wff3.deinit();
     var copy_tree3 = try wff3.tree.copy(allocator);
     defer copy_tree3.deinit();
@@ -977,12 +977,12 @@ test "WffTree.copy: (p v q), ((a ^ b) v (c ^ d)), and p" {
 
 test "WffTree.Node.match: (p v q) with pattern (p v q)" {
     const ParsingConfig = @import("wff-parsing.zig").NewParsing;
-    const wff_parser = ParsingConfig.wff_parser;
+    const wff_parser = ParsingConfig.wff_builder;
     const allocator = std.testing.allocator;
 
-    const wff = try wff_parser.parse(allocator, "(p v q)");
+    const wff = try wff_parser.buildWff(allocator, "(p v q)");
     defer wff.deinit();
-    const pattern_wff = try wff_parser.parse(allocator, "(p v q)");
+    const pattern_wff = try wff_parser.buildWff(allocator, "(p v q)");
     defer pattern_wff.deinit();
 
     var matches = (try wff.tree.root.match(allocator, pattern_wff.tree.root)).?;
@@ -995,12 +995,12 @@ test "WffTree.Node.match: (p v q) with pattern (p v q)" {
 
 test "WffTree.Node.match: ((a ^ b) v (c ^ d)) with pattern (p v q)" {
     const ParsingConfig = @import("wff-parsing.zig").NewParsing;
-    const wff_parser = ParsingConfig.wff_parser;
+    const wff_parser = ParsingConfig.wff_builder;
     const allocator = std.testing.allocator;
 
-    const wff = try wff_parser.parse(allocator, "((a ^ b) v (c ^ d))");
+    const wff = try wff_parser.buildWff(allocator, "((a ^ b) v (c ^ d))");
     defer wff.deinit();
-    const pattern_wff = try wff_parser.parse(allocator, "(p v q)");
+    const pattern_wff = try wff_parser.buildWff(allocator, "(p v q)");
     defer pattern_wff.deinit();
 
     var matches = (try wff.tree.root.match(allocator, pattern_wff.tree.root)).?;
@@ -1013,12 +1013,12 @@ test "WffTree.Node.match: ((a ^ b) v (c ^ d)) with pattern (p v q)" {
 
 test "WffTree.Node.match: (p v p) with pattern (p v p)" {
     const ParsingConfig = @import("wff-parsing.zig").NewParsing;
-    const wff_parser = ParsingConfig.wff_parser;
+    const wff_parser = ParsingConfig.wff_builder;
     const allocator = std.testing.allocator;
 
-    const wff = try wff_parser.parse(allocator, "(p v p)");
+    const wff = try wff_parser.buildWff(allocator, "(p v p)");
     defer wff.deinit();
-    const pattern_wff = try wff_parser.parse(allocator, "(p v p)");
+    const pattern_wff = try wff_parser.buildWff(allocator, "(p v p)");
     defer pattern_wff.deinit();
 
     var matches = (try wff.tree.root.match(allocator, pattern_wff.tree.root)).?;
@@ -1030,12 +1030,12 @@ test "WffTree.Node.match: (p v p) with pattern (p v p)" {
 
 test "WffTree.Node.match: (p v q) with pattern (p v p)" {
     const ParsingConfig = @import("wff-parsing.zig").NewParsing;
-    const wff_parser = ParsingConfig.wff_parser;
+    const wff_parser = ParsingConfig.wff_builder;
     const allocator = std.testing.allocator;
 
-    const wff = try wff_parser.parse(allocator, "(p v q)");
+    const wff = try wff_parser.buildWff(allocator, "(p v q)");
     defer wff.deinit();
-    const pattern_wff = try wff_parser.parse(allocator, "(p v p)");
+    const pattern_wff = try wff_parser.buildWff(allocator, "(p v p)");
     defer pattern_wff.deinit();
 
     try std.testing.expectEqual(null, try wff.tree.root.match(allocator, pattern_wff.tree.root));
@@ -1043,12 +1043,12 @@ test "WffTree.Node.match: (p v q) with pattern (p v p)" {
 
 test "WffTree.Node.match: ((a ^ b) => (a ^ b)) with pattern (p => p)" {
     const ParsingConfig = @import("wff-parsing.zig").NewParsing;
-    const wff_parser = ParsingConfig.wff_parser;
+    const wff_parser = ParsingConfig.wff_builder;
     const allocator = std.testing.allocator;
 
-    const wff = try wff_parser.parse(allocator, "((a ^ b) => (a ^ b))");
+    const wff = try wff_parser.buildWff(allocator, "((a ^ b) => (a ^ b))");
     defer wff.deinit();
-    const pattern_wff = try wff_parser.parse(allocator, "(p => p)");
+    const pattern_wff = try wff_parser.buildWff(allocator, "(p => p)");
     defer pattern_wff.deinit();
 
     var matches = (try wff.tree.root.match(allocator, pattern_wff.tree.root)).?;
@@ -1060,12 +1060,12 @@ test "WffTree.Node.match: ((a ^ b) => (a ^ b)) with pattern (p => p)" {
 
 test "ParseTree.Node.match: ((a ^ b) => (a ^ a)) with pattern (p => p)" {
     const ParsingConfig = @import("wff-parsing.zig").NewParsing;
-    const wff_parser = ParsingConfig.wff_parser;
+    const wff_parser = ParsingConfig.wff_builder;
     const allocator = std.testing.allocator;
 
-    const wff = try wff_parser.parse(allocator, "((a ^ b) => (a ^ a))");
+    const wff = try wff_parser.buildWff(allocator, "((a ^ b) => (a ^ a))");
     defer wff.deinit();
-    const pattern_wff = try wff_parser.parse(allocator, "(p => p)");
+    const pattern_wff = try wff_parser.buildWff(allocator, "(p => p)");
     defer pattern_wff.deinit();
 
     try std.testing.expect(try wff.tree.root.match(allocator, pattern_wff.tree.root) == null);
@@ -1073,12 +1073,12 @@ test "ParseTree.Node.match: ((a ^ b) => (a ^ a)) with pattern (p => p)" {
 
 test "WffTree.Node.match: (x <=> x) with pattern (p <=> q)" {
     const ParsingConfig = @import("wff-parsing.zig").NewParsing;
-    const wff_parser = ParsingConfig.wff_parser;
+    const wff_parser = ParsingConfig.wff_builder;
     const allocator = std.testing.allocator;
 
-    const wff = try wff_parser.parse(allocator, "(x <=> x)");
+    const wff = try wff_parser.buildWff(allocator, "(x <=> x)");
     defer wff.deinit();
-    const pattern_wff = try wff_parser.parse(allocator, "(p <=> q)");
+    const pattern_wff = try wff_parser.buildWff(allocator, "(p <=> q)");
     defer pattern_wff.deinit();
 
     var matches = (try wff.tree.root.match(allocator, pattern_wff.tree.root)).?;
@@ -1238,12 +1238,12 @@ pub const Wff = struct {
 
 test "Wff.isTrue" {
     const ParsingConfig = @import("wff-parsing.zig").NewParsing;
-    const wff_parser = ParsingConfig.wff_parser;
+    const wff_parser = ParsingConfig.wff_builder;
     const allocator = std.testing.allocator;
-    
-    var wff1 = try wff_parser.parse(allocator, "T");
+
+    var wff1 = try wff_parser.buildWff(allocator, "T");
     defer wff1.deinit();
-    var wff2 = try wff_parser.parse(allocator, "F");
+    var wff2 = try wff_parser.buildWff(allocator, "F");
     defer wff2.deinit();
 
     try std.testing.expect(wff1.isTrue());
@@ -1252,16 +1252,16 @@ test "Wff.isTrue" {
 
 test "Wff.equals" {
     const ParsingConfig = @import("wff-parsing.zig").NewParsing;
-    const wff_parser = ParsingConfig.wff_parser;
+    const wff_parser = ParsingConfig.wff_builder;
     const allocator = std.testing.allocator;
 
-    var wff1 = try wff_parser.parse(allocator, "((a ^ b) => (c ^ d))");
+    var wff1 = try wff_parser.buildWff(allocator, "((a ^ b) => (c ^ d))");
     defer wff1.deinit();
     var wff2 = try wff1.copy(allocator);
     defer wff2.deinit();
-    var wff3 = try wff_parser.parse(allocator, "((a ^ b) => (c ^ d))");
+    var wff3 = try wff_parser.buildWff(allocator, "((a ^ b) => (c ^ d))");
     defer wff3.deinit();
-    var wff4 = try wff_parser.parse(allocator, "(p => q)");
+    var wff4 = try wff_parser.buildWff(allocator, "(p => q)");
     defer wff4.deinit();
 
     try std.testing.expect(wff3.eql(wff1));
@@ -1271,14 +1271,14 @@ test "Wff.equals" {
 
 test "Wff.replace: ((a ^ b) v (c ^ d)) using (p v q) to (p => q)" {
     const ParsingConfig = @import("wff-parsing.zig").NewParsing;
-    const wff_parser = ParsingConfig.wff_parser;
+    const wff_parser = ParsingConfig.wff_builder;
     const allocator = std.testing.allocator;
 
-    var wff = try wff_parser.parse(allocator, "((a ^ b) v (c ^ d))");
+    var wff = try wff_parser.buildWff(allocator, "((a ^ b) v (c ^ d))");
     defer wff.deinit();
-    var pattern = try wff_parser.parse(allocator, "(p v q)");
+    var pattern = try wff_parser.buildWff(allocator, "(p v q)");
     defer pattern.deinit();
-    var replace = try wff_parser.parse(allocator, "(p => q)");
+    var replace = try wff_parser.buildWff(allocator, "(p => q)");
     defer replace.deinit();
 
     var match = (try wff.match(allocator, pattern)).?;
@@ -1286,7 +1286,7 @@ test "Wff.replace: ((a ^ b) v (c ^ d)) using (p v q) to (p => q)" {
     var new = (try match.replace(allocator, replace));
     defer new.deinit();
 
-    var expected = try wff_parser.parse(allocator, "((a ^ b) => (c ^ d))");
+    var expected = try wff_parser.buildWff(allocator, "((a ^ b) => (c ^ d))");
     defer expected.deinit();
 
     try std.testing.expect(expected.eql(new));
@@ -1295,14 +1295,14 @@ test "Wff.replace: ((a ^ b) v (c ^ d)) using (p v q) to (p => q)" {
 
 test "Wff.replace: ((a ^ b) v (c ^ d)) using (p v p) to (p => q)" {
     const ParsingConfig = @import("wff-parsing.zig").NewParsing;
-    const wff_parser = ParsingConfig.wff_parser;
+    const wff_parser = ParsingConfig.wff_builder;
     const allocator = std.testing.allocator;
 
-    var wff = try wff_parser.parse(allocator, "((a ^ b) v (c ^ d))");
+    var wff = try wff_parser.buildWff(allocator, "((a ^ b) v (c ^ d))");
     defer wff.deinit();
-    var pattern = try wff_parser.parse(allocator, "(p v p)");
+    var pattern = try wff_parser.buildWff(allocator, "(p v p)");
     defer pattern.deinit();
-    var replace = try wff_parser.parse(allocator, "(p => q)");
+    var replace = try wff_parser.buildWff(allocator, "(p => q)");
     defer replace.deinit();
 
     try std.testing.expect(try wff.match(allocator, pattern) == null);
@@ -1310,14 +1310,14 @@ test "Wff.replace: ((a ^ b) v (c ^ d)) using (p v p) to (p => q)" {
 
 test "Wff.replace: ((a ^ b) v (c ^ d)) to ((a ^ b) v (d ^ c)) using (p ^ q) to (q ^ p)" {
     const ParsingConfig = @import("wff-parsing.zig").NewParsing;
-    const wff_parser = ParsingConfig.wff_parser;
+    const wff_parser = ParsingConfig.wff_builder;
     const allocator = std.testing.allocator;
 
-    var wff = try wff_parser.parse(allocator, "((a ^ b) v (c ^ d))");
+    var wff = try wff_parser.buildWff(allocator, "((a ^ b) v (c ^ d))");
     defer wff.deinit();
-    var pattern = try wff_parser.parse(allocator, "(p ^ q)");
+    var pattern = try wff_parser.buildWff(allocator, "(p ^ q)");
     defer pattern.deinit();
-    var replace = try wff_parser.parse(allocator, "(q ^ p)");
+    var replace = try wff_parser.buildWff(allocator, "(q ^ p)");
     defer replace.deinit();
 
     var matches = (try wff.matchAll(allocator, pattern)).?;
@@ -1329,7 +1329,7 @@ test "Wff.replace: ((a ^ b) v (c ^ d)) to ((a ^ b) v (d ^ c)) using (p ^ q) to (
 
     var right = matches.items[1];
 
-    var expected = try wff_parser.parse(allocator, "((a ^ b) v (d ^ c))");
+    var expected = try wff_parser.buildWff(allocator, "((a ^ b) v (d ^ c))");
     defer expected.deinit();
     var new = (try right.replace(allocator, replace));
     defer new.deinit();
@@ -1339,14 +1339,14 @@ test "Wff.replace: ((a ^ b) v (c ^ d)) to ((a ^ b) v (d ^ c)) using (p ^ q) to (
 
 test "Wff.replace: (T ^ ~T) using (a ^ ~a) to F [E15]" {
     const ParsingConfig = @import("wff-parsing.zig").NewParsing;
-    const wff_parser = ParsingConfig.wff_parser;
+    const wff_parser = ParsingConfig.wff_builder;
     const allocator = std.testing.allocator;
 
-    var wff = try wff_parser.parse(allocator, "(T ^ ~T)");
+    var wff = try wff_parser.buildWff(allocator, "(T ^ ~T)");
     defer wff.deinit();
-    var pattern = try wff_parser.parse(allocator, "(a ^ ~a)");
+    var pattern = try wff_parser.buildWff(allocator, "(a ^ ~a)");
     defer pattern.deinit();
-    var replace = try wff_parser.parse(allocator, "F");
+    var replace = try wff_parser.buildWff(allocator, "F");
     defer replace.deinit();
 
     var matches = (try wff.matchAll(allocator, pattern)).?;
@@ -1358,7 +1358,7 @@ test "Wff.replace: (T ^ ~T) using (a ^ ~a) to F [E15]" {
 
     const match = matches.items[0];
 
-    var expected = try wff_parser.parse(allocator, "F");
+    var expected = try wff_parser.buildWff(allocator, "F");
     defer expected.deinit();
     var new = (try match.replace(allocator, replace));
     defer new.deinit();
