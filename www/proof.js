@@ -22,6 +22,25 @@ document.getElementById("input-wff-entry").addEventListener("keypress", event =>
         document.getElementById("button-check-step").click();
     }
 });
+document.querySelectorAll(".resource-tab").forEach(element => {
+    element.addEventListener("click", () => {
+        if (element.disabled) {
+            return;
+        }
+        element.disabled = true;
+        if (element.id === "operators-tab") {
+            document.getElementById("operators-container").style.flex = "0 0 auto";
+            document.getElementById("help-tab").disabled = false;
+            document.getElementById("operators-tab-content").style.display = "block";
+            document.getElementById("help-tab-content").style.display = "none";
+        } else if (element.id === "help-tab") {
+            document.getElementById("operators-container").style.flex = "0 1 auto";
+            document.getElementById("operators-tab").disabled = false;
+            document.getElementById("operators-tab-content").style.display = "none";
+            document.getElementById("help-tab-content").style.display = "block";
+        }
+    });
+})
 
 window.addEventListener("beforeunload", function (e) {
     const stepsTable = document.getElementById("steps-table");
@@ -36,6 +55,17 @@ async function initPage() {
     const urlParams = new URLSearchParams(window.location.search);
     const wffString = urlParams.get("wff");
     const proofMethod = urlParams.get("method");
+
+    if (wffString == null) {
+        alert("Missing 'wff' URL parameter");
+        window.location = "index.html";
+        return;
+    }
+    if (proofMethod == null) {
+        alert("Missing 'method' URL parameter");
+        window.location = "index.html";
+        return;
+    }
     
     if (wffString.length == 0 || proofMethod.length == 0) {
         throw new Error("Empty or missing URL arg");
@@ -102,7 +132,7 @@ function populateRules(data) {
     data["equivalence_rules"].forEach(rule => {
         var tr = document.createElement("tr");
         tr.innerHTML = "<td>" + rule.name + "</td>" +
-            "<td>" + rule.lhs + " ≡ " + rule.rhs + "</td>"
+            "<td>" + rule.lhs + " &equiv; " + rule.rhs + "</td>"
         equivalence_table.appendChild(tr);
     });
 
@@ -117,25 +147,25 @@ function populateRules(data) {
 
 function checkStep() {
     const inputBox = document.getElementById("input-wff-entry");
-    const input = inputBox.value.replace(/\s+/g, "");
-    if (input.length == 0) {
+    const input = inputBox.value;
+    if (input.replace(/\s+/g, "").length == 0) {
         return;
     }
-    
+
     // Try to parse. If invalid, display error
     const inputStringPtr = utils.errorCheckPtr(wasmApi.encodeStringSlice(input));
     
     // Check if valid step. If invalid, display error
-    const stepPtr = utils.errorCheckPtr(wasmApi.exports.parseStep(inputStringPtr, proofPtr));
+    const stepPtr = utils.errorCheckPtr(wasmApi.exports.buildStep(inputStringPtr));
     const stepWffPtr = utils.errorCheckPtr(wasmApi.exports.proofStepGetWff(stepPtr));
-    const stepWffSlicePtr = utils.errorCheckPtr(wasmApi.exports.wffGetString(stepWffPtr));
-    const stepWffString = utils.errorCheckPtr(wasmApi.decodeStringSlice(stepWffSlicePtr));
+    const stepWffStringPtr = utils.errorCheckPtr(wasmApi.exports.wffGetString(stepWffPtr));
+    const stepWffString = utils.errorCheckPtr(wasmApi.decodeStringSlice(stepWffStringPtr));
 
     const justificationStringPtr = utils.errorCheckPtr(wasmApi.exports.proofStepGetJustificationString(stepPtr, proofPtr));
     const justificationString = wasmApi.decodeStringSlice(justificationStringPtr);
 
-    if (utils.errorCheckInt(wasmApi.exports.proofStepIsValid(stepPtr))) {
-        utils.errorCheckInt(wasmApi.exports.proofAddStep(proofPtr, stepPtr));
+    if (utils.errorCheckInt(wasmApi.exports.proofCheckNewStep(proofPtr, stepPtr))) {
+        utils.errorCheckInt(wasmApi.exports.proofAppendStepUnchecked(proofPtr, stepPtr));
         addStep(stepWffString, justificationString);
 
         inputBox.value = null;
@@ -182,7 +212,7 @@ function completeProof() {
     document.getElementById("input-wff-entry").disabled = true;
     document.getElementById("button-check-step").disabled = true;
     document.getElementById("button-remove-step").disabled = true;
-    document.getElementById("bu tton-clear-proof").disabled = true;
+    document.getElementById("button-clear-proof").disabled = true;
 }
 
 function clearProof() {

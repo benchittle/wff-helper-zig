@@ -291,6 +291,7 @@ const TestParser = Parser(
     TestVariable,
     TestTerminal,
     TestToken,
+    @typeInfo(@typeInfo(@TypeOf(testTokenize)).Fn.return_type.?).ErrorUnion.error_set,
     testTokenize,
     oldTokenToTestTerminal,
 );
@@ -770,7 +771,8 @@ pub fn Parser(
     comptime Variable: type,
     comptime Terminal: type,
     comptime Token: type,
-    comptime tokenize: fn (std.mem.Allocator, []const u8) anyerror!std.ArrayList(Token),
+    comptime TokenizeErrorSet: type,
+    comptime tokenize: fn (std.mem.Allocator, []const u8) TokenizeErrorSet!std.ArrayList(Token),
     comptime terminalFromToken: fn (Token) ?Terminal,
 ) type {
     return struct {

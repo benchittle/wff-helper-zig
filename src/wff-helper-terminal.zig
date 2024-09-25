@@ -1,8 +1,10 @@
 const std = @import("std");
-const wff_parsing = @import("wff-parsing.zig");
+
 const wfflib = @import("wff.zig");
-const proofs = @import("proof.zig");
-const step_parse = @import("step-parsing.zig");
+const WffParsingConfig = @import("wff-parsing.zig").NewParsing;
+const rules = @import("rules.zig");
+const prooflib = @import("proof.zig");
+const step_processing = @import("step-processing.zig");
 
 const stdout = std.io.getStdOut().writer();
 const stdin = std.io.getStdIn().reader();
@@ -37,7 +39,7 @@ fn getNumber(comptime T: type) !?T {
     }
 }
 
-pub fn getWff(allocator: std.mem.Allocator, parser: wfflib.WffParser) !?wfflib.Wff {
+pub fn getWff(allocator: std.mem.Allocator, wff_builder: WffParsingConfig.WffBuilder) !?wfflib.Wff {
     //try resetPrompt();
 
     var buf: [1024]u8 = undefined;
@@ -51,7 +53,7 @@ pub fn getWff(allocator: std.mem.Allocator, parser: wfflib.WffParser) !?wfflib.W
             else => return err,
         } orelse return null;
 
-        const wff = parser.parse(allocator, buf_read) catch |err| switch (err) {
+        const wff = wff_builder.buildWff(allocator, buf_read) catch |err| switch (err) {
             error.OutOfMemory => return err,
             else => {
                 try printErrResetPrompt("Error: Invalid wff", .{});
@@ -62,7 +64,7 @@ pub fn getWff(allocator: std.mem.Allocator, parser: wfflib.WffParser) !?wfflib.W
     }
 }
 
-pub fn getStep(allocator: std.mem.Allocator, wff_parser: wfflib.WffParser, proof: proofs.Proof) !?proofs.Proof.Step {
+pub fn getStep(allocator: std.mem.Allocator, wff_builder: WffParsingConfig.WffBuilder) !?prooflib.Proof.Step {
     var buf: [1024]u8 = undefined;
 
     while (true) {
@@ -75,7 +77,7 @@ pub fn getStep(allocator: std.mem.Allocator, wff_parser: wfflib.WffParser, proof
             else => return err,
         } orelse return null;
 
-        const step = step_parse.parseStep(allocator, wff_parser, buf_read, proof) catch |err| switch (err) {
+        const step = step_processing.buildStep(allocator, wff_builder, buf_read) catch |err| switch (err) {
             error.OutOfMemory => return err,
             else => {
                 try printErrResetPrompt("Error: Invalid input.", .{});
@@ -148,33 +150,33 @@ fn printErrResetPrompt(comptime format: []const u8, args: anytype) !void {
 }
 
 pub fn main() !void {
-    const wff_parser = wfflib.wff_parser;
+    const wff_builder = WffParsingConfig.wff_builder;
     var allocator = gpa.allocator();
 
     try clearScreen();
     try moveCursorTopLeft();
     try stdout.print("Welcome to wff-helper!\n\n", .{});
 
-    var equivalence_rules = proofs.initEquivalenceRules(allocator, wff_parser);
-    var inference_rules = proofs.initInferenceRules(allocator, wff_parser);
+    var equivalence_rules = rules.initEquivalenceRules(allocator, wff_builder);
+    var inference_rules = rules.initInferenceRules(allocator, wff_builder);
 
     try stdout.print("Start by entering a wff to prove", .{});
     try resetPromptClearError();
-    var wff = try getWff(allocator, wff_parser) orelse return;
+    var wff = try getWff(allocator, wff_builder) orelse return;
     defer wff.deinit();
 
-    var proof_methods: [4]proofs.Proof.Method = undefined;
-    var available_methods: []proofs.Proof.Method = undefined;
+    var proof_methods: [4]prooflib.Proof.MethodType = undefined;
+    var available_methods: []prooflib.Proof.MethodType = undefined;
     {
-        var implication_form = try wff_parser.parse(allocator, "(p => q)");
+        var implication_form = try wff_builder.buildWff(allocator, "(p => q)");
         defer implication_form.deinit();
         if (try wff.match(allocator, implication_form)) |match| {
             var m = match;
             m.deinit();
-            proof_methods = .{ proofs.Proof.Method.None, proofs.Proof.Method.Direct, proofs.Proof.Method.Indirect, proofs.Proof.Method.Contradiction };
+            proof_methods = .{ prooflib.Proof.MethodType.none, prooflib.Proof.MethodType.direct, prooflib.Proof.MethodType.indirect, prooflib.Proof.MethodType.contradiction };
             available_methods = proof_methods[0..4];
         } else {
-            proof_methods = .{ proofs.Proof.Method.None, proofs.Proof.Method.Contradiction, undefined, undefined };
+            proof_methods = .{ prooflib.Proof.MethodType.none, prooflib.Proof.MethodType.contradiction, undefined, undefined };
             available_methods = proof_methods[0..2];
         }
     }
@@ -194,9 +196,9 @@ pub fn main() !void {
         choice = try getNumber(u32) orelse return;
     }
 
-    var proof = try proofs.Proof.init(
+    var proof = try prooflib.Proof.init(
         allocator,
-        wff_parser,
+        wff_builder,
         &wff,
         available_methods[choice - 1],
         null,
@@ -208,7 +210,7 @@ pub fn main() !void {
     var isInvalidStep = false;
     while (!(try proof.isComplete(allocator))) {
         try moveCursorTopLeft();
-        const proof_str = try proof.toString(allocator);
+        const proof_str = try proof.buildString(allocator);
         defer allocator.free(proof_str);
         try stdout.print("{s}", .{proof_str});
 
@@ -218,8 +220,8 @@ pub fn main() !void {
         }
         try stdout.print("\nEnter a step in the proof\n\n", .{});
         try resetPrompt();
-        var step = try getStep(allocator, wff_parser, proof) orelse return;
-        const isValid = try step.isValid(allocator);
+        const step = try getStep(allocator, wff_builder) orelse return;
+        const isValid = try proof.checkNewStep(allocator, step);
         if (!isValid) {
             isInvalidStep = true;
             continue;
@@ -230,7 +232,7 @@ pub fn main() !void {
     }
 
     try moveCursorTopLeft();
-    const proof_str = try proof.toString(allocator);
+    const proof_str = try proof.buildString(allocator);
     defer allocator.free(proof_str);
     try stdout.print("{s}", .{proof_str});
     try stdout.print("Proof complete!\n", .{});

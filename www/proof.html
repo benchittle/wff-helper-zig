@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,6 +8,7 @@
     <link rel="stylesheet" href="style.css">
     <link rel="icon" type="image/x-icon" href="favicon.ico"/>
 </head>
+
 <body>
     <header class="proof-header">
         <h1><a href="index.html">Wff Helper</a></h1>
@@ -44,8 +46,10 @@
                     <button id="button-remove-step" class="proof-button" disabled>Remove Last Step</button>
                     <button id="button-clear-proof" class="proof-button" disabled>Clear Proof</button>
                 </div>
-                <table id="steps-table"></table> 
-                <p id="proof-conclusion"></p>
+                <div id="steps-table-container" class="box">
+                    <table id="steps-table"></table> 
+                    <p id="proof-conclusion"></p>
+                </div>
             </div>
             <div id="input-container">
                 <input type="text" id="input-wff-entry" placeholder="Enter next step...">
@@ -56,35 +60,115 @@
         <div id="resource-container">
             <!-- <h2>Resources</h2> -->
 
-            <div class="resource box" id="operators-container">
-                <h3>Operators</h3>
-                <div id="operators">
-                    <p>Not: <span class="wff-text">~</span> (tilde)</p>
-                    <p>And: <span class="wff-text">^</span> (caret)</p>
-                    <p>Or: <span class="wff-text">v</span> (the letter v)</p>
-                    <p>Conditional: <span class="wff-text">=&gt;</span></p>
-                    <p>Biconditional: <span class="wff-text">&lt;=&gt;</span></p>
+            <div id="operators-container" class="resource box">
+                <div class="resource-tab-bar">
+                    <button id="operators-tab" class="resource-tab"><h3>Operators</h3></button>
+                    <button id="help-tab" class="resource-tab" disabled><h3>Help</h3></button>
+                    <!-- <p>hi</p>
+                    <p>there</p> -->
+                </div>
+                <div id="operators-tab-content">
+                    <div id="operators"> 
+                        <p>Not: <span class="wff-text">~</span> (tilde)</p>
+                        <p>And: <span class="wff-text">^</span> (caret)</p>
+                        <p>Or: <span class="wff-text">v</span> (the letter v)</p>
+                        <p>Conditional: <span class="wff-text">=&gt;</span></p>
+                        <p>Biconditional: <span class="wff-text">&lt;=&gt;</span></p>
+                    </div>
+                </div>
+                <div id="help-tab-content">
+                    <div id="help">
+                        <h4>Welcome to Wff Helper!</h4>
+                        <p>
+                            This is a tool to verify and format proofs in 
+                            propositional logic. You can start a new proof 
+                            at the top of the page or by clicking the logo in
+                            the top left.
+                        </p>
+                        <p>
+                            This tool does NOT solve proofs for you. It DOES verify the steps you 
+                            input are logically valid, and it DOES verify once
+                            you have finished the proof. 
+                        </p>
+                        <h4>Example Usage</h4>
+                        <p>
+                            Example 1: Suppose we are proving 
+                            <span class="wff-example-text">&vdash; (a => (a v b))</span> 
+                            using <span class="wff-example-text">Direct Proof</span>. 
+                            <ul>
+                                <li>First, enter <span class="wff-example-text">a, assumption</span></li>
+                                <li>Then, enter <span class="wff-example-text">a v b, 1, I1</span></li>
+                                <li>
+                                    You should see <span class="wff-example-text">QED</span> 
+                                    automatically appended to your proof to signify it is complete
+                                </li>
+                            </ul>
+                        </p>
+                        <p>
+                            Example 2: Proving 
+                            <span class="wff-example-text">&vdash; (x => x)</span> 
+                            using <span class="wff-example-text">No Proof Method</span>. 
+                            <ul>
+                                <li>First, enter <span class="wff-example-text">x v ~x, axiom</span></li>
+                                <li>Then, enter <span class="wff-example-text">~x v x, 1, E10</span></li>
+                                <li>Then, enter <span class="wff-example-text">x => x, 2, E18</span></li>
+                                <li><span class="wff-example-text">QED</span></li>
+                            </ul>
+                        </p>
+                        <p>
+                            Example 3: Proving 
+                            <span class="wff-example-text">&vdash; (x => x)</span> 
+                            using <span class="wff-example-text">Proof by Contradiction</span>. 
+                            <ul>
+                                <li>First, enter <span class="wff-example-text">~(x => x), Assumption</span></li>
+                                <li>Then, enter <span class="wff-example-text">~(~x v x), 1, E18</span></li>
+                                <li>Then, enter <span class="wff-example-text">~~x ^ ~x, 2, E17</span></li>
+                                <li>Then, enter <span class="wff-example-text">x ^ ~x, 3, E15</span></li>
+                                <li>Then, enter <span class="wff-example-text">F, 4, E15</span></li>
+                                <li><span class="wff-example-text">QED</span></li>
+                            </ul>
+                        </p>
+                        <h4>Syntax</h4>
+                        <p>
+                            Where <span class="wff-example-text">w</span> is a valid wff, <span class="wff-example-text">#</span> is a number, and anything in <span class="wff-example-text">[]</span> is optional
+                            <ul>
+                                <li>Axiom: <span class="wff-example-text">w v ~w, axiom</span></li>
+                                <li>Hypothesis: <span class="wff-example-text">w, hypothesis</span></li>
+                                <li>Assumption: <span class="wff-example-text">w, from gamma</span></li>
+                                <li>Equivalence rule: <span class="wff-example-text">w, #, E#</span></li>
+                                <li>Inference rule: <span class="wff-example-text">w, #, [#,] I#</span></li>
+                            </ul>
+                        </p>
+                        <!-- <h4>Other Info</h4>
+                        <p>
+                            <ul>
+                                <li></li>
+                                
+                            </ul>
+                        </p> -->
+                    </div>
                 </div>
             </div>
             <div class="resource box">
                 <h3>Equivalence Rules</h3>
                 <div class="table-container">
-                    <table id="equivalence-rules"></table> 
+                    <table id="equivalence-rules"></table>
                 </div>
             </div>
             <div class="resource box">
                 <h3>Inference Rules</h3>
                 <div class="table-container">
-                    <table id="inference-rules"></table> 
+                    <table id="inference-rules"></table>
                 </div>
             </div>
         </div>
     </div>
     <script src="https://kit.fontawesome.com/7ed51d461e.js" crossorigin="anonymous"></script>
     <script src="proof.js" type="module"></script>
-    <script type="module">
+    <!-- <script type="module">
         import * as proof from "./proof.js";
         window.proof = proof;
-    </script>
+    </script> -->
 </body>
+
 </html>
