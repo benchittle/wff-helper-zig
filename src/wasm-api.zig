@@ -217,25 +217,19 @@ test "parseStep: a v b, 1, I1" {
     const proof = proofInit(wff, &"direct").?;
     defer proofDeinit(proof, true);
 
-    // const step1 = parseStep(&"T", proof).?;
-    // defer api_allocator.destroy(step1);
-    // if (!proofAddStep(proof, step1)) {
-    //     @panic("");
-    // }
-
-    const step1 = buildStep(&"a, assumption", proof).?;
+    const step1 = buildStep(&"a, hypothesis").?;
     defer api_allocator.destroy(step1);
+    try std.testing.expectEqual(1, proofCheckNewStep(proof, step1));
     try std.testing.expectEqual(1, proofAppendStepUnchecked(proof, step1));
-
     try std.testing.expect(!try proof.isComplete(api_allocator));
 
-    const step2 = buildStep(&"a v b, 1, I1", proof).?;
+    const step2 = buildStep(&"a v b, 1, I1").?;
     defer api_allocator.destroy(step2);
+    try std.testing.expectEqual(1, proofCheckNewStep(proof, step2));
     try std.testing.expectEqual(1, proofAppendStepUnchecked(proof, step2));
-
     try std.testing.expect(try proof.isComplete(api_allocator));
 
-    const s = try proof.buildString(api_allocator);
-    defer api_allocator.free(s);
-    debug.print("{s}\n", .{s});
+    // const s = try proof.buildString(api_allocator);
+    // defer api_allocator.free(s);
+    // debug.print("{s}\n", .{s});
 }

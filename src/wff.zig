@@ -242,8 +242,8 @@ pub const WffTree = struct {
         };
 
         pub const LogicalConstant = enum {
-            t,
-            f,
+            true,
+            false,
         };
 
         parent: ?*Node,
@@ -273,8 +273,8 @@ pub const WffTree = struct {
                     },
                     .proposition_variable => |s| s,
                     .logical_constant => |constant| switch (constant) {
-                        .t => "T",
-                        .f => "F",
+                        .true => "true",
+                        .false => "false",
                     },
                 };
             }

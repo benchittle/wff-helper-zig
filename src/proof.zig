@@ -405,3 +405,57 @@ test "equivalence rules" {
     const equivalence_rules = rules.initEquivalenceRules(allocator, wff_parser);
     defer for (equivalence_rules) |rule| rule.deinit();
 }
+
+test "Proof of true" {
+    const wff_builder = ParsingConfig.wff_builder;
+    const allocator = std.testing.allocator;
+
+    var equivalence_rules = rules.initEquivalenceRules(allocator, wff_builder);
+    defer for (equivalence_rules) |e| e.deinit();
+    var inference_rules = rules.initInferenceRules(allocator, wff_builder);
+    defer for (inference_rules) |i| i.deinit();
+
+    var wff = try wff_builder.buildWff(allocator, "true");
+    defer wff.deinit();
+
+    var proof = try Proof.init(
+        allocator,
+        wff_builder,
+        &wff,
+        Proof.MethodType.none,
+        null,
+        &equivalence_rules,
+        &inference_rules,
+    );
+    defer proof.deinit(false);
+
+    try std.testing.expect(proof.assumptions.items.len == 0);
+
+    var goal = try wff_builder.buildWff(allocator, "true");
+    defer goal.deinit();
+    try std.testing.expect(goal.eql(proof.goal));
+
+    const step1 = Proof.Step{ 
+        .allocator = allocator, 
+        .wff = try wff_builder.buildWff(allocator, "a v ~a"), 
+        .justification = Proof.Step.Justification{ .axiom = {} } };
+    try proof.steps.append(step1);
+    try std.testing.expect(try proof.checkStep(allocator, step1, 0));
+    try std.testing.expect(!try proof.isComplete(allocator));
+
+    const step2 = Proof.Step{ 
+        .allocator = allocator, 
+        .wff = try wff_builder.buildWff(allocator, "true"), 
+        .justification = Proof.Step.Justification{ 
+            .equivalence = .{
+                .rule_index = 0,
+                .from = 0,
+            } 
+        } 
+    };
+    try proof.steps.append(step2);
+    try std.testing.expect(try proof.checkStep(allocator, step2, 1));
+    try std.testing.expect(try proof.isComplete(allocator));
+
+    try std.testing.expect(try proof.isComplete(allocator));
+}

@@ -187,14 +187,14 @@ pub fn initEquivalenceRules(allocator: std.mem.Allocator, wff_builder: ParsingCo
     };
     var maker = Maker{ .allocator = allocator, .wff_builder = wff_builder };
     return [_]EquivalenceRule{
-        maker.makeRule("(a v ~a)", "T"),
-        maker.makeRule("(a ^ ~a)", "F"),
+        maker.makeRule("(a v ~a)", "true"),
+        maker.makeRule("(a ^ ~a)", "false"),
         maker.makeRule("(a ^ a)", "a"),
         maker.makeRule("(a v a)", "a"),
-        maker.makeRule("(a ^ T)", "a"),
-        maker.makeRule("(a v F)", "a"),
-        maker.makeRule("(a ^ F)", "F"),
-        maker.makeRule("(a v T)", "T"),
+        maker.makeRule("(a ^ true)", "a"),
+        maker.makeRule("(a v false)", "a"),
+        maker.makeRule("(a ^ false)", "false"),
+        maker.makeRule("(a v true)", "true"),
         maker.makeRule("(a ^ b)", "(b ^ a)"),
         maker.makeRule("(a v b)", "(b v a)"), // E10
         maker.makeRule("((a ^ b) ^ c)", "(a ^ (b ^ c))"),

@@ -360,8 +360,8 @@ pub const OldParsing = struct {
                 .leaf => |token| {
                     switch (token) {
                         .Proposition => |prop| wff_node.?.kind = .{ .proposition_variable = try allocator.dupe(u8, prop.string) },
-                        .True => wff_node.?.kind = .{ .logical_constant = .t },
-                        .False => wff_node.?.kind = .{ .logical_constant = .f },
+                        .True => wff_node.?.kind = .{ .logical_constant = .true },
+                        .False => wff_node.?.kind = .{ .logical_constant = .false },
                         else => continue,
                     }
                 },
@@ -542,7 +542,7 @@ test "OldParsing.parseTreeToWffTree: T" {
     const allocator = std.testing.allocator;
 
     const root = wfflib.WffTree.Node{ .parent = null, .kind = .{
-        .logical_constant = .t,
+        .logical_constant = .true,
     } };
 
     const parse_tree = try OldParsing.wff_parser.internal_parser.parse(allocator, "T");
@@ -554,7 +554,7 @@ test "OldParsing.parseTreeToWffTree: T" {
 
     const wff_string = try actual_tree.makeString(allocator);
     defer allocator.free(wff_string);
-    try std.testing.expectEqualStrings("T", wff_string);
+    try std.testing.expectEqualStrings("true", wff_string);
 }
 
 test "OldParsing.parseTreeToWffTree: (~T <=> (a ^ F))" {
@@ -574,7 +574,7 @@ test "OldParsing.parseTreeToWffTree: (~T <=> (a ^ F))" {
 
     var t = WffTree.Node{
         .parent = &left_branch,
-        .kind = .{ .logical_constant = .t },
+        .kind = .{ .logical_constant = .true },
     };
 
     left_branch.kind = .{ .unary_operator = .{
@@ -594,7 +594,7 @@ test "OldParsing.parseTreeToWffTree: (~T <=> (a ^ F))" {
 
     var f = WffTree.Node{
         .parent = &right_branch,
-        .kind = .{ .logical_constant = .f },
+        .kind = .{ .logical_constant = .false },
     };
 
     right_branch.kind = .{ .binary_operator = .{
@@ -629,7 +629,7 @@ test "OldParsing.parseTreeToWffTree: (~T <=> (a ^ F))" {
 
     const wff_string = try actual_tree.makeString(allocator);
     defer allocator.free(wff_string);
-    try std.testing.expectEqualStrings("(~T <=> (a ^ F))", wff_string);
+    try std.testing.expectEqualStrings("(~true <=> (a ^ false))", wff_string);
 }
 
 // === PARSING USING NEW GRAMMAR ===
@@ -792,6 +792,13 @@ pub const NewParsing = struct {
             cond,
             bicond_begin,
             bicond_end,
+            true_t,
+            true_tr,
+            true_tru,
+            false_f,
+            false_fa,
+            false_fal,
+            false_fals,
         };
 
         var tokens = std.ArrayList(Token).init(allocator);
@@ -804,10 +811,11 @@ pub const NewParsing = struct {
         }
 
         var state: State = State.none;
-        for (wff_string) |c| {
+        for (0..wff_string.len) |i| {
             // errdefer {
             //     debug.print("\n\tInvalid token: {c}\n\tProcessed tokens: {any}\n", .{ c, tokens.items });
             // }
+            const c = wff_string[i];
 
             if (std.ascii.isWhitespace(c)) {
                 continue;
@@ -839,18 +847,84 @@ pub const NewParsing = struct {
                     '(' => Token{ .lparen = {} },
                     ')' => Token{ .rparen = {} },
 
-                    'T' => Token{ .true = {} },
-                    'F' => Token{ .false = {} },
+                    't', 'T' => |val| ret: {
+                        if (i + 1 < wff_string.len and wff_string[i + 1] == 'r') {
+                            state = State.true_t;
+                            continue;
+                        } else {
+                            var str = try allocator.alloc(u8, 1);
+                            str[0] = val;
+                            break :ret Token{ .proposition = str };
+                        }
+                    },
+                    'f', 'F' => |val| ret: {
+                        if (i + 1 < wff_string.len and wff_string[i + 1] == 'a') {
+                            state = State.false_f;
+                            continue;
+                        } else {
+                            var str = try allocator.alloc(u8, 1);
+                            str[0] = val;
+                            break :ret Token{ .proposition = str };
+                        }
+                    },
 
                     // TODO: Include v, T, F as an allowable variable name (currently it
                     // conflicts with OR operator, True, False tokens).
-                    'a'...'u', 'w'...'z', 'A'...'E', 'G'...'S', 'U'...'Z' => |val| ret: {
+                    'a'...'e', 'g'...'s', 'w'...'z', 'A'...'E', 'G'...'S', 'U'...'Z' => |val| ret: {
                         var str = try allocator.alloc(u8, 1);
                         str[0] = val;
                         break :ret Token{ .proposition = str };
                     },
 
                     else => LexError.UnexpectedToken,
+                },
+                .true_t => {
+                    state = State.true_tr;
+                    continue;
+                },
+                .true_tr => ret: {
+                    if (c == 'u') {
+                        state = State.true_tru;
+                        continue;
+                    } else {
+                        break :ret LexError.UnexpectedToken;
+                    }
+                },
+                .true_tru => ret: {
+                    if (c == 'e') {
+                        state = State.none;
+                        break :ret Token{ .true = {} };
+                    } else {
+                        break :ret LexError.UnexpectedToken;
+                    }
+                },
+                .false_f => {
+                    state = State.false_fa;
+                    continue;
+                },
+                .false_fa => ret: {
+                    if (c == 'l') {
+                        state = State.false_fal;
+                        continue;
+                    } else {
+                        break :ret LexError.UnexpectedToken;
+                    }
+                },
+                .false_fal => ret: {
+                    if (c == 's') {
+                        state = State.false_fals;
+                        continue;
+                    } else {
+                        break :ret LexError.UnexpectedToken;
+                    }
+                },
+                .false_fals => ret: {
+                    if (c == 'e') {
+                        state = State.none;
+                        break :ret Token{ .false = {} };
+                    } else {
+                        break :ret LexError.UnexpectedToken;
+                    }
                 },
                 .cond => switch (c) {
                     '>' => ret: {
@@ -952,8 +1026,8 @@ pub const NewParsing = struct {
                         var top = stack.pop();
                         switch (children[0].kind.leaf) {
                             .proposition => |s| top.kind = .{ .proposition_variable = try allocator.dupe(u8, s) },
-                            .true => top.kind = .{ .logical_constant = .t },
-                            .false => top.kind = .{ .logical_constant = .f },
+                            .true => top.kind = .{ .logical_constant = .true },
+                            .false => top.kind = .{ .logical_constant = .false },
                             else => std.debug.panic("Invalid parse tree", .{}),
                         }
                     } else {
@@ -1136,14 +1210,14 @@ test "NewParsing.parseTreeToWffTree: a" {
     try std.testing.expectEqualStrings("a", wff_string);
 }
 
-test "NewParsing.parseTreeToWffTree: T" {
+test "NewParsing.parseTreeToWffTree: true" {
     const allocator = std.testing.allocator;
 
     const root = wfflib.WffTree.Node{ .parent = null, .kind = .{
-        .logical_constant = .t,
+        .logical_constant = .true,
     } };
 
-    const parse_tree = try NewParsing.wff_builder.internal_parser.parse(allocator, "T");
+    const parse_tree = try NewParsing.wff_builder.internal_parser.parse(allocator, "true");
     defer parse_tree.deinit();
     const actual_tree = try NewParsing.parseTreeToWffTree(allocator, parse_tree);
     defer actual_tree.deinit();
@@ -1152,10 +1226,10 @@ test "NewParsing.parseTreeToWffTree: T" {
 
     const wff_string = try actual_tree.makeString(allocator);
     defer allocator.free(wff_string);
-    try std.testing.expectEqualStrings("T", wff_string);
+    try std.testing.expectEqualStrings("true", wff_string);
 }
 
-test "NewParsing.parseTreeToWffTree: (~T <=> (a ^ F))" {
+test "NewParsing.parseTreeToWffTree: (~true <=> (a ^ false))" {
     const allocator = std.testing.allocator;
     const WffTree = wfflib.WffTree;
 
@@ -1172,7 +1246,7 @@ test "NewParsing.parseTreeToWffTree: (~T <=> (a ^ F))" {
 
     var t = WffTree.Node{
         .parent = &left_branch,
-        .kind = .{ .logical_constant = .t },
+        .kind = .{ .logical_constant = .true },
     };
 
     left_branch.kind = .{ .unary_operator = .{
@@ -1192,7 +1266,7 @@ test "NewParsing.parseTreeToWffTree: (~T <=> (a ^ F))" {
 
     var f = WffTree.Node{
         .parent = &right_branch,
-        .kind = .{ .logical_constant = .f },
+        .kind = .{ .logical_constant = .false },
     };
 
     right_branch.kind = .{ .binary_operator = .{
@@ -1207,7 +1281,7 @@ test "NewParsing.parseTreeToWffTree: (~T <=> (a ^ F))" {
         .arg2 = &right_branch,
     } };
 
-    const parse_tree = try NewParsing.wff_builder.internal_parser.parse(allocator, "(~T <=> (a ^ F))");
+    const parse_tree = try NewParsing.wff_builder.internal_parser.parse(allocator, "(~true <=> (a ^ false))");
     defer parse_tree.deinit();
     const actual_tree = try NewParsing.parseTreeToWffTree(allocator, parse_tree);
     defer actual_tree.deinit();
@@ -1227,7 +1301,7 @@ test "NewParsing.parseTreeToWffTree: (~T <=> (a ^ F))" {
 
     const wff_string = try actual_tree.makeString(allocator);
     defer allocator.free(wff_string);
-    try std.testing.expectEqualStrings("(~T <=> (a ^ F))", wff_string);
+    try std.testing.expectEqualStrings("(~true <=> (a ^ false))", wff_string);
 }
 
 //#####################################

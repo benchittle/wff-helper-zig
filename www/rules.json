@@ -3,12 +3,12 @@
         {
             "name": "E1",
             "lhs": "(a v ~a)",
-            "rhs": "T"
+            "rhs": "true"
         },
         {
             "name": "E2",
             "lhs": "(a ^ ~a)",
-            "rhs": "F"
+            "rhs": "false"
         },
         {
             "name": "E3",
@@ -22,23 +22,23 @@
         },
         {
             "name": "E5",
-            "lhs": "(a ^ T)",
+            "lhs": "(a ^ true)",
             "rhs": "a"
         },
         {
             "name": "E6",
-            "lhs": "(a v F)",
+            "lhs": "(a v false)",
             "rhs": "a"
         },
         {
             "name": "E7",
-            "lhs": "(a ^ F)",
-            "rhs": "F"
+            "lhs": "(a ^ false)",
+            "rhs": "false"
         },
         {
             "name": "E8",
-            "lhs": "(a v T)",
-            "rhs": "T"
+            "lhs": "(a v true)",
+            "rhs": "true"
         },
         {
             "name": "E9",
