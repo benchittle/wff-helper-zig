@@ -186,7 +186,7 @@ pub const Proof = struct {
                 defer hypothesis_pattern.deinit();
                 method = .{ .contradiction = try match.replace(allocator, hypothesis_pattern) };
 
-                break :ret try wff_builder.buildWff(allocator, "F");
+                break :ret try wff_builder.buildWff(allocator, "false");
             },
         };
         errdefer goal.deinit();
