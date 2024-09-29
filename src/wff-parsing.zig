@@ -848,7 +848,7 @@ pub const NewParsing = struct {
                     ')' => Token{ .rparen = {} },
 
                     't', 'T' => |val| ret: {
-                        if (i + 1 < wff_string.len and wff_string[i + 1] == 'r') {
+                        if (i + 1 < wff_string.len and (wff_string[i + 1] == 'r' or wff_string[i + 1] == 'R')) {
                             state = State.true_t;
                             continue;
                         } else {
@@ -858,7 +858,7 @@ pub const NewParsing = struct {
                         }
                     },
                     'f', 'F' => |val| ret: {
-                        if (i + 1 < wff_string.len and wff_string[i + 1] == 'a') {
+                        if (i + 1 < wff_string.len and (wff_string[i + 1] == 'a' or wff_string[i + 1] == 'A')) {
                             state = State.false_f;
                             continue;
                         } else {
@@ -870,7 +870,7 @@ pub const NewParsing = struct {
 
                     // TODO: Include v, T, F as an allowable variable name (currently it
                     // conflicts with OR operator, True, False tokens).
-                    'a'...'e', 'g'...'s', 'w'...'z', 'A'...'E', 'G'...'S', 'U'...'Z' => |val| ret: {
+                    'a'...'e', 'g'...'s', 'u', 'w'...'z', 'A'...'E', 'G'...'S', 'U'...'Z' => |val| ret: {
                         var str = try allocator.alloc(u8, 1);
                         str[0] = val;
                         break :ret Token{ .proposition = str };
@@ -883,7 +883,7 @@ pub const NewParsing = struct {
                     continue;
                 },
                 .true_tr => ret: {
-                    if (c == 'u') {
+                    if (c == 'u' or c == 'U') {
                         state = State.true_tru;
                         continue;
                     } else {
@@ -891,7 +891,7 @@ pub const NewParsing = struct {
                     }
                 },
                 .true_tru => ret: {
-                    if (c == 'e') {
+                    if (c == 'e' or c == 'E') {
                         state = State.none;
                         break :ret Token{ .true = {} };
                     } else {
@@ -903,7 +903,7 @@ pub const NewParsing = struct {
                     continue;
                 },
                 .false_fa => ret: {
-                    if (c == 'l') {
+                    if (c == 'l' or c == 'L') {
                         state = State.false_fal;
                         continue;
                     } else {
@@ -911,7 +911,7 @@ pub const NewParsing = struct {
                     }
                 },
                 .false_fal => ret: {
-                    if (c == 's') {
+                    if (c == 's' or c == 'S') {
                         state = State.false_fals;
                         continue;
                     } else {
@@ -919,7 +919,7 @@ pub const NewParsing = struct {
                     }
                 },
                 .false_fals => ret: {
-                    if (c == 'e') {
+                    if (c == 'e' or c == 'E') {
                         state = State.none;
                         break :ret Token{ .false = {} };
                     } else {
