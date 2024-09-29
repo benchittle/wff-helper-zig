@@ -950,6 +950,19 @@ test "WffTree.makeString: ~x" {
     try std.testing.expectEqualStrings(string, wff.string);
 }
 
+test "WffTree.makeString: ((~t ^ ~u) => ~s)" {
+    const ParsingConfig = @import("wff-parsing.zig").NewParsing;
+    const wff_builder = ParsingConfig.wff_builder;
+    const allocator = std.testing.allocator;
+
+    const string = "((~t ^ ~u) => ~s)";
+
+    const wff = try wff_builder.buildWff(allocator, "(~t ^ ~u) => ~s");
+    defer wff.deinit();
+
+    try std.testing.expectEqualStrings(string, wff.string);
+}
+
 test "WffTree.copy: (p v q), ((a ^ b) v (c ^ d)), and p" {
     const ParsingConfig = @import("wff-parsing.zig").NewParsing;
     const wff_parser = ParsingConfig.wff_builder;
