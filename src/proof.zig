@@ -448,7 +448,7 @@ test "Proof of true" {
         .wff = try wff_builder.buildWff(allocator, "true"), 
         .justification = Proof.Step.Justification{ 
             .equivalence = .{
-                .rule_index = 0,
+                .rule_index = 1,
                 .from = 0,
             } 
         } 

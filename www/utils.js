@@ -54,6 +54,9 @@ export function startProof(wasmApi) {
         if (assumptionsText.replace(/\s+/g, "").length > 0) {
 
             for (let line of assumptionsText.split(/\r?\n/)) {
+                if (line.replace(/\s+/g, "").length == 0) {
+                    continue;
+                }
                 if (!isValidWff(wasmApi, line)) {
                     console.log("invalid assumption wff");
                     return;

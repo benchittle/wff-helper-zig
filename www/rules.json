@@ -2,13 +2,13 @@
     "equivalence_rules": [
         {
             "name": "E1",
-            "lhs": "(a v ~a)",
-            "rhs": "true"
+            "lhs": "(a ^ ~a)",
+            "rhs": "false"
         },
         {
             "name": "E2",
-            "lhs": "(a ^ ~a)",
-            "rhs": "false"
+            "lhs": "(a v ~a)",
+            "rhs": "true"
         },
         {
             "name": "E3",
