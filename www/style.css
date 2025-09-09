@@ -38,7 +38,7 @@
     --font-colour-disabled: #a0a0a0;
 }
    
-body {
+html, body {
     margin: 0;
     color: var(--font-colour);
     font-family: var(--default-font);
@@ -46,6 +46,7 @@ body {
     display: flex;
     flex-direction: column;
     max-height: 100vh;
+    height: 100%;
 }
 
 .wff-text {
@@ -60,6 +61,7 @@ body {
 /* Home Page */
 
 .home-header {
+    flex: 0 0 auto;
     text-align: center;
 }
 .home-header h1 {
@@ -69,9 +71,26 @@ body {
 
 #home-container {
     display: flex;
+    flex: 1 1 auto;
     flex-direction: column;
     align-items: center;
     justify-content: center;
+    height: 100%;
+}
+
+#wff-and-method {
+    flex: 1 1 auto;
+}
+
+#home-help-tab-content {
+    /* height: 100%; */
+    /* max-height: max-content; */
+    flex: 1 1 0;
+    background-color: var(--box-colour);
+    padding: 0px 16px;
+    margin: 16px;
+    overflow-y: scroll;
+    border-radius: 8px;
 }
 
 #home-container span {
