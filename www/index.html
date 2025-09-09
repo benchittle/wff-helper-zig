@@ -9,10 +9,11 @@
 </head>
 <body>
     <header class="home-header">
+        <br/>
+        <h1>Wff Helper</h1>
         <!-- header -->
     </header>
     <div id="home-container">
-        <h1>Wff Helper</h1>
         <div id="proof-start-info">
             <div id="wff-and-method">
                 Prove
@@ -34,6 +35,59 @@
             </div>
             <button id="proof-start-button">Start Proof</button>
         </div>
+        <div id="home-help-tab-content">
+                <h4>Welcome to Wff Helper!</h4>
+                <p>
+                    This is a tool to verify and format proofs in 
+                    propositional logic. You can start a new proof 
+                    above.
+                </p>
+                <p>
+                    This tool does NOT solve proofs for you. It DOES verify the steps you 
+                    input are logically valid, and it DOES verify once
+                    you have finished the proof. 
+                </p>
+
+                <h4>Operators</h4>
+                <p>Not: <span class="wff-text">~</span> (tilde)</p>
+                <p>And: <span class="wff-text">^</span> (caret)</p>
+                <p>Or: <span class="wff-text">v</span> (the letter v)</p>
+                <p>Conditional: <span class="wff-text">=&gt;</span></p>
+                <p>Biconditional: <span class="wff-text">&lt;=&gt;</span></p>
+
+                <h4>Example Usage: Starting a Proof</h4>
+                <p>
+                    Example 1: Suppose we want to start a 
+                    <span class="wff-example-text">Direct Proof</span> to prove  
+                    <span class="wff-example-text">&vdash; (a => (a v b))</span> 
+                    <ul>
+                        <li>Enter <span class="wff-example-text">(a => (a v b))</span> into the "Prove" box above</li>
+                        <li>Then, select <span class="wff-example-text">Direct Proof</span> from the drop down</li>
+                        <li>Leave the "Assumptions" box empty and click "Start Proof"</li>
+                    </ul>
+                </p>
+                <p>
+                    Example 2: Starting a proof for 
+                    <span class="wff-example-text">a => b, b => c &vdash; a => c</span> 
+                    using <span class="wff-example-text">No Proof Method</span> 
+                    <ul>
+                        <li>Enter <span class="wff-example-text">a => c</span> into the "Prove" box above</li>
+                        <li>Then, select <span class="wff-example-text">No Proof Method</span> from the drop down</li>
+                        <li>Then, enter <span class="wff-example-text">a => b</span> into the "Assumptions" box</li>
+                        <li>Then, on a new line, enter <span class="wff-example-text">b => c</span> into the "Assumptions" box</li>
+                        <li>Click "Start Proof"</li>
+                    </ul>
+                </p>
+                <h4>Troubleshooting</h4>
+                <p>
+                    If nothing happens when you click "Start Proof", check to make 
+                    sure you haven't entered something with invalid syntax or an 
+                    invalid symbol. 
+                </p>
+                <p>
+                    Unfortunately I haven't added error messages yet :(
+                </p>
+            </div>
     </div>
     
     <script src="index.js" type="module"></script> 
